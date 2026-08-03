@@ -1,14 +1,14 @@
 # Senderos del Horizonte
 
-Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Están terminadas las Fases 0 a 4: cimientos técnicos, personaje a pie, paisaje explorable, atmósfera de atardecer y montura.
+Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Están terminadas las Fases 0 a 5: cimientos técnicos, personaje a pie, paisaje explorable, atmósfera de atardecer, montura y vegetación optimizada.
 
 ## Estado actual
 
 - Proyecto Godot 4.7.1 con Jolt Physics.
 - Personaje `CharacterBody3D` con colisión, gravedad, salto, marcha y carrera.
-- Caballo placeholder original llamado Brisa, con física, paso, trote y galope.
+- Caballo CC0 llamado Brisa, con esqueleto y animaciones de reposo, paso, trote y galope.
 - Máquina de estados `ON_FOOT` / `MOUNTED`, con montaje y desmontaje reversible.
-- Animación procedural de patas y cuerpo, sin modelos ni animaciones de terceros.
+- Material triplanar de pelaje con albedo, normal y rugosidad originales.
 - Cámara orbital suave con `SpringArm3D`; al montar aumenta progresivamente altura, distancia y campo de visión.
 - Terrain3D 1.0.2 integrado, con cuatro regiones y colisión dinámica.
 - Mapa de 512×512 metros con valle, colinas de hasta 40 metros y límites elevados.
@@ -18,8 +18,11 @@ Prototipo de aventura y exploración contemplativa en tercera persona, construid
 - Sol bajo cálido, relleno ambiental azulado y sombras largas sobre el valle.
 - Niebla volumétrica ligera y bruma localizada bajo la cota del mirador.
 - Resplandor sutil en el sol y la baliza del destino.
+- Bosque determinista de 420 pinos, 190 rocas y 6.200 matas de hierba.
+- Dibujado por `MultiMesh`, distancias de visibilidad y colisiones limitadas a los elementos cercanos.
+- Corredor libre de árboles alrededor del sendero, del inicio, de Brisa y del mirador.
 - HUD mínimo con los controles.
-- Las texturas del terreno son originales y procedurales; no se usan recursos de juegos comerciales.
+- Once texturas originales para terreno, roca, corteza, ramas y pelaje; no se usan recursos de juegos comerciales.
 
 ## Abrir y jugar
 
@@ -56,7 +59,17 @@ El objetivo de esta fase es seguir el sendero visible desde el punto inicial has
 
 Brisa espera unos metros por delante del punto inicial. Acércate hasta que aparezca el aviso y pulsa `E`. Mientras estás montado, `WASD` o las flechas guían al caballo y `Mayús` activa el galope. Pulsa `E` de nuevo para desmontar a un lado de la montura.
 
-El placeholder está construido únicamente con primitivas de Godot. `Player` conserva la máquina de estados, mientras `Horse` controla su propia física; esto permite sustituir más adelante el modelo visual sin rehacer la mecánica.
+El modelo animado procede del paquete CC0 de Quaternius. `Player` conserva la máquina de estados, mientras `Horse` controla su propia física y selecciona `Idle`, `WalkSlow`, `Walk` o `Run` según la velocidad. El material de pelaje se proyecta en los tres ejes para evitar estiramientos en una malla sin UV.
+
+## Vegetación y materiales
+
+`VegetationScatter` usa una semilla fija para reconstruir siempre el mismo decorado. Los troncos, las ramas recortadas con alfa, las rocas y la hierba se agrupan en cuatro `MultiMeshInstance3D`; la densidad visual no implica crear miles de nodos. Solo los árboles y rocas relevantes cerca de la ruta reciben colisión.
+
+Los albedos de pradera, sendero, granito, corteza, agujas y pelaje se crearon específicamente para el proyecto con una dirección visual realista, sobria y norteña. Los mapas normal/roughness pueden regenerarse con:
+
+```bash
+python3 tools/generate_material_maps.py
+```
 
 ## Luz y atmósfera
 
@@ -87,17 +100,18 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/terrain_route_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/atmosphere_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/mounting_test.gd
+tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/vegetation_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --quit-after 180
 ```
 
-La primera comprueba importación y sintaxis; la segunda valida Terrain3D, caballo, mirador, estructura, atmósfera y controles; la tercera simula avance y salto; la cuarta mide toda la pendiente del sendero y aterriza al personaje sobre la tarima; la quinta valida Forward+, cielo procedural, luz y niebla; la sexta monta, abre la cámara, galopa y desmonta; la última mantiene el juego vivo durante tres segundos para detectar errores de ejecución.
+La primera comprueba importación y sintaxis; la segunda valida Terrain3D, caballo, mirador, estructura, atmósfera y controles; la tercera simula avance y salto; la cuarta mide toda la pendiente del sendero y aterriza al personaje sobre la tarima; la quinta valida Forward+, cielo procedural, luz y niebla; la sexta monta, abre la cámara, galopa y desmonta; la séptima verifica densidades, `MultiMesh`, corredor libre y animaciones del caballo; la última mantiene el juego vivo para detectar errores de ejecución.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada; no afecta al juego ni a las pruebas.
 
 ## Estructura
 
 ```text
-assets/     futuros modelos, texturas y audio con licencia libre
+assets/     modelo CC0 y texturas originales del proyecto
 addons/     Terrain3D y futuros addons de Godot
 docs/       documentación adicional, incluido MCP
 scenes/     escenas `.tscn`
@@ -113,4 +127,4 @@ La instalación opcional está preparada y explicada en [docs/MCP_SETUP.md](docs
 
 ## Licencias y procedencia
 
-El código original de este repositorio se distribuye con licencia MIT; consulta [LICENSE](LICENSE). Terrain3D también usa licencia MIT y está registrado en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Los futuros recursos de terceros deberán registrar autor, URL y licencia antes de incorporarse. No se permite material extraído de Nintendo ni de ningún juego comercial.
+El código original de este repositorio se distribuye con licencia MIT; consulta [LICENSE](LICENSE). Terrain3D (MIT) y el caballo de Quaternius (CC0) están registrados en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Los futuros recursos de terceros deberán registrar autor, URL y licencia antes de incorporarse. No se permite material extraído de Nintendo ni de ningún juego comercial.

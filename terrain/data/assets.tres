@@ -1,17 +1,17 @@
 [gd_resource type="Terrain3DAssets" format=3]
 
-[ext_resource type="Texture2D" path="res://terrain/textures/pradera_albedo_height.res" id="1_ovnq8"]
-[ext_resource type="Texture2D" path="res://terrain/textures/pradera_normal_roughness.res" id="2_8uucr"]
-[ext_resource type="Texture2D" path="res://terrain/textures/sendero_albedo_height.res" id="3_2iybd"]
-[ext_resource type="Texture2D" path="res://terrain/textures/sendero_normal_roughness.res" id="4_u785q"]
-[ext_resource type="Texture2D" path="res://terrain/textures/roca_albedo_height.res" id="5_s8tni"]
-[ext_resource type="Texture2D" path="res://terrain/textures/roca_normal_roughness.res" id="6_dgtan"]
+[ext_resource type="Texture2D" path="res://assets/textures/realistic/meadow_albedo.png" id="1_ovnq8"]
+[ext_resource type="Texture2D" path="res://assets/textures/realistic/meadow_normal_roughness.png" id="2_8uucr"]
+[ext_resource type="Texture2D" path="res://assets/textures/realistic/trail_albedo.png" id="3_2iybd"]
+[ext_resource type="Texture2D" path="res://assets/textures/realistic/trail_normal_roughness.png" id="4_u785q"]
+[ext_resource type="Texture2D" path="res://assets/textures/realistic/granite_albedo.png" id="5_s8tni"]
+[ext_resource type="Texture2D" path="res://assets/textures/realistic/granite_normal_roughness.png" id="6_dgtan"]
 
 [sub_resource type="Terrain3DTextureAsset" id="Terrain3DTextureAsset_2q265"]
 name = "Pradera"
 albedo_texture = ExtResource("1_ovnq8")
 normal_texture = ExtResource("2_8uucr")
-uv_scale = 0.12
+uv_scale = 0.16
 detiling_rotation = 0.15
 
 [sub_resource type="Terrain3DTextureAsset" id="Terrain3DTextureAsset_gf2b0"]
@@ -19,6 +19,7 @@ name = "Sendero"
 id = 1
 albedo_texture = ExtResource("3_2iybd")
 normal_texture = ExtResource("4_u785q")
+uv_scale = 0.14
 detiling_rotation = 0.15
 
 [sub_resource type="Terrain3DTextureAsset" id="Terrain3DTextureAsset_oxdhj"]
@@ -26,7 +27,7 @@ name = "Roca"
 id = 2
 albedo_texture = ExtResource("5_s8tni")
 normal_texture = ExtResource("6_dgtan")
-uv_scale = 0.08
+uv_scale = 0.12
 detiling_rotation = 0.15
 
 [resource]

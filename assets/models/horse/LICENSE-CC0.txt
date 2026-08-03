@@ -1,0 +1,11 @@
+Farm Animals Pack by Quaternius
+================================
+
+Source: https://quaternius.com/packs/farmanimal.html
+Mirror used: https://opengameart.org/content/lowpoly-animated-farm-animal-pack
+
+License: CC0 1.0 Universal (CC0 1.0), Public Domain Dedication
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Credit is not required. The included `Horse.fbx` is unmodified source geometry
+from the pack; its appearance is customized with original project materials.
