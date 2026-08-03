@@ -1,4 +1,4 @@
-[gd_scene load_steps=41 format=3]
+[gd_scene load_steps=42 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://scenes/audio_environment.tscn" id="9_audio"]
 [ext_resource type="PackedScene" path="res://scenes/epic_landmark.tscn" id="10_epic"]
 [ext_resource type="Texture2D" path="res://assets/models/photorealistic/hdri/kloppenheim_06_puresky_2k.hdr" id="11_hdri"]
+[ext_resource type="Script" path="res://scripts/animated_clouds.gd" id="12_clouds"]
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSky_misty"]
 panorama = ExtResource("11_hdri")
@@ -184,6 +185,12 @@ rotation_degrees = Vector3(-48, 52, 0)
 light_color = Color(0.58, 0.7, 0.92, 1)
 light_energy = 0.22
 sky_mode = 1
+
+[node name="AnimatedClouds" type="Node3D" parent="."]
+script = ExtResource("12_clouds")
+cloud_altitude = 152.0
+wind_direction = Vector2(1, 0.33)
+wind_speed = 0.021
 
 [node name="ValleyMist" type="FogVolume" parent="."]
 position = Vector3(18, 4, 12)

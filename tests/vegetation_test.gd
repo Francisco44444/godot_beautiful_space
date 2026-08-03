@@ -26,9 +26,36 @@ func _run_test() -> void:
 	root.add_child(world)
 	var scatter := world.get_node("VegetationScatter") as VegetationScatter
 	var horse := world.get_node("Horse") as Horse
+	var clouds := world.get_node_or_null("AnimatedClouds") as Node3D
 
 	for _frame in range(4):
 		await process_frame
+
+	if clouds == null or clouds.get_child_count() < 5:
+		_fail("El cielo debe tener varias capas de nubes animadas.")
+		return
+	if clouds.get_node_or_null("MovingCloudDome") == null:
+		_fail("El cielo debe tener una bóveda visible de nubes en movimiento.")
+		return
+	var horizon_cloud := clouds.get_node_or_null("HorizonCloud01") as MeshInstance3D
+	if horizon_cloud == null or float(horizon_cloud.get_meta("drift_speed", 0.0)) <= 0.0:
+		_fail("El horizonte debe tener bancos de nubes desplazándose por script.")
+		return
+	var first_cloud_x := horizon_cloud.position.x
+	for _frame in range(8):
+		await process_frame
+	if horizon_cloud.position.x <= first_cloud_x:
+		_fail("Los bancos de nubes del horizonte deben desplazarse durante el juego.")
+		return
+	for child in clouds.get_children():
+		var cloud_layer := child as MeshInstance3D
+		if cloud_layer == null or cloud_layer.mesh == null or cloud_layer.material_override == null:
+			_fail("Cada capa de nubes debe tener malla y shader material.")
+			return
+		var material := cloud_layer.material_override as ShaderMaterial
+		if material == null or material.shader == null or not material.shader.code.contains("TIME"):
+			_fail("Las nubes deben animarse con TIME en el shader.")
+			return
 
 	var count_specs: Array[Array] = [
 		["árboles", scatter.tree_count, scatter.generated_tree_count, EXPECTED_TREE_COUNT],
