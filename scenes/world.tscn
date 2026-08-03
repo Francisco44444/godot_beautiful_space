@@ -220,13 +220,13 @@ script = ExtResource("2_camera")
 target_path = NodePath("../Player")
 
 [node name="SpringArm3D" type="SpringArm3D" parent="CameraRig"]
-spring_length = 5.45
+spring_length = 4.65
 margin = 0.15
 collision_mask = 1
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig/SpringArm3D"]
 current = true
-fov = 64.0
+fov = 61.5
 far = 1200.0
 
 [node name="Lookout" type="Node3D" parent="."]

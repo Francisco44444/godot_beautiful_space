@@ -18,8 +18,8 @@ Juego de aventura y exploración medieval en tercera persona, construido con God
 - Sol bajo cálido, relleno ambiental azulado y sombras largas sobre el valle.
 - Niebla volumétrica ligera y bruma localizada bajo la cota del mirador.
 - Resplandor sutil en el sol y la baliza del destino.
-- Bosque determinista con 340 pinos adultos game-ready de LOLIPOP, 170 rocas PBR, 7.000 matas de hierba, 32.000 briznas Bermuda, 800 helechos, 900 arbustos y 42 troncos o tocones.
-- Vegetación agrupada por celdas en `MultiMesh`, con LOD y distancias de visibilidad; los 340 árboles y las 170 rocas tienen colisión física.
+- Bosque determinista con 720 pinos adultos game-ready de LOLIPOP, 170 rocas PBR, 7.000 matas de hierba, 32.000 briznas Bermuda, 800 helechos, 900 arbustos y 42 troncos o tocones.
+- Vegetación agrupada por celdas en `MultiMesh`, con LOD y distancias de visibilidad; los 720 árboles y las 170 rocas tienen colisión física.
 - Hito paisajístico con acantilado fotorrealista, cascada animada de 38 metros, rocío, niebla, poza, río y audio 3D.
 - Fortaleza modular CC0 de Poly Haven sobre la cornisa, compuesta por torres, muros, puerta, colisión simplificada y balizas luminosas.
 - Corredor libre de árboles alrededor del sendero, del inicio, de Brisa y del mirador.

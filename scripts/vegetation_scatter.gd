@@ -44,7 +44,7 @@ const GRASS_CELL_SIZE := 72.0
 
 @export var terrain_path: NodePath = NodePath("../Terrain3D")
 @export_category("Densidad PBR")
-@export var tree_count := 340
+@export var tree_count := 720
 @export var rock_count := 170
 @export var grass_count := 7000
 @export var bermuda_grass_count := 32000

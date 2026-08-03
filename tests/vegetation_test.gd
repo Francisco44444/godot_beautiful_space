@@ -3,7 +3,7 @@ extends SceneTree
 ## Comprueba que el bosque PBR sea determinista, esté dividido en celdas y no
 ## invada el sendero jugable. También valida el caballo visual animado.
 
-const EXPECTED_TREE_COUNT := 340
+const EXPECTED_TREE_COUNT := 720
 const EXPECTED_ROCK_COUNT := 170
 const EXPECTED_GRASS_COUNT := 7000
 const EXPECTED_MEADOW_GRASS_COUNT := 32000
