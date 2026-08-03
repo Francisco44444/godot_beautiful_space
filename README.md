@@ -1,12 +1,15 @@
 # Senderos del Horizonte
 
-Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Están terminadas las Fases 0 a 3: cimientos técnicos, personaje a pie, paisaje explorable y atmósfera de atardecer.
+Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Están terminadas las Fases 0 a 4: cimientos técnicos, personaje a pie, paisaje explorable, atmósfera de atardecer y montura.
 
 ## Estado actual
 
 - Proyecto Godot 4.7.1 con Jolt Physics.
 - Personaje `CharacterBody3D` con colisión, gravedad, salto, marcha y carrera.
-- Cámara orbital suave con `SpringArm3D` para evitar atravesar obstáculos.
+- Caballo placeholder original llamado Brisa, con física, paso, trote y galope.
+- Máquina de estados `ON_FOOT` / `MOUNTED`, con montaje y desmontaje reversible.
+- Animación procedural de patas y cuerpo, sin modelos ni animaciones de terceros.
+- Cámara orbital suave con `SpringArm3D`; al montar aumenta progresivamente altura, distancia y campo de visión.
 - Terrain3D 1.0.2 integrado, con cuatro regiones y colisión dinámica.
 - Mapa de 512×512 metros con valle, colinas de hasta 40 metros y límites elevados.
 - Sendero ocre de pendiente controlada hasta una meseta-mirador situada a 24 metros.
@@ -39,6 +42,8 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --path .
 | Caminar | `WASD` o flechas | Stick izquierdo |
 | Correr | `Mayús` | Pulsar stick izquierdo |
 | Saltar | `Espacio` | Botón inferior |
+| Montar / desmontar | `E` junto a Brisa | Botón izquierdo |
+| Galopar montado | `Mayús` + dirección | Pulsar stick izquierdo + dirección |
 | Orbitar cámara | Mover ratón | — |
 | Liberar ratón | `Esc` | — |
 | Recuperar cámara | Clic dentro del juego | — |
@@ -46,6 +51,12 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --path .
 Si el personaje cae fuera del escenario, reaparece automáticamente en el punto inicial.
 
 El objetivo de esta fase es seguir el sendero visible desde el punto inicial hasta el mirador. La distancia restante aparece en la parte superior de la pantalla.
+
+## Montar a caballo
+
+Brisa espera unos metros por delante del punto inicial. Acércate hasta que aparezca el aviso y pulsa `E`. Mientras estás montado, `WASD` o las flechas guían al caballo y `Mayús` activa el galope. Pulsa `E` de nuevo para desmontar a un lado de la montura.
+
+El placeholder está construido únicamente con primitivas de Godot. `Player` conserva la máquina de estados, mientras `Horse` controla su propia física; esto permite sustituir más adelante el modelo visual sin rehacer la mecánica.
 
 ## Luz y atmósfera
 
@@ -75,10 +86,11 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/player_movement_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/terrain_route_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/atmosphere_test.gd
+tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/mounting_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --quit-after 180
 ```
 
-La primera comprueba importación y sintaxis; la segunda valida Terrain3D, mirador, estructura, atmósfera y controles; la tercera simula avance y salto; la cuarta mide toda la pendiente del sendero y aterriza al personaje sobre la tarima; la quinta valida Forward+, cielo procedural, luz y niebla; la última mantiene el juego vivo durante tres segundos para detectar errores de ejecución.
+La primera comprueba importación y sintaxis; la segunda valida Terrain3D, caballo, mirador, estructura, atmósfera y controles; la tercera simula avance y salto; la cuarta mide toda la pendiente del sendero y aterriza al personaje sobre la tarima; la quinta valida Forward+, cielo procedural, luz y niebla; la sexta monta, abre la cámara, galopa y desmonta; la última mantiene el juego vivo durante tres segundos para detectar errores de ejecución.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada; no afecta al juego ni a las pruebas.
 

@@ -21,6 +21,7 @@ func _run_test() -> void:
 		await process_frame
 		await process_frame
 		_check_node(world, "Player", "CharacterBody3D", failures)
+		_check_node(world, "Horse", "CharacterBody3D", failures)
 		_check_node(world, "CameraRig/SpringArm3D/Camera3D", "Camera3D", failures)
 		_check_node(world, "WorldEnvironment", "WorldEnvironment", failures)
 		_check_node(world, "ValleyMist", "FogVolume", failures)
@@ -31,7 +32,7 @@ func _run_test() -> void:
 			failures.append("Terrain3D debería cargar cuatro regiones de terreno")
 		world.queue_free()
 
-	for action in ["move_forward", "move_back", "move_left", "move_right", "jump", "sprint"]:
+	for action in ["move_forward", "move_back", "move_left", "move_right", "jump", "sprint", "interact"]:
 		if not InputMap.has_action(action):
 			failures.append("Falta la acción de entrada: %s" % action)
 

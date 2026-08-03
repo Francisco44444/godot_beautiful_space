@@ -5,6 +5,13 @@ extends CharacterBody3D
 ## La dirección de movimiento se calcula desde la cámara, no desde el mundo:
 ## por eso W siempre hace avanzar al personaje hacia donde está mirando el jugador.
 
+signal mount_state_changed(mounted: bool, horse: Horse)
+
+enum ControlState {
+	ON_FOOT,
+	MOUNTED,
+}
+
 @export_category("Movimiento")
 @export var walk_speed: float = 5.0
 @export var sprint_speed: float = 8.0
@@ -16,9 +23,16 @@ extends CharacterBody3D
 @export_category("Seguridad")
 @export var respawn_height: float = -12.0
 
+@export_category("Montura")
+@export var mount_distance: float = 3.6
+@export var dismount_offset: float = 1.65
+
 @onready var visual: Node3D = $Visual
+@onready var collision: CollisionShape3D = $Collision
 
 var spawn_position: Vector3
+var control_state := ControlState.ON_FOOT
+var current_mount: Horse
 
 
 func _ready() -> void:
@@ -28,6 +42,18 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if control_state == ControlState.MOUNTED:
+		_sync_with_mount()
+		if Input.is_action_just_pressed("interact"):
+			dismount()
+		return
+
+	if Input.is_action_just_pressed("interact"):
+		var nearby_horse := get_nearby_mount()
+		if nearby_horse != null:
+			mount_horse(nearby_horse)
+			return
+
 	_apply_gravity(delta)
 	_apply_jump()
 	_apply_movement(delta)
@@ -35,6 +61,77 @@ func _physics_process(delta: float) -> void:
 
 	if global_position.y < respawn_height:
 		_respawn()
+
+
+func is_mounted() -> bool:
+	return control_state == ControlState.MOUNTED and is_instance_valid(current_mount)
+
+
+func get_camera_target() -> Node3D:
+	return current_mount if is_mounted() else self
+
+
+func get_nearby_mount() -> Horse:
+	var nearest: Horse
+	var nearest_distance := mount_distance
+	for node in get_tree().get_nodes_in_group("mountable"):
+		var horse := node as Horse
+		if horse == null or horse.mounted:
+			continue
+		var distance := global_position.distance_to(horse.global_position)
+		if distance <= nearest_distance:
+			nearest = horse
+			nearest_distance = distance
+	return nearest
+
+
+func mount_horse(horse: Horse) -> bool:
+	if control_state != ControlState.ON_FOOT or horse == null or horse.mounted:
+		return false
+
+	current_mount = horse
+	control_state = ControlState.MOUNTED
+	velocity = Vector3.ZERO
+	collision.set_deferred("disabled", true)
+	horse.set_mounted(true)
+
+	# El placeholder del jugador se convierte en jinete al pasar al ancla de la silla.
+	visual.reparent(horse.rider_anchor, false)
+	visual.position = Vector3.ZERO
+	visual.rotation = Vector3.ZERO
+	global_position = horse.global_position
+	mount_state_changed.emit(true, horse)
+	return true
+
+
+func dismount() -> bool:
+	if not is_mounted():
+		return false
+
+	var horse := current_mount
+	var exit_direction := horse.visual.global_basis.x.normalized()
+	visual.reparent(self, false)
+	visual.position = Vector3.ZERO
+	visual.rotation = Vector3(0.0, horse.get_facing_yaw(), 0.0)
+
+	global_position = horse.global_position + exit_direction * dismount_offset + Vector3.UP * 0.35
+	velocity = Vector3.ZERO
+	control_state = ControlState.ON_FOOT
+	current_mount = null
+	collision.set_deferred("disabled", false)
+	horse.set_mounted(false)
+	mount_state_changed.emit(false, horse)
+	return true
+
+
+func _sync_with_mount() -> void:
+	if not is_instance_valid(current_mount):
+		control_state = ControlState.ON_FOOT
+		current_mount = null
+		collision.set_deferred("disabled", false)
+		return
+	global_position = current_mount.global_position
+	velocity = current_mount.velocity
 
 
 func _apply_gravity(delta: float) -> void:
@@ -78,4 +175,3 @@ func _apply_movement(delta: float) -> void:
 func _respawn() -> void:
 	global_position = spawn_position
 	velocity = Vector3.ZERO
-

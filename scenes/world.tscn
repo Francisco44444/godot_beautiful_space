@@ -1,4 +1,4 @@
-[gd_scene load_steps=34 format=3]
+[gd_scene load_steps=36 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/world.gd" id="4_world"]
 [ext_resource type="Terrain3DAssets" path="res://terrain/data/assets.tres" id="5_assets"]
 [ext_resource type="Terrain3DMaterial" path="res://terrain/data/material.tres" id="6_material"]
+[ext_resource type="PackedScene" path="res://scenes/horse.tscn" id="7_horse"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSky_sunset"]
 sky_top_color = Color(0.12, 0.2, 0.38, 1)
@@ -154,6 +155,12 @@ outline_color = Color(0.04, 0.05, 0.06, 0.82)
 font_size = 18
 font_color = Color(1, 1, 1, 0.72)
 
+[sub_resource type="LabelSettings" id="Label_mount_hint"]
+font_size = 18
+font_color = Color(1, 0.92, 0.72, 1)
+outline_size = 7
+outline_color = Color(0.04, 0.05, 0.06, 0.88)
+
 [node name="World" type="Node3D"]
 script = ExtResource("4_world")
 
@@ -197,6 +204,9 @@ position = Vector3(0, 20, 190)
 collision_layer = 2
 collision_mask = 1
 script = ExtResource("1_player")
+
+[node name="Horse" parent="." instance=ExtResource("7_horse")]
+position = Vector3(4, 20, 180)
 
 [node name="Collision" type="CollisionShape3D" parent="Player"]
 position = Vector3(0, 0.9, 0)
@@ -370,3 +380,17 @@ text = "·"
 label_settings = SubResource("Label_crosshair")
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="MountHint" type="Label" parent="HUD"]
+visible = false
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -72.0
+offset_bottom = -38.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "E · Montar a Brisa"
+label_settings = SubResource("Label_mount_hint")
+horizontal_alignment = 1
