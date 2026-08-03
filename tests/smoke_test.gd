@@ -1,0 +1,40 @@
+extends SceneTree
+
+## Prueba mínima ejecutable con:
+## godot --headless --path . --script res://tests/smoke_test.gd
+
+
+func _init() -> void:
+	var failures: Array[String] = []
+	var packed_scene := load("res://scenes/world.tscn") as PackedScene
+
+	if packed_scene == null:
+		failures.append("No se pudo cargar scenes/world.tscn")
+	else:
+		var world := packed_scene.instantiate()
+		root.add_child(world)
+		_check_node(world, "Player", "CharacterBody3D", failures)
+		_check_node(world, "CameraRig/SpringArm3D/Camera3D", "Camera3D", failures)
+		_check_node(world, "TestGround/Collision", "CollisionShape3D", failures)
+		world.queue_free()
+
+	for action in ["move_forward", "move_back", "move_left", "move_right", "jump", "sprint"]:
+		if not InputMap.has_action(action):
+			failures.append("Falta la acción de entrada: %s" % action)
+
+	if failures.is_empty():
+		print("SMOKE TEST OK: escena, nodos y controles disponibles.")
+		quit(0)
+	else:
+		for failure in failures:
+			push_error(failure)
+		quit(1)
+
+
+func _check_node(parent: Node, path: String, expected_class: String, failures: Array[String]) -> void:
+	var node := parent.get_node_or_null(path)
+	if node == null:
+		failures.append("Falta el nodo: %s" % path)
+	elif not node.is_class(expected_class):
+		failures.append("%s debería ser %s" % [path, expected_class])
+
