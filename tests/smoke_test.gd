@@ -25,19 +25,24 @@ func _run_test() -> void:
 		_check_node(world, "CameraRig/SpringArm3D/Camera3D", "Camera3D", failures)
 		_check_node(world, "WorldEnvironment", "WorldEnvironment", failures)
 		_check_node(world, "ValleyMist", "FogVolume", failures)
+		_check_node(world, "AmbientAudio/Music", "AudioStreamPlayer", failures)
+		_check_node(world, "AmbientAudio/Wind", "AudioStreamPlayer", failures)
+		_check_node(world, "AmbientAudio/Birds", "AudioStreamPlayer", failures)
 		_check_node(world, "Terrain3D", "Terrain3D", failures)
 		_check_node(world, "Lookout/Deck/Collision", "CollisionShape3D", failures)
 		var terrain := world.get_node_or_null("Terrain3D")
 		if terrain != null and terrain.data.get_region_count() != 4:
 			failures.append("Terrain3D debería cargar cuatro regiones de terreno")
 		world.queue_free()
+		for _frame in range(8):
+			await process_frame
 
 	for action in ["move_forward", "move_back", "move_left", "move_right", "jump", "sprint", "interact"]:
 		if not InputMap.has_action(action):
 			failures.append("Falta la acción de entrada: %s" % action)
 
 	if failures.is_empty():
-		print("SMOKE TEST OK: Terrain3D, mirador, nodos y controles disponibles.")
+		print("SMOKE TEST OK: Terrain3D, mirador, audio, nodos y controles disponibles.")
 		quit(0)
 	else:
 		for failure in failures:

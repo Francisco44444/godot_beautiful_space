@@ -62,6 +62,9 @@ func _run_test() -> void:
 		_fail("El caballo no inicia con su animación Idle.")
 		return
 
+	world.queue_free()
+	for _frame in range(8):
+		await process_frame
 	print("VEGETATION TEST OK: 420 árboles, 190 rocas, 6200 hierbas y caballo animado.")
 	quit(0)
 

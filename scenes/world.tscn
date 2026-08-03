@@ -1,4 +1,4 @@
-[gd_scene load_steps=37 format=3]
+[gd_scene load_steps=38 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
@@ -8,6 +8,7 @@
 [ext_resource type="Terrain3DMaterial" path="res://terrain/data/material.tres" id="6_material"]
 [ext_resource type="PackedScene" path="res://scenes/horse.tscn" id="7_horse"]
 [ext_resource type="PackedScene" path="res://scenes/vegetation_scatter.tscn" id="8_vegetation"]
+[ext_resource type="PackedScene" path="res://scenes/audio_environment.tscn" id="9_audio"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSky_sunset"]
 sky_top_color = Color(0.12, 0.2, 0.38, 1)
@@ -201,6 +202,8 @@ top_level = true
 metadata/_edit_lock_ = true
 
 [node name="VegetationScatter" parent="." instance=ExtResource("8_vegetation")]
+
+[node name="AmbientAudio" parent="." instance=ExtResource("9_audio")]
 
 [node name="Player" type="CharacterBody3D" parent="."]
 position = Vector3(0, 20, 190)

@@ -7,6 +7,12 @@ extends CharacterBody3D
 
 const COAT_ALBEDO: Texture2D = preload("res://assets/textures/realistic/horse_coat_albedo.png")
 const COAT_NORMAL: Texture2D = preload("res://assets/textures/realistic/horse_coat_normal_roughness.png")
+const HOOFBEATS: Array[AudioStream] = [
+	preload("res://assets/audio/original/hoof_1.wav"),
+	preload("res://assets/audio/original/hoof_2.wav"),
+	preload("res://assets/audio/original/hoof_3.wav"),
+	preload("res://assets/audio/original/hoof_4.wav"),
+]
 
 @export_category("Movimiento")
 @export var walk_speed: float = 6.0
@@ -25,11 +31,15 @@ const COAT_NORMAL: Texture2D = preload("res://assets/textures/realistic/horse_co
 @onready var name_label: Label3D = $NameLabel
 @onready var model_mesh: MeshInstance3D = $Visual/ModelRoot/Armature/Skeleton3D/Horse
 @onready var animation_player: AnimationPlayer = $Visual/ModelRoot/AnimationPlayer
+@onready var hoof_audio: AudioStreamPlayer3D = $HoofAudio
 
 var spawn_position: Vector3
 var mounted := false
 var _stride_time := 0.0
 var _rider_base_height := 0.0
+var _hoof_timer := 0.0
+var _hoof_index := 0
+var hoofbeat_count := 0
 
 
 func _ready() -> void:
@@ -52,6 +62,7 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 	_update_animation(delta)
+	_update_hoof_audio(delta)
 
 	if global_position.y < respawn_height:
 		global_position = spawn_position
@@ -165,3 +176,24 @@ func _update_animation(delta: float) -> void:
 	# El ancla acompaña suavemente el lomo aunque el jinete sea un placeholder.
 	var bob := absf(sin(_stride_time * 2.0)) * 0.075 * motion_amount
 	rider_anchor.position.y = lerpf(rider_anchor.position.y, _rider_base_height + bob, 0.3)
+
+
+func _update_hoof_audio(delta: float) -> void:
+	var horizontal_speed := Vector2(velocity.x, velocity.z).length()
+	if not mounted or horizontal_speed < 0.8 or not is_on_floor():
+		_hoof_timer = 0.0
+		return
+
+	var motion_amount := clampf(horizontal_speed / gallop_speed, 0.0, 1.0)
+	var interval := lerpf(0.54, 0.22, motion_amount)
+	_hoof_timer += delta
+	if _hoof_timer < interval:
+		return
+
+	_hoof_timer -= interval
+	hoof_audio.stream = HOOFBEATS[_hoof_index]
+	hoof_audio.pitch_scale = 0.92 + motion_amount * 0.13 + (0.025 if _hoof_index % 2 == 0 else -0.02)
+	hoof_audio.volume_db = lerpf(-10.5, -4.0, motion_amount)
+	hoof_audio.play()
+	_hoof_index = (_hoof_index + 1) % HOOFBEATS.size()
+	hoofbeat_count += 1

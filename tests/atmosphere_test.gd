@@ -61,7 +61,12 @@ func _run_test() -> void:
 	elif (valley_mist.material as FogMaterial).density <= 0.0:
 		failures.append("La bruma del valle no tiene densidad")
 
-	world.queue_free()
+	var ambient_audio := world.get_node("AmbientAudio") as AmbientAudio
+	ambient_audio.music.stop()
+	ambient_audio.wind.stop()
+	ambient_audio.birds.stop()
+	for _frame in range(8):
+		await process_frame
 	if not failures.is_empty():
 		_fail(failures)
 		return

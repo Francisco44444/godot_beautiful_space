@@ -19,6 +19,6 @@ Se distribuye el addon binario oficial sin modificar dentro de `addons/terrain_3
 - Licencia: CC0 1.0 Universal / dominio público.
 - Copia de la licencia: `assets/models/horse/LICENSE-CC0.txt`.
 
-El modelo y sus animaciones se usan como base técnica. El material de pelaje y el resto de texturas realistas son imágenes originales generadas específicamente para este proyecto.
+El modelo y sus animaciones se usan como base técnica. El material de pelaje, el resto de texturas realistas, la música y todos los ambientes son recursos originales generados específicamente para este proyecto.
 
 No se han incorporado modelos, texturas, música ni otros recursos de videojuegos comerciales.
