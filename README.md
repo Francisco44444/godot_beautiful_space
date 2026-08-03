@@ -32,6 +32,12 @@ Prototipo de aventura y exploración contemplativa en tercera persona, construid
 
 La versión oficial 4.7.1 descargada para verificar el proyecto está en `tools/runtime/Godot.app` y no se guarda en Git.
 
+La forma más rápida en macOS es hacer doble clic en `Jugar.command`. También puede ejecutarse desde Terminal:
+
+```bash
+./Jugar.command
+```
+
 1. Abre `tools/runtime/Godot.app`.
 2. En el administrador de proyectos, pulsa **Importar** y selecciona `project.godot` en esta carpeta.
 3. Abre el proyecto y pulsa **F6** para ejecutar la escena actual o **F5** para ejecutar el proyecto completo.
