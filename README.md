@@ -1,6 +1,6 @@
 # Senderos del Horizonte
 
-Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Están terminadas las Fases 0, 1 y 2: cimientos técnicos, personaje a pie y paisaje explorable.
+Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Están terminadas las Fases 0 a 3: cimientos técnicos, personaje a pie, paisaje explorable y atmósfera de atardecer.
 
 ## Estado actual
 
@@ -11,10 +11,12 @@ Prototipo de aventura y exploración contemplativa en tercera persona, construid
 - Mapa de 512×512 metros con valle, colinas de hasta 40 metros y límites elevados.
 - Sendero ocre de pendiente controlada hasta una meseta-mirador situada a 24 metros.
 - Objetivo con distancia y confirmación al alcanzar el mirador.
+- Renderizado Forward+ con cielo procedural de atardecer y tonemapping ACES.
+- Sol bajo cálido, relleno ambiental azulado y sombras largas sobre el valle.
+- Niebla volumétrica ligera y bruma localizada bajo la cota del mirador.
+- Resplandor sutil en el sol y la baliza del destino.
 - HUD mínimo con los controles.
 - Las texturas del terreno son originales y procedurales; no se usan recursos de juegos comerciales.
-
-La luz y atmósfera definitivas se trabajarán en la Fase 3.
 
 ## Abrir y jugar
 
@@ -45,6 +47,12 @@ Si el personaje cae fuera del escenario, reaparece automáticamente en el punto 
 
 El objetivo de esta fase es seguir el sendero visible desde el punto inicial hasta el mirador. La distancia restante aparece en la parte superior de la pantalla.
 
+## Luz y atmósfera
+
+La Fase 3 usa `WorldEnvironment` con un `ProceduralSkyMaterial`, un sol rasante y niebla volumétrica. La niebla global aporta profundidad a larga distancia; el nodo `ValleyMist` concentra una capa más visible en la parte baja del valle, de modo que la llegada elevada al mirador queda despejada.
+
+La escena requiere el renderizador **Forward+** para mostrar la niebla volumétrica. Godot puede recurrir a Compatibility en equipos sin Metal, Vulkan o Direct3D 12, pero en ese caso el juego seguirá siendo jugable con una atmósfera visual más sencilla.
+
 ## Editar el terreno
 
 Terrain3D ya está activado como plugin. Al abrir `scenes/world.tscn`, selecciona el nodo `Terrain3D` para mostrar sus herramientas de esculpido y pintura. Los datos editables están en `terrain/data`.
@@ -66,10 +74,11 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --editor --path . --quit
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/smoke_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/player_movement_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/terrain_route_test.gd
+tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/atmosphere_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --quit-after 180
 ```
 
-La primera comprueba importación y sintaxis; la segunda valida Terrain3D, mirador, estructura y controles; la tercera simula avance y salto; la cuarta mide toda la pendiente del sendero y aterriza al personaje sobre la tarima; la última mantiene el juego vivo durante tres segundos para detectar errores de ejecución.
+La primera comprueba importación y sintaxis; la segunda valida Terrain3D, mirador, estructura, atmósfera y controles; la tercera simula avance y salto; la cuarta mide toda la pendiente del sendero y aterriza al personaje sobre la tarima; la quinta valida Forward+, cielo procedural, luz y niebla; la última mantiene el juego vivo durante tres segundos para detectar errores de ejecución.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada; no afecta al juego ni a las pruebas.
 

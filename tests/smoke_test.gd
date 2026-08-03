@@ -22,6 +22,8 @@ func _run_test() -> void:
 		await process_frame
 		_check_node(world, "Player", "CharacterBody3D", failures)
 		_check_node(world, "CameraRig/SpringArm3D/Camera3D", "Camera3D", failures)
+		_check_node(world, "WorldEnvironment", "WorldEnvironment", failures)
+		_check_node(world, "ValleyMist", "FogVolume", failures)
 		_check_node(world, "Terrain3D", "Terrain3D", failures)
 		_check_node(world, "Lookout/Deck/Collision", "CollisionShape3D", failures)
 		var terrain := world.get_node_or_null("Terrain3D")
@@ -48,4 +50,3 @@ func _check_node(parent: Node, path: String, expected_class: String, failures: A
 		failures.append("Falta el nodo: %s" % path)
 	elif not node.is_class(expected_class):
 		failures.append("%s debería ser %s" % [path, expected_class])
-
