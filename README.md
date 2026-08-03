@@ -1,17 +1,20 @@
 # Senderos del Horizonte
 
-Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7 y GDScript. Esta primera entrega contiene las Fases 0 y 1: cimientos técnicos y personaje a pie sobre un terreno plano de prueba.
+Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Están terminadas las Fases 0, 1 y 2: cimientos técnicos, personaje a pie y paisaje explorable.
 
 ## Estado actual
 
 - Proyecto Godot 4.7.1 con Jolt Physics.
 - Personaje `CharacterBody3D` con colisión, gravedad, salto, marcha y carrera.
 - Cámara orbital suave con `SpringArm3D` para evitar atravesar obstáculos.
-- Suelo plano y dos rocas primitivas para comprobar colisiones.
+- Terrain3D 1.0.2 integrado, con cuatro regiones y colisión dinámica.
+- Mapa de 512×512 metros con valle, colinas de hasta 40 metros y límites elevados.
+- Sendero ocre de pendiente controlada hasta una meseta-mirador situada a 24 metros.
+- Objetivo con distancia y confirmación al alcanzar el mirador.
 - HUD mínimo con los controles.
-- Sin assets, modelos, música o texturas de terceros; toda la geometría actual usa primitivas de Godot y el icono es original.
+- Las texturas del terreno son originales y procedurales; no se usan recursos de juegos comerciales.
 
-Terrain3D se incorporará en la Fase 2, después de validar esta base jugable, como pide la planificación del proyecto.
+La luz y atmósfera definitivas se trabajarán en la Fase 3.
 
 ## Abrir y jugar
 
@@ -40,6 +43,20 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --path .
 
 Si el personaje cae fuera del escenario, reaparece automáticamente en el punto inicial.
 
+El objetivo de esta fase es seguir el sendero visible desde el punto inicial hasta el mirador. La distancia restante aparece en la parte superior de la pantalla.
+
+## Editar el terreno
+
+Terrain3D ya está activado como plugin. Al abrir `scenes/world.tscn`, selecciona el nodo `Terrain3D` para mostrar sus herramientas de esculpido y pintura. Los datos editables están en `terrain/data`.
+
+El paisaje base se puede regenerar de forma determinista con:
+
+```bash
+tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tools/generate_terrain.gd
+```
+
+La regeneración reemplaza el relieve y las texturas procedurales actuales, por lo que debe usarse antes de hacer retoques manuales que se quieran conservar.
+
 ## Pruebas
 
 Se han ejecutado con Godot 4.7.1:
@@ -48,20 +65,24 @@ Se han ejecutado con Godot 4.7.1:
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --editor --path . --quit-after 3
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/smoke_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/player_movement_test.gd
+tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/terrain_route_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --quit-after 180
 ```
 
-La primera comprueba importación y sintaxis; la segunda, la estructura de escena y el mapa de entrada; la tercera simula avance y salto; la última mantiene el juego vivo durante tres segundos para detectar errores de ejecución.
+La primera comprueba importación y sintaxis; la segunda valida Terrain3D, mirador, estructura y controles; la tercera simula avance y salto; la cuarta mide toda la pendiente del sendero y aterriza al personaje sobre la tarima; la última mantiene el juego vivo durante tres segundos para detectar errores de ejecución.
+
+Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada; no afecta al juego ni a las pruebas.
 
 ## Estructura
 
 ```text
 assets/     futuros modelos, texturas y audio con licencia libre
-addons/     addons de Godot (Terrain3D llegará en la Fase 2)
+addons/     Terrain3D y futuros addons de Godot
 docs/       documentación adicional, incluido MCP
 scenes/     escenas `.tscn`
 scripts/    código GDScript comentado
 tests/      pruebas ejecutables en modo headless
+terrain/    regiones, material, texturas y vista previa del relieve
 tools/      utilidades y runtimes locales ignorados por Git
 ```
 
@@ -71,5 +92,4 @@ La instalación opcional está preparada y explicada en [docs/MCP_SETUP.md](docs
 
 ## Licencias y procedencia
 
-El código original de este repositorio se distribuye con licencia MIT; consulta [LICENSE](LICENSE). Los futuros recursos de terceros deberán registrarse con autor, URL y licencia antes de incorporarse. No se permite material extraído de Nintendo ni de ningún juego comercial.
-
+El código original de este repositorio se distribuye con licencia MIT; consulta [LICENSE](LICENSE). Terrain3D también usa licencia MIT y está registrado en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Los futuros recursos de terceros deberán registrar autor, URL y licencia antes de incorporarse. No se permite material extraído de Nintendo ni de ningún juego comercial.

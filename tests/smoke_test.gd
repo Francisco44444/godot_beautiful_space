@@ -5,6 +5,10 @@ extends SceneTree
 
 
 func _init() -> void:
+	call_deferred("_run_test")
+
+
+func _run_test() -> void:
 	var failures: Array[String] = []
 	var packed_scene := load("res://scenes/world.tscn") as PackedScene
 
@@ -13,9 +17,16 @@ func _init() -> void:
 	else:
 		var world := packed_scene.instantiate()
 		root.add_child(world)
+		# Terrain3D carga su directorio de regiones al entrar en el árbol.
+		await process_frame
+		await process_frame
 		_check_node(world, "Player", "CharacterBody3D", failures)
 		_check_node(world, "CameraRig/SpringArm3D/Camera3D", "Camera3D", failures)
-		_check_node(world, "TestGround/Collision", "CollisionShape3D", failures)
+		_check_node(world, "Terrain3D", "Terrain3D", failures)
+		_check_node(world, "Lookout/Deck/Collision", "CollisionShape3D", failures)
+		var terrain := world.get_node_or_null("Terrain3D")
+		if terrain != null and terrain.data.get_region_count() != 4:
+			failures.append("Terrain3D debería cargar cuatro regiones de terreno")
 		world.queue_free()
 
 	for action in ["move_forward", "move_back", "move_left", "move_right", "jump", "sprint"]:
@@ -23,7 +34,7 @@ func _init() -> void:
 			failures.append("Falta la acción de entrada: %s" % action)
 
 	if failures.is_empty():
-		print("SMOKE TEST OK: escena, nodos y controles disponibles.")
+		print("SMOKE TEST OK: Terrain3D, mirador, nodos y controles disponibles.")
 		quit(0)
 	else:
 		for failure in failures:

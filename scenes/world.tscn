@@ -1,8 +1,11 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=31 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
 [ext_resource type="Script" path="res://scripts/hud.gd" id="3_hud"]
+[ext_resource type="Script" path="res://scripts/world.gd" id="4_world"]
+[ext_resource type="Terrain3DAssets" path="res://terrain/data/assets.tres" id="5_assets"]
+[ext_resource type="Terrain3DMaterial" path="res://terrain/data/material.tres" id="6_material"]
 
 [sub_resource type="Environment" id="Environment_world"]
 background_mode = 1
@@ -11,28 +14,6 @@ ambient_light_source = 2
 ambient_light_color = Color(0.62, 0.7, 0.78, 1)
 ambient_light_energy = 0.75
 tonemap_mode = 2
-
-[sub_resource type="StandardMaterial3D" id="Material_ground"]
-albedo_color = Color(0.34, 0.49, 0.32, 1)
-roughness = 0.95
-
-[sub_resource type="BoxMesh" id="Mesh_ground"]
-material = SubResource("Material_ground")
-size = Vector3(50, 0.2, 50)
-
-[sub_resource type="BoxShape3D" id="Shape_ground"]
-size = Vector3(50, 0.2, 50)
-
-[sub_resource type="StandardMaterial3D" id="Material_stone"]
-albedo_color = Color(0.38, 0.4, 0.39, 1)
-roughness = 0.88
-
-[sub_resource type="BoxMesh" id="Mesh_stone"]
-material = SubResource("Material_stone")
-size = Vector3(2.2, 2.2, 2.2)
-
-[sub_resource type="BoxShape3D" id="Shape_stone"]
-size = Vector3(2.2, 2.2, 2.2)
 
 [sub_resource type="StandardMaterial3D" id="Material_body"]
 albedo_color = Color(0.18, 0.42, 0.54, 1)
@@ -64,6 +45,52 @@ roughness = 0.7
 material = SubResource("Material_scarf")
 size = Vector3(0.5, 0.12, 0.28)
 
+[sub_resource type="StandardMaterial3D" id="Material_wood"]
+albedo_color = Color(0.33, 0.2, 0.1, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Mesh_deck"]
+material = SubResource("Material_wood")
+size = Vector3(10, 0.35, 7)
+
+[sub_resource type="BoxShape3D" id="Shape_deck"]
+size = Vector3(10, 0.35, 7)
+
+[sub_resource type="BoxMesh" id="Mesh_rail_long"]
+material = SubResource("Material_wood")
+size = Vector3(10, 0.18, 0.18)
+
+[sub_resource type="BoxShape3D" id="Shape_rail_long"]
+size = Vector3(10, 0.18, 0.18)
+
+[sub_resource type="BoxMesh" id="Mesh_rail_side"]
+material = SubResource("Material_wood")
+size = Vector3(0.18, 0.18, 7)
+
+[sub_resource type="BoxShape3D" id="Shape_rail_side"]
+size = Vector3(0.18, 0.18, 7)
+
+[sub_resource type="BoxMesh" id="Mesh_post"]
+material = SubResource("Material_wood")
+size = Vector3(0.22, 1.35, 0.22)
+
+[sub_resource type="StandardMaterial3D" id="Material_beacon"]
+albedo_color = Color(1, 0.58, 0.2, 1)
+emission_enabled = true
+emission = Color(1, 0.27, 0.05, 1)
+emission_energy_multiplier = 2.2
+
+[sub_resource type="CylinderMesh" id="Mesh_beacon_pole"]
+material = SubResource("Material_wood")
+top_radius = 0.12
+bottom_radius = 0.18
+height = 3.2
+
+[sub_resource type="SphereMesh" id="Mesh_beacon_light"]
+material = SubResource("Material_beacon")
+radius = 0.34
+height = 0.68
+
 [sub_resource type="StyleBoxFlat" id="Style_panel"]
 bg_color = Color(0.055, 0.075, 0.09, 0.82)
 corner_radius_top_left = 12
@@ -79,11 +106,18 @@ font_color = Color(1, 0.9, 0.7, 1)
 font_size = 15
 font_color = Color(0.91, 0.94, 0.91, 1)
 
+[sub_resource type="LabelSettings" id="Label_objective"]
+font_size = 19
+font_color = Color(1, 0.85, 0.5, 1)
+outline_size = 7
+outline_color = Color(0.04, 0.05, 0.06, 0.82)
+
 [sub_resource type="LabelSettings" id="Label_crosshair"]
 font_size = 18
 font_color = Color(1, 1, 1, 0.72)
 
 [node name="World" type="Node3D"]
+script = ExtResource("4_world")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_world")
@@ -93,45 +127,22 @@ rotation_degrees = Vector3(-52, -32, 0)
 light_color = Color(1, 0.83, 0.66, 1)
 light_energy = 1.15
 shadow_enabled = true
-directional_shadow_max_distance = 80.0
+directional_shadow_max_distance = 220.0
 
-[node name="TestGround" type="StaticBody3D" parent="."]
+[node name="Terrain3D" type="Terrain3D" parent="."]
+data_directory = "res://terrain/data"
+material = ExtResource("6_material")
+assets = ExtResource("5_assets")
+collision_mode = 1
 collision_layer = 1
-collision_mask = 0
-
-[node name="Mesh" type="MeshInstance3D" parent="TestGround"]
-mesh = SubResource("Mesh_ground")
-
-[node name="Collision" type="CollisionShape3D" parent="TestGround"]
-shape = SubResource("Shape_ground")
-
-[node name="CameraCollisionTest" type="StaticBody3D" parent="."]
-position = Vector3(-4.5, 1.1, 1.5)
-rotation_degrees = Vector3(0, 23, 0)
-collision_layer = 1
-collision_mask = 0
-
-[node name="Mesh" type="MeshInstance3D" parent="CameraCollisionTest"]
-mesh = SubResource("Mesh_stone")
-
-[node name="Collision" type="CollisionShape3D" parent="CameraCollisionTest"]
-shape = SubResource("Shape_stone")
-
-[node name="MovementCollisionTest" type="StaticBody3D" parent="."]
-position = Vector3(5, 0.75, -4)
-rotation_degrees = Vector3(0, -18, 8)
-scale = Vector3(1.5, 0.7, 1.0)
-collision_layer = 1
-collision_mask = 0
-
-[node name="Mesh" type="MeshInstance3D" parent="MovementCollisionTest"]
-mesh = SubResource("Mesh_stone")
-
-[node name="Collision" type="CollisionShape3D" parent="MovementCollisionTest"]
-shape = SubResource("Shape_stone")
+collision_mask = 2
+collision_radius = 96
+collision_shape_size = 16
+top_level = true
+metadata/_edit_lock_ = true
 
 [node name="Player" type="CharacterBody3D" parent="."]
-position = Vector3(0, 0.05, 4)
+position = Vector3(0, 20, 190)
 collision_layer = 2
 collision_mask = 1
 script = ExtResource("1_player")
@@ -159,13 +170,91 @@ script = ExtResource("2_camera")
 target_path = NodePath("../Player")
 
 [node name="SpringArm3D" type="SpringArm3D" parent="CameraRig"]
-spring_length = 5.5
+spring_length = 6.2
 margin = 0.15
 collision_mask = 1
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig/SpringArm3D"]
 current = true
 fov = 68.0
+far = 1200.0
+
+[node name="Lookout" type="Node3D" parent="."]
+position = Vector3(98, 0, -110)
+
+[node name="Deck" type="StaticBody3D" parent="Lookout"]
+collision_layer = 1
+collision_mask = 0
+
+[node name="Mesh" type="MeshInstance3D" parent="Lookout/Deck"]
+position = Vector3(0, 0.18, 0)
+mesh = SubResource("Mesh_deck")
+
+[node name="Collision" type="CollisionShape3D" parent="Lookout/Deck"]
+position = Vector3(0, 0.18, 0)
+shape = SubResource("Shape_deck")
+
+[node name="NorthRailMesh" type="MeshInstance3D" parent="Lookout/Deck"]
+position = Vector3(0, 1.05, -3.4)
+mesh = SubResource("Mesh_rail_long")
+
+[node name="NorthRailCollision" type="CollisionShape3D" parent="Lookout/Deck"]
+position = Vector3(0, 1.05, -3.4)
+shape = SubResource("Shape_rail_long")
+
+[node name="SouthRailMesh" type="MeshInstance3D" parent="Lookout/Deck"]
+position = Vector3(0, 1.05, 3.4)
+mesh = SubResource("Mesh_rail_long")
+
+[node name="SouthRailCollision" type="CollisionShape3D" parent="Lookout/Deck"]
+position = Vector3(0, 1.05, 3.4)
+shape = SubResource("Shape_rail_long")
+
+[node name="EastRailMesh" type="MeshInstance3D" parent="Lookout/Deck"]
+position = Vector3(4.9, 1.05, 0)
+mesh = SubResource("Mesh_rail_side")
+
+[node name="EastRailCollision" type="CollisionShape3D" parent="Lookout/Deck"]
+position = Vector3(4.9, 1.05, 0)
+shape = SubResource("Shape_rail_side")
+
+[node name="PostNW" type="MeshInstance3D" parent="Lookout/Deck"]
+position = Vector3(-4.9, 0.68, -3.4)
+mesh = SubResource("Mesh_post")
+
+[node name="PostNE" type="MeshInstance3D" parent="Lookout/Deck"]
+position = Vector3(4.9, 0.68, -3.4)
+mesh = SubResource("Mesh_post")
+
+[node name="PostSE" type="MeshInstance3D" parent="Lookout/Deck"]
+position = Vector3(4.9, 0.68, 3.4)
+mesh = SubResource("Mesh_post")
+
+[node name="PostSW" type="MeshInstance3D" parent="Lookout/Deck"]
+position = Vector3(-4.9, 0.68, 3.4)
+mesh = SubResource("Mesh_post")
+
+[node name="BeaconPole" type="MeshInstance3D" parent="Lookout"]
+position = Vector3(3.7, 1.75, 2.2)
+mesh = SubResource("Mesh_beacon_pole")
+
+[node name="BeaconLight" type="MeshInstance3D" parent="Lookout"]
+position = Vector3(3.7, 3.45, 2.2)
+mesh = SubResource("Mesh_beacon_light")
+
+[node name="BeaconGlow" type="OmniLight3D" parent="Lookout"]
+position = Vector3(3.7, 3.45, 2.2)
+light_color = Color(1, 0.52, 0.22, 1)
+light_energy = 2.0
+omni_range = 9.0
+
+[node name="LookoutLabel" type="Label3D" parent="Lookout"]
+position = Vector3(0, 2.25, 0)
+billboard = 1
+no_depth_test = true
+text = "MIRADOR DEL VALLE"
+font_size = 34
+outline_size = 9
 
 [node name="HUD" type="CanvasLayer" parent="."]
 script = ExtResource("3_hud")
@@ -203,6 +292,16 @@ layout_mode = 2
 text = "Esc libera el ratón"
 label_settings = SubResource("Label_body")
 
+[node name="Objective" type="Label" parent="HUD"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 26.0
+offset_bottom = 58.0
+grow_horizontal = 2
+text = "✦ Sigue el sendero ocre hasta el mirador"
+label_settings = SubResource("Label_objective")
+horizontal_alignment = 1
+
 [node name="Crosshair" type="Label" parent="HUD"]
 anchors_preset = 8
 anchor_left = 0.5
@@ -219,4 +318,3 @@ text = "·"
 label_settings = SubResource("Label_crosshair")
 horizontal_alignment = 1
 vertical_alignment = 1
-
