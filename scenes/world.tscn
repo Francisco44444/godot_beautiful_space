@@ -1,4 +1,4 @@
-[gd_scene load_steps=40 format=3]
+[gd_scene load_steps=41 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
@@ -9,53 +9,53 @@
 [ext_resource type="PackedScene" path="res://scenes/horse.tscn" id="7_horse"]
 [ext_resource type="PackedScene" path="res://scenes/vegetation_scatter.tscn" id="8_vegetation"]
 [ext_resource type="PackedScene" path="res://scenes/audio_environment.tscn" id="9_audio"]
-[ext_resource type="PackedScene" path="res://scenes/medieval_set_dressing.tscn" id="10_medieval"]
+[ext_resource type="PackedScene" path="res://scenes/epic_landmark.tscn" id="10_epic"]
+[ext_resource type="Texture2D" path="res://assets/models/photorealistic/hdri/kloppenheim_06_puresky_2k.hdr" id="11_hdri"]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSky_sunset"]
-sky_top_color = Color(0.12, 0.2, 0.38, 1)
-sky_horizon_color = Color(0.95, 0.55, 0.32, 1)
-sky_curve = 0.14
-sky_energy_multiplier = 0.96
-ground_bottom_color = Color(0.055, 0.075, 0.09, 1)
-ground_horizon_color = Color(0.42, 0.31, 0.29, 1)
-ground_curve = 0.045
-ground_energy_multiplier = 0.48
-sun_angle_max = 8.0
-sun_curve = 0.08
+[sub_resource type="PanoramaSkyMaterial" id="PanoramaSky_misty"]
+panorama = ExtResource("11_hdri")
+energy_multiplier = 0.58
 
 [sub_resource type="Sky" id="Sky_sunset"]
-radiance_size = 3
-sky_material = SubResource("ProceduralSky_sunset")
+radiance_size = 4
+sky_material = SubResource("PanoramaSky_misty")
 
 [sub_resource type="Environment" id="Environment_world"]
 background_mode = 2
 sky = SubResource("Sky_sunset")
-background_energy_multiplier = 0.82
+background_energy_multiplier = 0.78
 ambient_light_source = 3
-ambient_light_color = Color(0.68, 0.76, 0.92, 1)
-ambient_light_energy = 0.82
+ambient_light_color = Color(0.7, 0.78, 0.86, 1)
+ambient_light_energy = 0.5
 reflected_light_source = 2
 tonemap_mode = 3
-tonemap_exposure = 1.02
+tonemap_exposure = 0.84
+ssao_enabled = true
+ssao_radius = 2.2
+ssao_intensity = 2.0
+ssao_power = 1.35
 glow_enabled = true
 glow_normalized = true
-glow_intensity = 0.82
-glow_bloom = 0.09
+glow_intensity = 0.38
+glow_bloom = 0.035
 volumetric_fog_enabled = true
-volumetric_fog_density = 0.0018
-volumetric_fog_albedo = Color(0.78, 0.84, 0.92, 1)
+volumetric_fog_density = 0.00125
+volumetric_fog_albedo = Color(0.72, 0.79, 0.84, 1)
 volumetric_fog_emission = Color(0.012, 0.014, 0.022, 1)
-volumetric_fog_emission_energy = 0.18
-volumetric_fog_length = 280.0
-volumetric_fog_sky_affect = 0.38
-volumetric_fog_temporal_reprojection_amount = 0.82
+volumetric_fog_emission_energy = 0.08
+volumetric_fog_length = 520.0
+volumetric_fog_sky_affect = 0.26
+volumetric_fog_temporal_reprojection_amount = 0.72
+adjustment_enabled = true
+adjustment_contrast = 1.06
+adjustment_saturation = 1.08
 
 [sub_resource type="FogMaterial" id="FogMaterial_valley"]
-density = 0.018
+density = 0.0065
 albedo = Color(0.76, 0.82, 0.9, 1)
 emission = Color(0.008, 0.01, 0.018, 1)
-edge_fade = 0.32
-height_falloff = 0.16
+edge_fade = 0.42
+height_falloff = 0.28
 
 [sub_resource type="StandardMaterial3D" id="Material_body"]
 albedo_color = Color(0.18, 0.42, 0.54, 1)
@@ -171,23 +171,23 @@ script = ExtResource("4_world")
 environment = SubResource("Environment_world")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-14, -118, 0)
-light_color = Color(1, 0.76, 0.58, 1)
-light_energy = 1.0
+rotation_degrees = Vector3(-19, -118, 0)
+light_color = Color(1, 0.88, 0.74, 1)
+light_energy = 0.96
 shadow_enabled = true
 directional_shadow_max_distance = 300.0
 directional_shadow_fade_start = 0.82
-light_volumetric_fog_energy = 1.15
+light_volumetric_fog_energy = 0.88
 
 [node name="SkyFill" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-48, 52, 0)
-light_color = Color(0.55, 0.68, 1, 1)
-light_energy = 0.38
+light_color = Color(0.58, 0.7, 0.92, 1)
+light_energy = 0.22
 sky_mode = 1
 
 [node name="ValleyMist" type="FogVolume" parent="."]
-position = Vector3(0, 6, 18)
-size = Vector3(350, 16, 410)
+position = Vector3(18, 4, 12)
+size = Vector3(330, 12, 390)
 material = SubResource("FogMaterial_valley")
 
 [node name="Terrain3D" type="Terrain3D" parent="."]
@@ -204,7 +204,8 @@ metadata/_edit_lock_ = true
 
 [node name="VegetationScatter" parent="." instance=ExtResource("8_vegetation")]
 
-[node name="MedievalSetDressing" parent="." instance=ExtResource("10_medieval")]
+[node name="EpicLandmark" parent="." instance=ExtResource("10_epic")]
+position = Vector3(-48, 0, 0)
 
 [node name="AmbientAudio" parent="." instance=ExtResource("9_audio")]
 
@@ -219,13 +220,13 @@ script = ExtResource("2_camera")
 target_path = NodePath("../Player")
 
 [node name="SpringArm3D" type="SpringArm3D" parent="CameraRig"]
-spring_length = 6.2
+spring_length = 5.45
 margin = 0.15
 collision_mask = 1
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig/SpringArm3D"]
 current = true
-fov = 68.0
+fov = 64.0
 far = 1200.0
 
 [node name="Lookout" type="Node3D" parent="."]

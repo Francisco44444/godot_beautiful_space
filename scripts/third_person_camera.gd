@@ -5,7 +5,7 @@ extends Node3D
 ## SpringArm3D acerca automáticamente la cámara cuando hay una pared detrás.
 
 @export var target_path: NodePath
-@export var target_height: float = 1.35
+@export var target_height: float = 1.0
 @export var mouse_sensitivity: float = 0.003
 @export var follow_speed: float = 12.0
 @export var min_pitch_degrees: float = -55.0
@@ -21,7 +21,7 @@ extends Node3D
 @onready var camera: Camera3D = $SpringArm3D/Camera3D
 
 var yaw: float = 0.0
-var pitch: float = deg_to_rad(-18.0)
+var pitch: float = deg_to_rad(-14.0)
 var _current_height: float
 var _foot_distance: float
 var _foot_fov: float

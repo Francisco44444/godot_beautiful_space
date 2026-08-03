@@ -28,8 +28,11 @@ func _run_test() -> void:
 		_check_node(world, "AmbientAudio/Music", "AudioStreamPlayer", failures)
 		_check_node(world, "AmbientAudio/Wind", "AudioStreamPlayer", failures)
 		_check_node(world, "AmbientAudio/Birds", "AudioStreamPlayer", failures)
-		_check_node(world, "MedievalSetDressing", "Node3D", failures)
+		_check_node(world, "EpicLandmark", "Node3D", failures)
 		_check_node(world, "Player/Visual/ModelRoot/AnimationPlayer", "AnimationPlayer", failures)
+		_check_node(world, "Player/Visual/RealisticPose/RealisticHero", "Node3D", failures)
+		_check_node(world, "Player/Visual/RealisticPose/RealisticSwordGrip/EquippedSword", "MeshInstance3D", failures)
+		_check_node(world, "Horse/Visual/ModelRoot/AnimationPlayer", "AnimationPlayer", failures)
 		_check_node(world, "Player/Visual/AttackArea", "Area3D", failures)
 		_check_node(world, "Terrain3D", "Terrain3D", failures)
 		_check_node(world, "Lookout/Deck/Collision", "CollisionShape3D", failures)
@@ -45,7 +48,7 @@ func _run_test() -> void:
 			failures.append("Falta la acción de entrada: %s" % action)
 
 	if failures.is_empty():
-		print("SMOKE TEST OK: Terrain3D, mirador, audio, nodos y controles disponibles.")
+		print("SMOKE TEST OK: Terrain3D, hito épico, mirador, audio, nodos y controles disponibles.")
 		quit(0)
 	else:
 		for failure in failures:

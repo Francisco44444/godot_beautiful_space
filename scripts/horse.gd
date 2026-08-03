@@ -5,8 +5,6 @@ extends CharacterBody3D
 ## El caballo conserva su propia física: Player solo activa o desactiva el control
 ## y coloca su representación visual sobre RiderAnchor.
 
-const COAT_ALBEDO: Texture2D = preload("res://assets/textures/realistic/horse_coat_albedo.png")
-const COAT_NORMAL: Texture2D = preload("res://assets/textures/realistic/horse_coat_normal_roughness.png")
 const HOOFBEATS: Array[AudioStream] = [
 	preload("res://assets/audio/original/hoof_1.wav"),
 	preload("res://assets/audio/original/hoof_2.wav"),
@@ -29,7 +27,6 @@ const HOOFBEATS: Array[AudioStream] = [
 @onready var visual: Node3D = $Visual
 @onready var rider_anchor: Marker3D = $Visual/RiderAnchor
 @onready var name_label: Label3D = $NameLabel
-@onready var model_mesh: MeshInstance3D = $Visual/ModelRoot/Armature/Skeleton3D/Horse
 @onready var animation_player: AnimationPlayer = $Visual/ModelRoot/AnimationPlayer
 @onready var hoof_audio: AudioStreamPlayer3D = $HoofAudio
 
@@ -49,7 +46,7 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(48.0)
 	# La acción contextual vive en el HUD y solo aparece cuando está al alcance.
 	name_label.text = horse_name.to_upper()
-	_apply_realistic_materials()
+	name_label.visible = false
 	_prepare_animation_library()
 
 
@@ -71,7 +68,7 @@ func _physics_process(delta: float) -> void:
 
 func set_mounted(value: bool) -> void:
 	mounted = value
-	name_label.visible = not mounted
+	name_label.visible = false
 	if not mounted:
 		# El caballo no se detiene en seco al desmontar; pierde inercia suavemente.
 		velocity.x *= 0.45
@@ -125,31 +122,11 @@ func _slow_to_stop(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, 0.0, braking * delta)
 
 
-func _apply_realistic_materials() -> void:
-	# El modelo CC0 no trae UVs. El triplanar proyecta el pelaje en tres ejes
-	# y evita estiramientos incluso al animarse el esqueleto.
-	var coat := StandardMaterial3D.new()
-	coat.albedo_texture = COAT_ALBEDO
-	coat.albedo_color = Color(0.88, 0.82, 0.76, 1.0)
-	coat.roughness = 0.72
-	coat.normal_enabled = true
-	coat.normal_texture = COAT_NORMAL
-	coat.normal_scale = 0.32
-	coat.uv1_triplanar = true
-	coat.uv1_scale = Vector3(18.0, 18.0, 18.0)
-
-	var dark_coat := coat.duplicate() as StandardMaterial3D
-	dark_coat.albedo_color = Color(0.12, 0.105, 0.095, 1.0)
-	dark_coat.roughness = 0.82
-	model_mesh.set_surface_override_material(0, coat)
-	model_mesh.set_surface_override_material(1, dark_coat)
-
-
 func _prepare_animation_library() -> void:
-	for animation_name in animation_player.get_animation_list():
-		if animation_name not in ["Armature|Death", "Armature|Jump"]:
+	for animation_name in ["Skeleton|1 Ilde", "Skeleton|2 Ilde", "Skeleton|3 Ilde", "Skeleton|Walk", "Skeleton|Walk_L", "Skeleton|Walk_R", "Skeleton|Gallop", "Skeleton|Gallop_L", "Skeleton|Gallop_R"]:
+		if animation_player.has_animation(animation_name):
 			animation_player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
-	animation_player.play("Armature|Idle")
+	animation_player.play("Skeleton|1 Ilde")
 
 
 func _update_animation(delta: float) -> void:
@@ -157,23 +134,20 @@ func _update_animation(delta: float) -> void:
 	var motion_amount := clampf(horizontal_speed / gallop_speed, 0.0, 1.0)
 	_stride_time += delta * lerpf(2.5, 10.0, motion_amount)
 
-	var requested_animation := "Armature|Idle"
+	var requested_animation := "Skeleton|1 Ilde"
 	var playback_speed := 1.0
-	if horizontal_speed > 12.0:
-		requested_animation = "Armature|Run"
+	if horizontal_speed > 7.0:
+		requested_animation = "Skeleton|Gallop"
 		playback_speed = clampf(horizontal_speed / gallop_speed, 0.75, 1.15)
-	elif horizontal_speed > 7.0:
-		requested_animation = "Armature|Walk"
-		playback_speed = clampf(horizontal_speed / canter_speed, 0.8, 1.25)
 	elif horizontal_speed > 0.25:
-		requested_animation = "Armature|WalkSlow"
+		requested_animation = "Skeleton|Walk"
 		playback_speed = clampf(horizontal_speed / walk_speed, 0.55, 1.15)
 
 	if animation_player.current_animation != requested_animation:
 		animation_player.play(requested_animation, 0.22)
 	animation_player.speed_scale = playback_speed
 
-	# El ancla acompaña suavemente el lomo aunque el jinete sea un placeholder.
+	# El ancla acompaña suavemente el lomo para que el jinete siga la zancada.
 	var bob := absf(sin(_stride_time * 2.0)) * 0.075 * motion_amount
 	rider_anchor.position.y = lerpf(rider_anchor.position.y, _rider_base_height + bob, 0.3)
 

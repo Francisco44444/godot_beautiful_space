@@ -56,29 +56,13 @@ func _generate() -> void:
 	)
 	terrain.data.save_directory(DATA_DIRECTORY)
 
-	var assets := Terrain3DAssets.new()
-	assets.set_texture(0, _create_texture("Pradera", Color("6f9852"), Color("91b96a"), 0.12, 0.88))
-	assets.set_texture(1, _create_texture("Sendero", Color("9a7045"), Color("c09a63"), 0.1, 0.96))
-	assets.set_texture(2, _create_texture("Roca", Color("646762"), Color("8a8d84"), 0.08, 0.82))
-	var assets_error := ResourceSaver.save(assets, DATA_DIRECTORY + "/assets.tres")
-	if assets_error != OK:
-		_fail("No se pudieron guardar los assets de Terrain3D: %s" % assets_error)
+	# El generador solo sustituye relieve y mapa de control. Los recursos PBR
+	# mantenidos en assets.tres/material.tres no se pisan al regenerar el valle.
+	if not FileAccess.file_exists(DATA_DIRECTORY + "/assets.tres"):
+		_fail("Falta terrain/data/assets.tres con las capas PBR de Terrain3D.")
 		return
-
-	var material := Terrain3DMaterial.new()
-	material.world_background = Terrain3DMaterial.NONE
-	material.auto_shader = true
-	material.set_shader_param("auto_base_texture", 0)
-	material.set_shader_param("auto_overlay_texture", 2)
-	material.set_shader_param("auto_slope", 0.62)
-	material.set_shader_param("blend_sharpness", 0.82)
-	material.set_shader_param("enable_macro_variation", true)
-	material.set_shader_param("macro_variation1", Color(0.92, 0.96, 0.86, 1.0))
-	material.set_shader_param("macro_variation2", Color(0.82, 0.88, 0.76, 1.0))
-	material.set_shader_param("macro_variation_slope", 0.45)
-	var material_error := ResourceSaver.save(material, DATA_DIRECTORY + "/material.tres")
-	if material_error != OK:
-		_fail("No se pudo guardar el material de Terrain3D: %s" % material_error)
+	if not FileAccess.file_exists(DATA_DIRECTORY + "/material.tres"):
+		_fail("Falta terrain/data/material.tres.")
 		return
 
 	var preview := Terrain3DUtil.get_thumbnail(height_map, Vector2i(512, 512))
@@ -139,8 +123,8 @@ func _sample_trail(point: Vector2) -> Vector2:
 
 func _control_pixel(distance_to_trail: float) -> Color:
 	var bits: int
-	if distance_to_trail < 15.0:
-		var dirt_strength := 1.0 - smoothstep(5.0, 15.0, distance_to_trail)
+	if distance_to_trail < 4.8:
+		var dirt_strength := 1.0 - smoothstep(1.7, 4.8, distance_to_trail)
 		bits = Terrain3DUtil.enc_base(0)
 		bits |= Terrain3DUtil.enc_overlay(1)
 		bits |= Terrain3DUtil.enc_blend(roundi(dirt_strength * 255.0))
@@ -148,7 +132,11 @@ func _control_pixel(distance_to_trail: float) -> Color:
 	else:
 		bits = Terrain3DUtil.enc_base(0)
 		bits |= Terrain3DUtil.enc_overlay(2)
-		bits |= Terrain3DUtil.enc_auto(true)
+		# Las laderas cercanas conservan la pradera húmeda. El antiguo modo
+		# automático interpretaba casi toda la cuenca como roca clara y borraba
+		# visualmente el tapiz verde; los riscos del fondo ya usan mallas PBR.
+		bits |= Terrain3DUtil.enc_blend(0)
+		bits |= Terrain3DUtil.enc_auto(false)
 	return Color(Terrain3DUtil.as_float(bits), 0.0, 0.0, 1.0)
 
 

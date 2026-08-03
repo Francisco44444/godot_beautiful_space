@@ -34,8 +34,10 @@ func _run_test() -> void:
 			failures.append("El fondo debe usar un cielo")
 		if environment.sky == null:
 			failures.append("Falta el recurso Sky")
-		elif not environment.sky.sky_material is ProceduralSkyMaterial:
-			failures.append("El cielo debe usar ProceduralSkyMaterial")
+		elif not environment.sky.sky_material is PanoramaSkyMaterial:
+			failures.append("El cielo debe usar PanoramaSkyMaterial")
+		elif (environment.sky.sky_material as PanoramaSkyMaterial).panorama == null:
+			failures.append("El cielo panorámico no tiene un HDRI asignado")
 		if not environment.volumetric_fog_enabled:
 			failures.append("La niebla volumétrica está desactivada")
 		if environment.volumetric_fog_density <= 0.0:
@@ -71,7 +73,7 @@ func _run_test() -> void:
 		_fail(failures)
 		return
 
-	print("ATMOSPHERE TEST OK: Forward+, cielo procedural, sol bajo y bruma volumétrica.")
+	print("ATMOSPHERE TEST OK: Forward+, cielo HDRI panorámico, sol bajo y bruma volumétrica.")
 	quit(0)
 
 

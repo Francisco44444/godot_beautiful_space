@@ -1,7 +1,7 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/horse.gd" id="1_horse"]
-[ext_resource type="PackedScene" path="res://assets/models/horse/Horse.fbx" id="2_model"]
+[ext_resource type="PackedScene" path="res://assets/models/realistic_horse/horse_henry_s_1k.glb" id="2_model"]
 [ext_resource type="AudioStream" path="res://assets/audio/original/hoof_1.wav" id="3_hoof_1"]
 [ext_resource type="AudioStream" path="res://assets/audio/original/hoof_2.wav" id="4_hoof_2"]
 [ext_resource type="AudioStream" path="res://assets/audio/original/hoof_3.wav" id="5_hoof_3"]
@@ -10,15 +10,6 @@
 [sub_resource type="CapsuleShape3D" id="Shape_horse"]
 radius = 0.72
 height = 2.75
-
-[sub_resource type="StandardMaterial3D" id="Material_saddle"]
-albedo_color = Color(0.055, 0.105, 0.115, 1)
-metallic = 0.08
-roughness = 0.63
-
-[sub_resource type="BoxMesh" id="Mesh_saddle"]
-material = SubResource("Material_saddle")
-size = Vector3(1.22, 0.16, 0.92)
 
 [node name="Horse" type="CharacterBody3D" groups=["mountable"]]
 collision_layer = 2
@@ -33,14 +24,10 @@ shape = SubResource("Shape_horse")
 
 [node name="ModelRoot" parent="Visual" instance=ExtResource("2_model")]
 rotation_degrees = Vector3(0, 180, 0)
-scale = Vector3(0.35, 0.35, 0.35)
-
-[node name="Saddle" type="MeshInstance3D" parent="Visual"]
-position = Vector3(0, 2.18, 0.1)
-mesh = SubResource("Mesh_saddle")
+scale = Vector3(0.1, 0.1, 0.1)
 
 [node name="RiderAnchor" type="Marker3D" parent="Visual"]
-position = Vector3(0, 1.72, 0.16)
+position = Vector3(0, 1.58, 0.04)
 
 [node name="HoofAudio" type="AudioStreamPlayer3D" parent="."]
 stream = ExtResource("3_hoof_1")
