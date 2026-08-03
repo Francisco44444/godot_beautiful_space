@@ -1,0 +1,11 @@
+# Godot genera esta carpeta al importar el proyecto.
+.godot/
+
+# Builds locales y archivos del sistema.
+builds/
+.DS_Store
+.idea/
+
+# Dependencias locales opcionales del servidor MCP.
+tools/godot-mcp/
+tools/runtime/
