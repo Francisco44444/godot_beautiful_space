@@ -17,7 +17,7 @@ func _process(_delta: float) -> void:
 		mount_hint.text = "E · Desmontar de %s" % player.current_mount.horse_name
 		mount_hint.visible = true
 	else:
-		controls.text = "WASD / flechas · caminar   Espacio · saltar\nMayús · correr   E · montar   Ratón · mirar"
+		controls.text = "WASD / flechas · caminar   Espacio · saltar\nClic izq. · espada   Mayús · correr   E · montar"
 		var nearby_horse := player.get_nearby_mount()
 		mount_hint.visible = nearby_horse != null
 		if nearby_horse != null:

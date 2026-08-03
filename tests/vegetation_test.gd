@@ -49,6 +49,11 @@ func _run_test() -> void:
 			_fail("Un árbol invadió el corredor despejado del sendero.")
 			return
 
+	var collision_body := scatter.get_node("DecorCollisions") as StaticBody3D
+	if collision_body.get_child_count() != 610:
+		_fail("Todos los 420 árboles y las 190 rocas deben tener colisión.")
+		return
+
 	var model := horse.get_node("Visual/ModelRoot/Armature/Skeleton3D/Horse") as MeshInstance3D
 	var animator := horse.get_node("Visual/ModelRoot/AnimationPlayer") as AnimationPlayer
 	if model == null or model.mesh == null:
@@ -65,7 +70,7 @@ func _run_test() -> void:
 	world.queue_free()
 	for _frame in range(8):
 		await process_frame
-	print("VEGETATION TEST OK: 420 árboles, 190 rocas, 6200 hierbas y caballo animado.")
+	print("VEGETATION TEST OK: bosque completo sólido, 6200 hierbas y caballo animado.")
 	quit(0)
 
 

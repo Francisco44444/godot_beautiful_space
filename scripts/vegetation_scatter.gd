@@ -7,8 +7,8 @@ extends Node3D
 const BARK_ALBEDO: Texture2D = preload("res://assets/textures/realistic/pine_bark_albedo.png")
 const BARK_NORMAL: Texture2D = preload("res://assets/textures/realistic/pine_bark_normal_roughness.png")
 const PINE_BRANCH: Texture2D = preload("res://assets/textures/realistic/pine_branch_albedo.png")
-const ROCK_ALBEDO: Texture2D = preload("res://assets/textures/realistic/granite_albedo.png")
-const ROCK_NORMAL: Texture2D = preload("res://assets/textures/realistic/granite_normal_roughness.png")
+const ROCK_ALBEDO: Texture2D = preload("res://assets/textures/cc0/polyhaven/mossy_rock/albedo.jpg")
+const ROCK_NORMAL: Texture2D = preload("res://assets/textures/cc0/polyhaven/mossy_rock/normal_roughness.png")
 const FOLIAGE_SHADER: Shader = preload("res://shaders/foliage.gdshader")
 const GRASS_SHADER: Shader = preload("res://shaders/grass.gdshader")
 
@@ -106,8 +106,8 @@ func _scatter_forest() -> void:
 				crowns.append(_make_transform(base + Vector3.UP * tree_height * layer_heights[layer], card_yaw, crown_layers[layer]))
 				crown_tints.append(Color(tint, 0.0, 0.0, 1.0))
 
-		if route_distance < 38.0 and _tree_colliders < 110:
-			_add_tree_collision(base, tree_height, width)
+		# Todo tronco visible es sólido, no solo los cercanos al sendero.
+		_add_tree_collision(base, tree_height, width)
 
 	_install_multimesh("TreeTrunks", trunk_mesh, trunks, trunk_tints, 430.0, true)
 	_install_multimesh("TreeCrowns", crown_mesh, crowns, crown_tints, 430.0, true)
@@ -144,8 +144,8 @@ func _scatter_rocks() -> void:
 		var base := Vector3(point.x, height + scale.y * 0.55, point.y)
 		transforms.append(_make_transform(base, yaw, scale))
 		tints.append(Color(_random.randf_range(0.82, 1.08), 0.0, 0.0, 1.0))
-		if route_distance < 24.0 and scale.length() > 1.8 and _rock_colliders < 55:
-			_add_rock_collision(base, scale)
+		# Toda roca visible bloquea al jugador y a la montura.
+		_add_rock_collision(base, scale)
 
 	_install_multimesh("Rocks", rock_mesh, transforms, tints, 320.0, true)
 	generated_rock_count = transforms.size()

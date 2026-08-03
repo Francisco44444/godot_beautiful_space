@@ -28,6 +28,9 @@ func _run_test() -> void:
 		_check_node(world, "AmbientAudio/Music", "AudioStreamPlayer", failures)
 		_check_node(world, "AmbientAudio/Wind", "AudioStreamPlayer", failures)
 		_check_node(world, "AmbientAudio/Birds", "AudioStreamPlayer", failures)
+		_check_node(world, "MedievalSetDressing", "Node3D", failures)
+		_check_node(world, "Player/Visual/ModelRoot/AnimationPlayer", "AnimationPlayer", failures)
+		_check_node(world, "Player/Visual/AttackArea", "Area3D", failures)
 		_check_node(world, "Terrain3D", "Terrain3D", failures)
 		_check_node(world, "Lookout/Deck/Collision", "CollisionShape3D", failures)
 		var terrain := world.get_node_or_null("Terrain3D")
@@ -37,7 +40,7 @@ func _run_test() -> void:
 		for _frame in range(8):
 			await process_frame
 
-	for action in ["move_forward", "move_back", "move_left", "move_right", "jump", "sprint", "interact"]:
+	for action in ["move_forward", "move_back", "move_left", "move_right", "jump", "sprint", "interact", "attack"]:
 		if not InputMap.has_action(action):
 			failures.append("Falta la acción de entrada: %s" % action)
 

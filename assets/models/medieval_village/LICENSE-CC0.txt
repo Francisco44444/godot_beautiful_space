@@ -1,0 +1,9 @@
+Medieval Village MegaKit — Standard selection
+Author: Quaternius
+Official source: https://quaternius.com/packs/medievalvillagemegakit.html
+Download mirror: https://opengameart.org/content/medieval-village-megakit
+License: Creative Commons CC0 1.0 Universal
+License text: https://creativecommons.org/publicdomain/zero/1.0/
+
+Only the glTF modules and shared textures used by Senderos del Horizonte are
+included. The unmodified 100 MB archive is not stored in this repository.

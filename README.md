@@ -1,11 +1,12 @@
 # Senderos del Horizonte
 
-Prototipo de aventura y exploración contemplativa en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Están terminadas las Fases 0 a 6: cimientos técnicos, personaje a pie, paisaje explorable, atmósfera de atardecer, montura, vegetación optimizada y paisaje sonoro.
+Juego de aventura y exploración medieval en tercera persona, construido con Godot 4.7, GDScript y Terrain3D. Las Fases 0 a 6 forman ya una vertical jugable con protagonista, combate, montura, valle, vegetación, arquitectura y paisaje sonoro.
 
 ## Estado actual
 
 - Proyecto Godot 4.7.1 con Jolt Physics.
-- Personaje `CharacterBody3D` con colisión, gravedad, salto, marcha y carrera.
+- Aventurero medieval original CC0, con esqueleto, materiales PBR de lana y cuero, espada equipada y animaciones de reposo, marcha, carrera, salto y ataque.
+- Combate con clic izquierdo o mando, ventana de impacto, recuperación y cajas rompibles de dos golpes.
 - Caballo CC0 llamado Brisa, con esqueleto y animaciones de reposo, paso, trote y galope.
 - Máquina de estados `ON_FOOT` / `MOUNTED`, con montaje y desmontaje reversible.
 - Material triplanar de pelaje con albedo, normal y rugosidad originales.
@@ -19,14 +20,15 @@ Prototipo de aventura y exploración contemplativa en tercera persona, construid
 - Niebla volumétrica ligera y bruma localizada bajo la cota del mirador.
 - Resplandor sutil en el sol y la baliza del destino.
 - Bosque determinista de 420 pinos, 190 rocas y 6.200 matas de hierba.
-- Dibujado por `MultiMesh`, distancias de visibilidad y colisiones limitadas a los elementos cercanos.
+- Dibujado por `MultiMesh` y distancias de visibilidad; los 420 árboles y las 190 rocas tienen colisión física.
+- Posada modular, carro, cercas, cajas rompibles y ruinas construidos con 38 piezas CC0 y 36 cuerpos sólidos.
 - Corredor libre de árboles alrededor del sendero, del inicio, de Brisa y del mirador.
 - Música ambiental original de 48 segundos con entrada suave y loop continuo.
 - Capas originales de viento y aves, mezcladas de forma independiente.
 - Cuatro cascos alternos en audio 3D, sincronizados con paso, trote y galope.
 - Mezcla adaptativa: al ganar velocidad sube el viento y se abren espacio la música y los pájaros.
 - HUD mínimo con los controles.
-- Once texturas originales para terreno, roca, corteza, ramas y pelaje; no se usan recursos de juegos comerciales.
+- Terreno y roca con mapas PBR CC0 de Poly Haven; materiales propios para vestuario, corteza, ramas y pelaje. No se usan recursos de juegos comerciales.
 
 ## Abrir y jugar
 
@@ -55,6 +57,7 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --path .
 | Caminar | `WASD` o flechas | Stick izquierdo |
 | Correr | `Mayús` | Pulsar stick izquierdo |
 | Saltar | `Espacio` | Botón inferior |
+| Atacar con espada | Clic izquierdo | Botón superior |
 | Montar / desmontar | `E` junto a Brisa | Botón izquierdo |
 | Galopar montado | `Mayús` + dirección | Pulsar stick izquierdo + dirección |
 | Orbitar cámara | Mover ratón | — |
@@ -73,13 +76,19 @@ El modelo animado procede del paquete CC0 de Quaternius. `Player` conserva la m�
 
 ## Vegetación y materiales
 
-`VegetationScatter` usa una semilla fija para reconstruir siempre el mismo decorado. Los troncos, las ramas recortadas con alfa, las rocas y la hierba se agrupan en cuatro `MultiMeshInstance3D`; la densidad visual no implica crear miles de nodos. Solo los árboles y rocas relevantes cerca de la ruta reciben colisión.
+`VegetationScatter` usa una semilla fija para reconstruir siempre el mismo decorado. Los troncos, las ramas recortadas con alfa, las rocas y la hierba se agrupan en cuatro `MultiMeshInstance3D`; la densidad visual no implica crear miles de nodos. Cada árbol y cada roca visible tiene colisión.
 
-Los albedos de pradera, sendero, granito, corteza, agujas y pelaje se crearon específicamente para el proyecto con una dirección visual realista, sobria y norteña. Los mapas normal/roughness pueden regenerarse con:
+Pradera, sendero adoquinado y roca usan albedo, normal y rugosidad CC0 de Poly Haven. La corteza, las agujas, el pelaje y los materiales de vestuario son propios. Los mapas combinados normal/roughness se preparan con:
 
 ```bash
-python3 tools/generate_material_maps.py
+python3 tools/prepare_medieval_materials.py
 ```
+
+## Combate y ambientación medieval
+
+El protagonista usa el esqueleto y las animaciones del caballero CC0 de Quaternius. La espada se enlaza en tiempo de ejecución al hueso `Palm.R`; el área de daño solo se activa durante la parte útil de la animación. Las cajas cercanas al carro y al mirador reaccionan al primer golpe y se rompen con el segundo.
+
+`MedievalSetDressing` coloca de forma determinista una posada de entramado, cubierta de tejas, carro, cercas, cajas y restos de muros. Cada elemento sólido recibe una forma de colisión simplificada para mantener la física estable sin usar colisión cóncava compleja.
 
 ## Música y sonido ambiental
 
@@ -126,17 +135,18 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/mounting_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/vegetation_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/audio_test.gd
+tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/medieval_combat_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/runtime_stability_test.gd
 ```
 
-La primera comprueba importación y sintaxis; la segunda valida Terrain3D, caballo, mirador, estructura, atmósfera y controles; la tercera simula avance y salto; la cuarta mide toda la pendiente del sendero y aterriza al personaje sobre la tarima; la quinta valida Forward+, cielo procedural, luz y niebla; la sexta monta, abre la cámara, galopa y desmonta; la séptima verifica densidades, `MultiMesh`, corredor libre y animaciones; la octava valida buses, loops y cascos durante un galope simulado; la última mantiene el juego vivo para detectar errores de ejecución.
+Las pruebas validan importación, Terrain3D, ruta, atmósfera, movimiento, montura, audio, densidades, las 610 colisiones del bosque y las rocas, el esqueleto del héroe, la espada enlazada, sus animaciones, impactos, cajas rompibles y decorado medieval. La prueba de estabilidad mantiene además el juego vivo para detectar errores de ejecución.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada; no afecta al juego ni a las pruebas.
 
 ## Estructura
 
 ```text
-assets/     modelo CC0, texturas y audio original del proyecto
+assets/     modelos CC0, texturas PBR CC0 y contenido original del proyecto
 addons/     Terrain3D y futuros addons de Godot
 docs/       documentación adicional, incluido MCP
 scenes/     escenas `.tscn`
@@ -152,4 +162,4 @@ La instalación opcional está preparada y explicada en [docs/MCP_SETUP.md](docs
 
 ## Licencias y procedencia
 
-El código original de este repositorio se distribuye con licencia MIT; consulta [LICENSE](LICENSE). Terrain3D (MIT) y el caballo de Quaternius (CC0) están registrados en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). La música y los ambientes de la Fase 6 son obras originales del proyecto. Los futuros recursos de terceros deberán registrar autor, URL y licencia antes de incorporarse. No se permite material extraído de Nintendo ni de ningún juego comercial.
+El código original de este repositorio se distribuye con licencia MIT; consulta [LICENSE](LICENSE). Terrain3D (MIT), los modelos de Quaternius (CC0) y los materiales de Poly Haven (CC0) están registrados en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). La música, los ambientes y los materiales de vestuario son obras originales del proyecto. No se permite material extraído de Nintendo ni de ningún juego comercial.
