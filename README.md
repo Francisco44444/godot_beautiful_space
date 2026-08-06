@@ -9,15 +9,15 @@ Aventura medieval en tercera persona construida con Godot 4.7, GDScript y Terrai
 - Cuchillo del *Survival Pack* visible, ataque cuerpo a cuerpo, ventana de impacto y objetos rompibles.
 - Caballo animado de Quaternius con reposo, paso y galope; jinete sentado sobre la silla y montaje reversible.
 - Seis animales Quaternius —ciervos, zorro, lobo y venado— que detectan al jugador y se apartan.
-- Cámara orbital más abierta: 7,4 m a pie y 12 m al montar, con transición suave.
-- Terrain3D con cuatro regiones, colinas, valle, sendero ocre, colisión y tres materiales CC0 de ambientCG teñidos con una paleta más estilizada.
+- Cámara orbital abierta: 10 m a pie y 16 m al montar, con transición suave y mayor campo visual.
+- Terrain3D con cuatro regiones, colinas, valle, sendero ocre, colisión y tres tiles originales totalmente estilizados, sin microdetalle PBR fotográfico.
 - Escenario explorado de extremo a extremo, con 760 árboles Quaternius y colisión física: más del 99% son verdes y los rojos quedan como acento excepcional.
 - Sotobosque Quaternius con 14.000 hierbas, 1.500 flores, 620 arbustos, 520 helechos y plantas, 190 setas, 220 rocas y 720 guijarros.
 - Todos los grupos numerosos usan `MultiMesh` dividido por celdas y descarte por distancia.
 - Tres pequeños pueblos con ocho casas, cercas, carros, cajas y ruinas construidos con el *Medieval Village MegaKit* de Quaternius.
-- Cascada animada de 38 m, poza, río, rocío, niebla y fortaleza estilizada con módulos Quaternius.
-- Ciclo solar continuo y cielo procedural con nubes multicapa deformadas y desplazadas por shader en la GPU.
-- Música ambiental, viento, pájaros, cascada y cuatro sonidos de cascos.
+- Risco y fortaleza estilizados con módulos Quaternius; la cascada, poza y río han sido retirados.
+- Ciclo solar continuo y cielo procedural con solo dos capas ligeras de nubes deformadas y desplazadas por shader en la GPU, sin bóveda UV ni costura vertical.
+- Música ambiental, viento, pájaros y cuatro sonidos de cascos.
 
 ## Abrir y jugar
 
@@ -54,7 +54,7 @@ El objetivo es seguir el sendero hasta el mirador. Si el personaje cae fuera del
 
 `VegetationScatter` carga los modelos glTF del *Stylized Nature Mega Kit* en tiempo de ejecución y extrae sus mallas conservando los materiales originales. Los árboles adultos forman bosques separados por praderas y un corredor despejado de más de 22 m; los árboles retorcidos rojos no superan el 1% del total. Los árboles y las rocas reciben colisiones simplificadas.
 
-`MedievalSetDressing` monta tres aldeas repartidas entre los extremos del mapa con ocho casas, carros, cercas, enredaderas y cajas rompibles del *Medieval Village MegaKit*. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para integrar la cascada y la fortaleza en la misma estética.
+`MedievalSetDressing` monta tres aldeas repartidas entre los extremos del mapa con ocho casas, carros, cercas, enredaderas y cajas rompibles del *Medieval Village MegaKit*. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para formar un risco coronado por una fortaleza.
 
 Los personajes se encuentran en `assets/quaternius/ultimate_animated_characters/glTF`; el juego usa el caballero dorado, pero quedan disponibles aldeanos, trabajadores, vikingos, elfos, goblins, magos, piratas, ninjas y otras variantes para NPC futuros. Los animales viven en `assets/quaternius/ultimate_animated_animals`.
 
@@ -62,7 +62,7 @@ El *Survival Pack - Sept 2020* está disponible en `assets/quaternius/Survival P
 
 ## Terreno y atmósfera
 
-Terrain3D utiliza [Ground 037](https://ambientcg.com/view?id=Ground037), [Ground 030](https://ambientcg.com/view?id=Ground030) y [Rock 063](https://ambientcg.com/view?id=Rock063), todos CC0. El escenario usa cielo procedural, iluminación cálida, tonemapping ACES, niebla volumétrica ligera y nubes animadas.
+Terrain3D utiliza tres tiles de albedo originales en `assets/textures/stylized_terrain`: pradera, sendero ocre y roca con musgo. Están diseñados a 1024², preparados para repetición exacta y deliberadamente prescinden de normal/height fotográficos para conservar la lectura low-poly de Quaternius. El escenario usa cielo procedural, iluminación cálida, tonemapping ACES, niebla volumétrica ligera y dos capas de nubes animadas.
 
 El relieve se puede regenerar de forma determinista con:
 
@@ -94,7 +94,7 @@ assets/     packs Quaternius CC0, materiales Terrain3D y audio original
 addons/     Terrain3D
 scenes/     escenas de Godot
 scripts/    jugabilidad y sistemas visuales
-shaders/    agua, cascada y efectos
+shaders/    efectos visuales
 terrain/    regiones y configuración Terrain3D
 tests/      pruebas headless
 tools/      utilidades y runtime local ignorado por Git
@@ -102,4 +102,4 @@ tools/      utilidades y runtime local ignorado por Git
 
 ## Licencias
 
-El código original se distribuye bajo MIT. Quaternius y ambientCG se usan bajo CC0; Terrain3D bajo MIT. La música, los ambientes y los sombreadores de agua son originales del proyecto. Consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No se incluyen recursos extraídos de Nintendo ni de ningún videojuego comercial.
+El código original se distribuye bajo MIT. Quaternius y ambientCG se usan bajo CC0; Terrain3D bajo MIT. Los nuevos tiles estilizados, la música y los ambientes son originales del proyecto. Consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No se incluyen recursos extraídos de Nintendo ni de ningún videojuego comercial.

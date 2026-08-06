@@ -47,7 +47,7 @@ func _run_test() -> void:
 			failures.append("Falta la acción de entrada: %s" % action)
 
 	if failures.is_empty():
-		print("SMOKE TEST OK: Terrain3D, hito épico, mirador, audio, nodos y controles disponibles.")
+		print("SMOKE TEST OK: Terrain3D estilizado, hito terrestre, mirador, audio, nodos y controles disponibles.")
 		quit(0)
 	else:
 		for failure in failures:

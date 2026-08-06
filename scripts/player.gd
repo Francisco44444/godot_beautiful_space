@@ -167,7 +167,7 @@ func mount_horse(horse: Horse) -> bool:
 	visual.reparent(horse.rider_anchor, false)
 	# El rig conserva la colisión a pie, pero hundimos las piernas en la montura
 	# para que el torso quede sentado sobre la silla real del caballo.
-	visual.position = Vector3(0.0, -0.88, 0.08)
+	visual.position = Vector3(0.0, -0.15, 0.08)
 	visual.rotation = Vector3.ZERO
 	global_position = horse.global_position
 	_play_animation(ANIM_SIT, 0.12, 1.25)

@@ -43,7 +43,7 @@ func _run_test() -> void:
 	if player.visual.get_parent() != horse.rider_anchor:
 		_fail("La representación del jugador no está colocada sobre la silla.")
 		return
-	if player.visual.global_position.y < horse.global_position.y + 1.25:
+	if player.visual.global_position.y < horse.global_position.y + 2.5:
 		_fail("El jinete sigue hundido bajo el caballo en vez de estar sobre la silla.")
 		return
 	if player.animation_player.current_animation != "SitDown":
@@ -52,7 +52,7 @@ func _run_test() -> void:
 	if not player.collision.disabled:
 		_fail("La colisión a pie debe desactivarse al montar.")
 		return
-	if spring_arm.spring_length < 7.0 or camera.fov < 70.0:
+	if spring_arm.spring_length < 14.0 or camera.fov < 75.0:
 		_fail("La cámara no se abrió para la vista de galope.")
 		return
 	if not mount_hint.visible or "Desmontar" not in mount_hint.text:

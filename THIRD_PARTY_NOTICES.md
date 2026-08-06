@@ -23,7 +23,7 @@ Todos los siguientes packs se publican bajo [CC0 1.0 Universal](https://creative
 
 Copias de licencia y vistas previas oficiales acompañan los packs dentro de sus carpetas. La distribución mediante `MultiMesh`, las colisiones, la integración con Terrain3D y la lógica jugable son adaptaciones de este proyecto y no implican respaldo del autor.
 
-## ambientCG — materiales Terrain3D
+## ambientCG — biblioteca anterior no activa
 
 - [Ground 037](https://ambientcg.com/view?id=Ground037): pradera húmeda.
 - [Ground 030](https://ambientcg.com/view?id=Ground030): sendero de tierra.
@@ -31,10 +31,10 @@ Copias de licencia y vistas previas oficiales acompañan los packs dentro de sus
 - Licencia: CC0 1.0 Universal.
 - Registro local: `assets/textures/cc0/ambientcg/SOURCES.md`.
 
-Terrain3D usa paquetes derivados de albedo+altura y normal+rugosidad. Los tintes de paleta y la mezcla del terreno se configuran en `terrain/data/assets.tres`.
+Estos materiales se conservan como biblioteca CC0 local, pero el juego ya no los referencia. Terrain3D utiliza ahora tiles estilizados originales del proyecto para no mezclar acabado fotográfico con los modelos Quaternius.
 
 ## Contenido original
 
-La geometría de la cascada, la poza y el río, sus sombreadores, partículas y niebla, además de la música, el viento, los pájaros, los cascos y `waterfall.ogg`, son contenido original del proyecto.
+Los tres tiles estilizados de terreno, la música, el viento, los pájaros y los cascos son contenido original del proyecto. La antigua cascada, su agua y su audio han sido eliminados.
 
 No se han incorporado modelos, texturas, música ni otros recursos extraídos de videojuegos comerciales.

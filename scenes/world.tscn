@@ -197,9 +197,10 @@ sky_mode = 1
 
 [node name="AnimatedClouds" type="Node3D" parent="."]
 script = ExtResource("12_clouds")
-cloud_altitude = 178.0
+layer_count = 2
+cloud_altitude = 220.0
 wind_direction = Vector2(1, 0.33)
-wind_speed = 0.012
+wind_speed = 0.008
 
 [node name="ValleyMist" type="FogVolume" parent="."]
 position = Vector3(18, 4, 12)
@@ -241,13 +242,13 @@ script = ExtResource("2_camera")
 target_path = NodePath("../Player")
 
 [node name="SpringArm3D" type="SpringArm3D" parent="CameraRig"]
-spring_length = 7.4
+spring_length = 10.0
 margin = 0.15
 collision_mask = 1
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig/SpringArm3D"]
 current = true
-fov = 64.0
+fov = 70.0
 far = 1600.0
 
 [node name="Lookout" type="Node3D" parent="."]

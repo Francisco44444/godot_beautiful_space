@@ -1,6 +1,7 @@
 # Godot genera esta carpeta al importar el proyecto.
 .godot/
 *.import
+!assets/textures/stylized_terrain/*_seamless.png.import
 
 # Builds locales y archivos del sistema.
 builds/

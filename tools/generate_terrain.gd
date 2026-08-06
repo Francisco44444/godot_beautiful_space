@@ -7,7 +7,6 @@ extends SceneTree
 const MAP_SIZE := 512
 const MAP_ORIGIN := Vector2(-256.0, -256.0)
 const DATA_DIRECTORY := "res://terrain/data"
-const TEXTURE_DIRECTORY := "res://terrain/textures"
 const LOOKOUT := Vector2(98.0, -110.0)
 
 const TRAIL_POINTS: Array[Vector3] = [
@@ -27,7 +26,6 @@ func _init() -> void:
 
 func _generate() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(DATA_DIRECTORY))
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(TEXTURE_DIRECTORY))
 
 	var height_map := Image.create_empty(MAP_SIZE, MAP_SIZE, false, Image.FORMAT_RF)
 	var control_map := Image.create_empty(MAP_SIZE, MAP_SIZE, false, Image.FORMAT_RF)
@@ -56,10 +54,10 @@ func _generate() -> void:
 	)
 	terrain.data.save_directory(DATA_DIRECTORY)
 
-	# El generador solo sustituye relieve y mapa de control. Los recursos PBR
+	# El generador solo sustituye relieve y mapa de control. Los tiles estilizados
 	# mantenidos en assets.tres/material.tres no se pisan al regenerar el valle.
 	if not FileAccess.file_exists(DATA_DIRECTORY + "/assets.tres"):
-		_fail("Falta terrain/data/assets.tres con las capas PBR de Terrain3D.")
+		_fail("Falta terrain/data/assets.tres con los tiles estilizados de Terrain3D.")
 		return
 	if not FileAccess.file_exists(DATA_DIRECTORY + "/material.tres"):
 		_fail("Falta terrain/data/material.tres.")
@@ -134,7 +132,7 @@ func _control_pixel(distance_to_trail: float) -> Color:
 		bits |= Terrain3DUtil.enc_overlay(2)
 		# Las laderas cercanas conservan la pradera húmeda. El antiguo modo
 		# automático interpretaba casi toda la cuenca como roca clara y borraba
-		# visualmente el tapiz verde; los riscos del fondo ya usan mallas PBR.
+		# visualmente el tapiz verde; los riscos del fondo ya usan mallas estilizadas.
 		bits |= Terrain3DUtil.enc_blend(0)
 		bits |= Terrain3DUtil.enc_auto(false)
 	return Color(Terrain3DUtil.as_float(bits), 0.0, 0.0, 1.0)
@@ -146,46 +144,6 @@ func _gaussian(point: Vector2, center: Vector2, spread: Vector2) -> float:
 		(offset.x * offset.x) / (2.0 * spread.x * spread.x)
 		+ (offset.y * offset.y) / (2.0 * spread.y * spread.y)
 	))
-
-
-func _create_texture(
-	asset_name: String,
-	dark_color: Color,
-	light_color: Color,
-	uv_scale: float,
-	roughness: float
-) -> Terrain3DTextureAsset:
-	var size := 128
-	var albedo_image := Image.create_empty(size, size, true, Image.FORMAT_RGBA8)
-	var normal_image := Image.create_empty(size, size, true, Image.FORMAT_RGBA8)
-	for y in range(size):
-		for x in range(size):
-			# Variación periódica: los bordes coinciden y la textura puede repetirse.
-			var wave := sin(float(x) / size * TAU * 5.0) * 0.23
-			wave += sin(float(y) / size * TAU * 7.0) * 0.19
-			wave += sin(float(x + y) / size * TAU * 3.0) * 0.11
-			var amount := clampf(0.5 + wave, 0.0, 1.0)
-			var color := dark_color.lerp(light_color, amount)
-			color.a = amount
-			albedo_image.set_pixel(x, y, color)
-			normal_image.set_pixel(x, y, Color(0.5, 0.5, 1.0, roughness))
-	albedo_image.generate_mipmaps()
-	normal_image.generate_mipmaps()
-
-	var texture := Terrain3DTextureAsset.new()
-	texture.name = asset_name
-	var file_stem := asset_name.to_lower()
-	var albedo_path := TEXTURE_DIRECTORY + "/" + file_stem + "_albedo_height.res"
-	var normal_path := TEXTURE_DIRECTORY + "/" + file_stem + "_normal_roughness.res"
-	var albedo_texture := ImageTexture.create_from_image(albedo_image)
-	var normal_texture := ImageTexture.create_from_image(normal_image)
-	ResourceSaver.save(albedo_texture, albedo_path)
-	ResourceSaver.save(normal_texture, normal_path)
-	texture.albedo_texture = ResourceLoader.load(albedo_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	texture.normal_texture = ResourceLoader.load(normal_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	texture.uv_scale = uv_scale
-	texture.detiling_rotation = 0.15
-	return texture
 
 
 func _fail(message: String) -> void:

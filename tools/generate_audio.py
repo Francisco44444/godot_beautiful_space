@@ -189,20 +189,6 @@ def build_hoofbeats() -> list[Path]:
     return paths
 
 
-def build_waterfall() -> Path:
-    """Capa estéreo periódica: masa grave, agua aireada y pulsos de impacto."""
-    seconds = 20.0
-    broad = periodic_noise(seconds, 6800.0, 2)
-    body = periodic_noise(seconds, 820.0, 2)
-    rumble = periodic_noise(seconds, 145.0, 2)
-    t = np.arange(len(broad), dtype=np.float64) / SAMPLE_RATE
-    surge = 0.72 + 0.16 * np.sin(2.0 * np.pi * t / 5.0) + 0.08 * np.sin(2.0 * np.pi * t / 2.5 + 0.8)
-    water = broad * surge[:, None] * 0.18 + body * 0.32 + rumble * 0.22
-    path = AUDIO / "waterfall.wav"
-    write_wav(path, normalize(water, 0.58))
-    return path
-
-
 def convert_to_ogg(wav_path: Path) -> Path:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
@@ -220,8 +206,7 @@ def main() -> None:
     AUDIO.mkdir(parents=True, exist_ok=True)
     loops = [convert_to_ogg(builder()) for builder in (build_music, build_wind, build_birds)]
     hoofbeats = build_hoofbeats()
-    waterfall = convert_to_ogg(build_waterfall())
-    for path in [*loops, *hoofbeats, waterfall]:
+    for path in [*loops, *hoofbeats]:
         print(f"GENERATED {path.relative_to(ROOT)}")
 
 

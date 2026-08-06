@@ -57,28 +57,46 @@ func _run_test() -> void:
 		_fail("La biblioteca debería contener %d personajes glTF; contiene %d." % [EXPECTED_CHARACTER_COUNT, character_count])
 		return
 
-	if clouds == null or clouds.get_child_count() < 5:
-		_fail("El cielo debe tener varias capas de nubes animadas.")
+	if clouds == null or clouds.get_child_count() != 2:
+		_fail("El cielo debe tener exactamente dos capas ligeras de nubes.")
 		return
-	if clouds.get_node_or_null("MovingCloudDome") == null:
-		_fail("El cielo debe tener una bóveda visible de nubes en movimiento.")
-		return
-	var horizon_cloud := clouds.get_node_or_null("HorizonCloud01") as MeshInstance3D
-	if horizon_cloud == null or not bool(horizon_cloud.get_meta("shader_driven", false)):
-		_fail("El horizonte debe usar bancos de nubes impulsados por shader.")
+	if clouds.get_node_or_null("MovingCloudDome") != null:
+		_fail("La bóveda esférica con costura debe permanecer eliminada.")
 		return
 	for child in clouds.get_children():
 		var cloud_layer := child as MeshInstance3D
 		if cloud_layer == null or cloud_layer.mesh == null or cloud_layer.material_override == null:
 			_fail("Cada capa de nubes debe tener malla y shader material.")
 			return
+		if not cloud_layer.mesh is PlaneMesh or not bool(cloud_layer.get_meta("seam_free_plane", false)):
+			_fail("Las nubes deben usar planos sin costura en lugar de una esfera UV.")
+			return
 		var material := cloud_layer.material_override as ShaderMaterial
 		if material == null or material.shader == null or not material.shader.code.contains("TIME"):
 			_fail("Las nubes deben animarse con TIME en el shader.")
 			return
-	if not (horizon_cloud.material_override as ShaderMaterial).shader.code.contains("warp"):
-		_fail("Las nubes deben deformarse con ruido multicapa, no deslizar una textura plana.")
+		if not material.shader.code.contains("warp") or not material.shader.code.contains("fade_x"):
+			_fail("Las nubes deben deformarse y desvanecer sus bordes por shader.")
+			return
+
+	var terrain_assets := load("res://terrain/data/assets.tres") as Terrain3DAssets
+	if terrain_assets == null or terrain_assets.get_texture_count() != 3:
+		_fail("Terrain3D debe conservar tres materiales estilizados.")
 		return
+	for index in terrain_assets.get_texture_count():
+		var texture_asset := terrain_assets.get_texture(index) as Terrain3DTextureAsset
+		if texture_asset == null or texture_asset.albedo_texture == null:
+			_fail("Falta el albedo estilizado del material %d." % index)
+			return
+		if "stylized_terrain" not in texture_asset.albedo_texture.resource_path:
+			_fail("El terreno sigue usando una textura PBR ajena al estilo Quaternius.")
+			return
+		if texture_asset.normal_texture != null or texture_asset.normal_depth > 0.01:
+			_fail("El terreno estilizado no debe recuperar microdetalle normal fotográfico.")
+			return
+		if texture_asset.albedo_texture.get_width() != 1024 or texture_asset.albedo_texture.get_height() != 1024:
+			_fail("Los tiles estilizados deben estar normalizados a 1024 x 1024.")
+			return
 
 	if scatter.generated_green_tree_count + scatter.generated_autumn_tree_count != scatter.generated_tree_count:
 		_fail("El reparto de árboles verdes y otoñales no coincide con el total.")

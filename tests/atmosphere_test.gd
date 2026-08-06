@@ -65,6 +65,8 @@ func _run_test() -> void:
 	var animated_clouds := world.get_node_or_null("AnimatedClouds")
 	if animated_clouds == null or not animated_clouds.has_method("_process"):
 		failures.append("Falta el sistema de nubes animadas")
+	elif animated_clouds.get_child_count() != 2 or animated_clouds.has_node("MovingCloudDome"):
+		failures.append("Las nubes deben ser dos capas ligeras y no una bóveda con costura")
 
 	var sky_fill := world.get_node_or_null("SkyFill") as DirectionalLight3D
 	if sky_fill == null or sky_fill.light_energy <= 0.0:
@@ -86,7 +88,7 @@ func _run_test() -> void:
 		_fail(failures)
 		return
 
-	print("ATMOSPHERE TEST OK: ciclo solar, cielo procedural, nubes GPU y bruma volumétrica.")
+	print("ATMOSPHERE TEST OK: ciclo solar, cielo procedural, dos capas GPU sin costura y bruma volumétrica.")
 	quit(0)
 
 

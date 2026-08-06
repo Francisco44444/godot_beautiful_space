@@ -7,8 +7,4 @@ script = ExtResource("1_landmark")
 
 [node name="EpicCliffs" type="Node3D" parent="."]
 
-[node name="Waterfall" type="Node3D" parent="."]
-
-[node name="Pool" type="Node3D" parent="."]
-
 [node name="Fortress" type="Node3D" parent="."]
