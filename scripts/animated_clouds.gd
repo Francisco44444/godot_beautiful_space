@@ -1,10 +1,10 @@
 extends Node3D
 class_name AnimatedClouds
 
-@export var layer_count := 4
-@export var cloud_altitude := 145.0
+@export var layer_count := 3
+@export var cloud_altitude := 178.0
 @export var wind_direction := Vector2(1.0, 0.28)
-@export var wind_speed := 0.014
+@export var wind_speed := 0.010
 
 const CLOUD_SHADER := """
 shader_type spatial;
@@ -40,7 +40,7 @@ float noise(vec2 p) {
 float fbm(vec2 p) {
 	float value = 0.0;
 	float amp = 0.5;
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < 6; i++) {
 		value += amp * noise(p);
 		p = p * 2.03 + vec2(17.3, 9.1);
 		amp *= 0.5;
@@ -54,10 +54,14 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 uv = UV * scale + normalize(wind) * TIME * speed + vec2(layer_seed, layer_seed * 0.37);
-	float body = fbm(uv);
-	float detail = fbm(uv * 2.6 + vec2(TIME * speed * 0.35, -TIME * speed * 0.22));
-	float cloud = smoothstep(coverage, coverage + softness, body * 0.78 + detail * 0.22);
+	vec2 drift = normalize(wind) * TIME * speed;
+	vec2 uv = UV * scale + drift + vec2(layer_seed, layer_seed * 0.37);
+	float warp_a = fbm(uv * 0.72 + vec2(TIME * speed * 0.18, 0.0));
+	float warp_b = fbm(uv * 1.35 + vec2(0.0, -TIME * speed * 0.13));
+	vec2 warped_uv = uv + vec2(warp_a, warp_b) * 0.62;
+	float body = fbm(warped_uv);
+	float detail = fbm(warped_uv * 2.8 - drift * 0.42);
+	float cloud = smoothstep(coverage, coverage + softness, body * 0.82 + detail * 0.18);
 
 	float edge_fade = smoothstep(0.0, 0.22, UV.x) * smoothstep(1.0, 0.78, UV.x);
 	edge_fade *= smoothstep(0.0, 0.18, UV.y) * smoothstep(1.0, 0.72, UV.y);
@@ -108,11 +112,13 @@ float fbm(vec2 p) {
 }
 
 void fragment() {
-	vec2 drift = normalize(wind) * TIME * speed;
-	vec2 uv = vec2(UV.x * 4.0, UV.y * 2.1) + drift;
-	float broad = fbm(uv);
-	float torn = fbm(uv * 3.2 + vec2(TIME * speed * 0.6, -TIME * speed * 0.25));
-	float cloud = smoothstep(0.50, 0.66, broad * 0.74 + torn * 0.26);
+	vec2 drift_a = normalize(wind) * TIME * speed;
+	vec2 drift_b = vec2(-wind.y, wind.x) * TIME * speed * 0.23;
+	vec2 uv = vec2(UV.x * 4.2, UV.y * 2.0) + drift_a;
+	float warp = fbm(uv * 0.72 + drift_b);
+	float broad = fbm(uv + vec2(warp, warp * 0.42));
+	float torn = fbm(uv * 3.4 - drift_a * 0.38 + drift_b);
+	float cloud = smoothstep(0.48, 0.65, broad * 0.79 + torn * 0.21);
 	float upper_sky = smoothstep(0.08, 0.36, UV.y) * smoothstep(0.94, 0.62, UV.y);
 	float broken_horizon = smoothstep(0.18, 0.36, UV.y);
 	float alpha = cloud * upper_sky * broken_horizon * opacity;
@@ -127,13 +133,14 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	for child in get_children():
-		if not child.name.begins_with("HorizonCloud"):
-			continue
-		var speed: float = child.get_meta("drift_speed", 0.0)
-		child.position.x += speed * delta
-		if child.position.x > 310.0:
-			child.position.x = -310.0
+	# La bóveda sigue la posición horizontal de la cámara: el cielo nunca revela
+	# el borde al explorar todo el mapa. La deriva visible ocurre en GPU mediante
+	# TIME, sin trasladar geometría ni producir saltos al reciclar nubes.
+	var active_camera := get_viewport().get_camera_3d()
+	if active_camera != null:
+		var follow_weight := 1.0 - exp(-2.0 * delta)
+		global_position.x = lerpf(global_position.x, active_camera.global_position.x, follow_weight)
+		global_position.z = lerpf(global_position.z, active_camera.global_position.z, follow_weight)
 
 
 func _rebuild_cloud_layers() -> void:
@@ -207,7 +214,7 @@ func _add_horizon_clouds() -> void:
 
 		cloud.position = Vector3(-280.0 + index * 70.0, 88.0 + (index % 4) * 9.0, -245.0 - (index % 3) * 28.0)
 		cloud.rotation_degrees = Vector3(0.0, 0.0, -2.0 + (index % 5))
-		cloud.set_meta("drift_speed", 1.2 + index * 0.17)
+		cloud.set_meta("shader_driven", true)
 		add_child(cloud)
 
 
@@ -218,8 +225,8 @@ func _add_sky_dome() -> void:
 	dome.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 
 	var sphere := SphereMesh.new()
-	sphere.radius = 560.0
-	sphere.height = 1120.0
+	sphere.radius = 690.0
+	sphere.height = 1380.0
 	sphere.radial_segments = 96
 	sphere.rings = 48
 	dome.mesh = sphere

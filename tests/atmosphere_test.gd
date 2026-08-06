@@ -54,8 +54,13 @@ func _run_test() -> void:
 	var sun := world.get_node_or_null("Sun") as DirectionalLight3D
 	if sun == null:
 		failures.append("Falta el sol direccional")
-	elif sun.rotation_degrees.x > -20.0 or sun.rotation_degrees.x < -42.0:
-		failures.append("El sol no tiene la inclinación cálida prevista")
+	elif sun.rotation_degrees.x > -20.0 or sun.rotation_degrees.x < -145.0:
+		failures.append("El sol no está dentro del arco diurno previsto")
+	else:
+		var sun_rotation_before := sun.rotation_degrees
+		world.call("_update_sun_cycle", 1.0)
+		if sun.rotation_degrees.distance_to(sun_rotation_before) < 0.1:
+			failures.append("El sol no avanza durante el ciclo de luz")
 
 	var animated_clouds := world.get_node_or_null("AnimatedClouds")
 	if animated_clouds == null or not animated_clouds.has_method("_process"):
@@ -81,7 +86,7 @@ func _run_test() -> void:
 		_fail(failures)
 		return
 
-	print("ATMOSPHERE TEST OK: Forward+, cielo procedural, nubes animadas y bruma volumétrica.")
+	print("ATMOSPHERE TEST OK: ciclo solar, cielo procedural, nubes GPU y bruma volumétrica.")
 	quit(0)
 
 

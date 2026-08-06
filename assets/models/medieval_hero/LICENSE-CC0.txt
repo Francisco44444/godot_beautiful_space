@@ -1,8 +1,0 @@
-Medieval hero model and sword
-Author: Quaternius
-Source: https://opengameart.org/content/lowpoly-animated-knight
-Original archive: Knight Character by @Quaternius.zip
-License: Creative Commons CC0 1.0 Universal
-License text: https://creativecommons.org/publicdomain/zero/1.0/
-
-The integrated files are KnightCharacter.fbx and Sword.fbx.

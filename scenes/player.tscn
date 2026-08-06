@@ -7,7 +7,7 @@ radius = 0.38
 height = 1.8
 
 [sub_resource type="BoxShape3D" id="Shape_attack"]
-size = Vector3(5.2, 4.8, 6.2)
+size = Vector3(1.7, 2.2, 2.0)
 
 [node name="Player" type="CharacterBody3D"]
 collision_layer = 2
@@ -24,7 +24,7 @@ scale = Vector3(0.95, 0.95, 0.95)
 [node name="ModelRoot" type="Node3D" parent="Visual"]
 
 [node name="AttackArea" type="Area3D" parent="Visual"]
-position = Vector3(0, 3.2, -3.15)
+position = Vector3(0, 1.25, -0.92)
 collision_layer = 0
 collision_mask = 5
 monitoring = true

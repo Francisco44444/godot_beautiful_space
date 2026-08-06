@@ -43,6 +43,12 @@ func _run_test() -> void:
 	if player.visual.get_parent() != horse.rider_anchor:
 		_fail("La representación del jugador no está colocada sobre la silla.")
 		return
+	if player.visual.global_position.y < horse.global_position.y + 1.25:
+		_fail("El jinete sigue hundido bajo el caballo en vez de estar sobre la silla.")
+		return
+	if player.animation_player.current_animation != "SitDown":
+		_fail("El jinete no conserva la pose sentada al montar.")
+		return
 	if not player.collision.disabled:
 		_fail("La colisión a pie debe desactivarse al montar.")
 		return
@@ -55,11 +61,24 @@ func _run_test() -> void:
 
 	var horse_start := horse.global_position
 	Input.action_press("move_forward")
-	Input.action_press("sprint")
-	for _frame in range(75):
+	for _frame in range(55):
 		await physics_frame
+	var canter_velocity := Vector2(horse.velocity.x, horse.velocity.z).length()
+	Input.action_release("move_forward")
+	for _frame in range(35):
+		await physics_frame
+
+	Input.action_press("move_forward")
+	Input.action_press("sprint")
+	for _frame in range(55):
+		await physics_frame
+	var gallop_velocity := Vector2(horse.velocity.x, horse.velocity.z).length()
+	var sprint_was_requested := horse.sprint_requested
 	Input.action_release("move_forward")
 	Input.action_release("sprint")
+	if not sprint_was_requested or gallop_velocity < canter_velocity * 1.35:
+		_fail("Mayús no diferencia el galope: trote %.2f m/s, galope %.2f m/s." % [canter_velocity, gallop_velocity])
+		return
 
 	var ridden_distance := Vector2(
 		horse.global_position.x - horse_start.x,
@@ -85,7 +104,7 @@ func _run_test() -> void:
 		_fail("El HUD no recuperó la acción de montar.")
 		return
 
-	print("MOUNTING TEST OK: montar, cámara, galope %.2f m y desmontar." % ridden_distance)
+	print("MOUNTING TEST OK: jinete sobre silla, trote %.2f m/s, galope %.2f m/s y desmontar." % [canter_velocity, gallop_velocity])
 	quit(0)
 
 

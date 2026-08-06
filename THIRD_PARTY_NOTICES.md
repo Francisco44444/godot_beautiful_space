@@ -18,7 +18,8 @@ Todos los siguientes packs se publican bajo [CC0 1.0 Universal](https://creative
 - [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html): caballo y fauna animada en `assets/quaternius/ultimate_animated_animals`.
 - [Stylized Nature Mega Kit](https://quaternius.com/): árboles, pinos, troncos, hierba, plantas, flores, arbustos, setas, rocas y guijarros activos en `assets/quaternius/store_bundle/glTF`.
 - [Medieval Village MegaKit](https://quaternius.com/packs/medievalvillagemegakit.html): arquitectura y atrezo seleccionados en `assets/models/medieval_village`, además de módulos de la biblioteca glTF organizada.
-- [LowPoly Animated Knight](https://opengameart.org/content/lowpoly-animated-knight): `assets/models/medieval_hero/Sword.fbx`, usada como espada equipada.
+- *Survival Pack - Sept 2020*: cuchillo activo y biblioteca de herramientas y armas en `assets/quaternius/Survival Pack - Sept 2020`.
+- *Universal Animation Library 2 — Standard*: biblioteca CC0 de acciones en `assets/animations/Universal Animation Library 2[Standard]`. El pack incluye sus propios `README.txt` y `License.txt`.
 
 Copias de licencia y vistas previas oficiales acompañan los packs dentro de sus carpetas. La distribución mediante `MultiMesh`, las colisiones, la integración con Terrain3D y la lógica jugable son adaptaciones de este proyecto y no implican respaldo del autor.
 

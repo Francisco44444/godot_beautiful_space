@@ -3,15 +3,18 @@ extends Node3D
 
 ## Valle estilizado construido exclusivamente con el Stylized Nature Mega Kit
 ## de Quaternius. Los modelos se cargan desde glTF y se agrupan por celdas en
-## MultiMesh para mantener un bosque denso sin disparar los draw calls.
+## MultiMesh para mantener claros amplios y masas de bosque legibles sin
+## disparar los draw calls.
 
 const ASSET_ROOT := "res://assets/quaternius/store_bundle/glTF/"
-const TREE_FILES: PackedStringArray = [
+const GREEN_TREE_FILES: PackedStringArray = [
 	"CommonTree_1.gltf", "CommonTree_2.gltf", "CommonTree_3.gltf",
-	"CommonTree_4.gltf", "CommonTree_5.gltf", "TwistedTree_1.gltf",
-	"TwistedTree_2.gltf", "TwistedTree_3.gltf", "TwistedTree_4.gltf",
-	"TwistedTree_5.gltf", "Pine_1.gltf", "Pine_2.gltf", "Pine_3.gltf",
+	"CommonTree_4.gltf", "CommonTree_5.gltf", "Pine_1.gltf", "Pine_2.gltf", "Pine_3.gltf",
 	"Pine_4.gltf", "Pine_5.gltf",
+]
+const AUTUMN_TREE_FILES: PackedStringArray = [
+	"TwistedTree_1.gltf", "TwistedTree_2.gltf", "TwistedTree_3.gltf",
+	"TwistedTree_4.gltf", "TwistedTree_5.gltf",
 ]
 const ROCK_FILES: PackedStringArray = [
 	"Rock_Medium_1.gltf", "Rock_Medium_2.gltf", "Rock_Medium_3.gltf",
@@ -54,21 +57,27 @@ const LOOKOUT := Vector2(98.0, -110.0)
 const PLAYER_START := Vector2(0.0, 190.0)
 const HORSE_START := Vector2(4.0, 180.0)
 const EPIC_LANDMARK := Vector2(16.0, -155.0)
+const VILLAGE_CLEARINGS: Array[Vector3] = [
+	Vector3(-18.0, 168.0, 27.0),
+	Vector3(-94.0, 52.0, 31.0),
+	Vector3(126.0, -32.0, 30.0),
+]
 const TREE_CELL_SIZE := 92.0
 const DETAIL_CELL_SIZE := 68.0
 const GROUND_CELL_SIZE := 56.0
 
 @export var terrain_path: NodePath = NodePath("../Terrain3D")
-@export_category("Bosque Quaternius")
-@export var tree_count := 1050
-@export var rock_count := 280
-@export var grass_count := 18000
-@export var fern_count := 650
-@export var shrub_count := 800
-@export var flower_count := 1800
-@export var mushroom_count := 260
-@export var path_pebble_count := 520
-@export var forest_detail_count := 65
+@export_category("Claro y bosque Quaternius")
+@export var tree_count := 760
+@export_range(0.0, 0.15, 0.001) var autumn_tree_ratio := 0.004
+@export var rock_count := 220
+@export var grass_count := 14000
+@export var fern_count := 520
+@export var shrub_count := 620
+@export var flower_count := 1500
+@export var mushroom_count := 190
+@export var path_pebble_count := 720
+@export var forest_detail_count := 32
 @export var random_seed := 731947
 
 @onready var terrain: Terrain3D = get_node(terrain_path) as Terrain3D
@@ -82,6 +91,8 @@ var generated_flower_count := 0
 var generated_mushroom_count := 0
 var generated_path_pebble_count := 0
 var generated_cell_count := 0
+var generated_green_tree_count := 0
+var generated_autumn_tree_count := 0
 var tree_positions: Array[Vector3] = []
 
 var _random := RandomNumberGenerator.new()
@@ -98,7 +109,10 @@ var _pebble_meshes: Array[Mesh] = []
 
 func _ready() -> void:
 	_random.seed = random_seed
-	_tree_meshes = _load_mesh_library(TREE_FILES)
+	var green_tree_meshes := _load_mesh_library(GREEN_TREE_FILES)
+	var autumn_tree_meshes := _load_mesh_library(AUTUMN_TREE_FILES)
+	_tree_meshes = green_tree_meshes.duplicate()
+	_tree_meshes.append_array(autumn_tree_meshes)
 	_rock_meshes = _load_mesh_library(ROCK_FILES)
 	_grass_meshes = _load_mesh_library(GRASS_FILES)
 	_fern_meshes = _load_mesh_library(FERN_FILES)
@@ -122,8 +136,8 @@ func _ready() -> void:
 	_scatter_path_pebbles()
 	_scatter_forest_details()
 	print(
-		"QUATERNIUS VALLEY READY: %d árboles, %d rocas, %d hierbas, %d helechos, %d arbustos, %d flores, %d setas y %d guijarros en %d celdas."
-		% [generated_tree_count, generated_rock_count, generated_grass_count, generated_fern_count, generated_shrub_count, generated_flower_count, generated_mushroom_count, generated_path_pebble_count, generated_cell_count]
+		"QUATERNIUS VALLEY READY: %d árboles verdes, %d otoñales, %d rocas, %d hierbas, %d helechos, %d arbustos, %d flores, %d setas y %d guijarros en %d celdas."
+		% [generated_green_tree_count, generated_autumn_tree_count, generated_rock_count, generated_grass_count, generated_fern_count, generated_shrub_count, generated_flower_count, generated_mushroom_count, generated_path_pebble_count, generated_cell_count]
 	)
 
 
@@ -132,10 +146,11 @@ func _scatter_forest() -> void:
 	var attempts := 0
 	while generated_tree_count < tree_count and attempts < tree_count * 34:
 		attempts += 1
-		var point := _corridor_point(9.0, 78.0, 0.93)
+		var point := _corridor_point(17.0, 138.0, 0.68)
 		if (
-			distance_to_route(point) < 7.6
+			distance_to_route(point) < 11.5
 			or _inside_clearing(point, 13.5, 23.0)
+			or _inside_village_clearing(point, 5.0)
 			or point.distance_to(EPIC_LANDMARK) < 37.0
 			or _slope_at(point) > 0.80
 		):
@@ -143,9 +158,16 @@ func _scatter_forest() -> void:
 		var height := _height_at(point)
 		if is_nan(height):
 			continue
-		var variant := _random.randi_range(0, _tree_meshes.size() - 1)
-		var scale_value := _random.randf_range(1.18, 2.18)
-		if variant >= 10:
+		var autumn := _random.randf() < autumn_tree_ratio
+		var variant := 0
+		if autumn:
+			variant = GREEN_TREE_FILES.size() + _random.randi_range(0, AUTUMN_TREE_FILES.size() - 1)
+			generated_autumn_tree_count += 1
+		else:
+			variant = _random.randi_range(0, GREEN_TREE_FILES.size() - 1)
+			generated_green_tree_count += 1
+		var scale_value := _random.randf_range(1.12, 2.04)
+		if variant >= 5 and variant < GREEN_TREE_FILES.size():
 			scale_value *= _random.randf_range(1.05, 1.30)
 		var position := Vector3(point.x, height + 0.10, point.y)
 		_bucket_transform(
@@ -158,7 +180,7 @@ func _scatter_forest() -> void:
 		tree_positions.append(position)
 		_add_tree_collision(position, _tree_meshes[variant].get_aabb(), scale_value)
 		generated_tree_count += 1
-	_install_cell_buckets("TreeCells", buckets, _tree_meshes, 430.0, true)
+	_install_cell_buckets("TreeCells", buckets, _tree_meshes, 520.0, true)
 
 
 func _scatter_rocks() -> void:
@@ -166,8 +188,8 @@ func _scatter_rocks() -> void:
 	var attempts := 0
 	while generated_rock_count < rock_count and attempts < rock_count * 24:
 		attempts += 1
-		var point := _corridor_point(5.2, 94.0, 0.72)
-		if distance_to_route(point) < 4.8 or _inside_clearing(point, 9.0, 16.0):
+		var point := _corridor_point(5.2, 142.0, 0.62)
+		if distance_to_route(point) < 4.8 or _inside_clearing(point, 9.0, 16.0) or _inside_village_clearing(point, -5.0):
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -191,7 +213,7 @@ func _scatter_ground_cover() -> void:
 	var attempts := 0
 	while generated_grass_count < grass_count and attempts < grass_count * 14:
 		attempts += 1
-		var point := _corridor_point(2.35, 55.0, 0.96)
+		var point := _corridor_point(2.35, 126.0, 0.76)
 		if distance_to_route(point) < 1.8 or _inside_clearing(point, 4.3, 8.0) or _slope_at(point) > 0.88:
 			continue
 		var height := _height_at(point)
@@ -208,7 +230,7 @@ func _scatter_ground_cover() -> void:
 	attempts = 0
 	while generated_fern_count < fern_count and attempts < fern_count * 16:
 		attempts += 1
-		var point := _corridor_point(2.8, 66.0, 0.90)
+		var point := _corridor_point(2.8, 132.0, 0.70)
 		if distance_to_route(point) < 2.15 or _inside_clearing(point, 5.4, 10.0) or _slope_at(point) > 0.82:
 			continue
 		var height := _height_at(point)
@@ -224,7 +246,7 @@ func _scatter_ground_cover() -> void:
 	attempts = 0
 	while generated_shrub_count < shrub_count and attempts < shrub_count * 16:
 		attempts += 1
-		var point := _corridor_point(3.4, 73.0, 0.88)
+		var point := _corridor_point(3.4, 136.0, 0.68)
 		if distance_to_route(point) < 2.8 or _inside_clearing(point, 6.2, 11.5) or _slope_at(point) > 0.82:
 			continue
 		var height := _height_at(point)
@@ -242,7 +264,7 @@ func _scatter_color_details() -> void:
 	var attempts := 0
 	while generated_flower_count < flower_count and attempts < flower_count * 15:
 		attempts += 1
-		var point := _corridor_point(1.9, 39.0, 0.97)
+		var point := _corridor_point(1.9, 108.0, 0.78)
 		if distance_to_route(point) < 1.45 or _inside_clearing(point, 3.8, 7.0) or _slope_at(point) > 0.84:
 			continue
 		var height := _height_at(point)
@@ -258,7 +280,7 @@ func _scatter_color_details() -> void:
 	attempts = 0
 	while generated_mushroom_count < mushroom_count and attempts < mushroom_count * 18:
 		attempts += 1
-		var point := _corridor_point(2.0, 31.0, 0.96)
+		var point := _corridor_point(2.0, 112.0, 0.72)
 		if distance_to_route(point) < 1.6 or _inside_clearing(point, 3.8, 7.5):
 			continue
 		var height := _height_at(point)
@@ -294,7 +316,7 @@ func _scatter_forest_details() -> void:
 	var created := 0
 	while created < forest_detail_count and attempts < forest_detail_count * 24:
 		attempts += 1
-		var point := _corridor_point(6.2, 54.0, 0.92)
+		var point := _corridor_point(8.0, 142.0, 0.64)
 		if distance_to_route(point) < 5.2 or _inside_clearing(point, 9.5, 15.5):
 			continue
 		var height := _height_at(point)
@@ -424,6 +446,13 @@ func distance_to_route(point: Vector2) -> float:
 
 func _inside_clearing(point: Vector2, start_radius: float, lookout_radius: float) -> bool:
 	return point.distance_to(PLAYER_START) < start_radius or point.distance_to(HORSE_START) < start_radius or point.distance_to(LOOKOUT) < lookout_radius
+
+
+func _inside_village_clearing(point: Vector2, padding: float = 0.0) -> bool:
+	for clearing in VILLAGE_CLEARINGS:
+		if point.distance_to(Vector2(clearing.x, clearing.y)) < clearing.z + padding:
+			return true
+	return false
 
 
 func _add_tree_collision(base: Vector3, bounds: AABB, tree_scale: float) -> void:

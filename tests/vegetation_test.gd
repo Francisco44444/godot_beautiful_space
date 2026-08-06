@@ -3,16 +3,16 @@ extends SceneTree
 ## Comprueba que el valle Quaternius sea determinista, esté dividido en celdas
 ## y no invada el sendero jugable. También valida personajes y caballo.
 
-const EXPECTED_TREE_COUNT := 1050
-const EXPECTED_ROCK_COUNT := 280
-const EXPECTED_GRASS_COUNT := 18000
-const EXPECTED_FERN_COUNT := 650
-const EXPECTED_SHRUB_COUNT := 800
-const EXPECTED_FLOWER_COUNT := 1800
-const EXPECTED_MUSHROOM_COUNT := 260
-const EXPECTED_PATH_PEBBLE_COUNT := 520
+const EXPECTED_TREE_COUNT := 760
+const EXPECTED_ROCK_COUNT := 220
+const EXPECTED_GRASS_COUNT := 14000
+const EXPECTED_FERN_COUNT := 520
+const EXPECTED_SHRUB_COUNT := 620
+const EXPECTED_FLOWER_COUNT := 1500
+const EXPECTED_MUSHROOM_COUNT := 190
+const EXPECTED_PATH_PEBBLE_COUNT := 720
 const EXPECTED_CHARACTER_COUNT := 50
-const MIN_EXPECTED_CELL_COUNT := 800
+const MIN_EXPECTED_CELL_COUNT := 1200
 
 
 func _init() -> void:
@@ -39,8 +39,11 @@ func _run_test() -> void:
 	if wildlife == null or int(wildlife.get("generated_animal_count")) < 6:
 		_fail("El valle debe cargar fauna Quaternius desde el pack de animales.")
 		return
-	if medieval_set == null or medieval_set.generated_prop_count < 30:
-		_fail("El valle debe incluir el decorado medieval Quaternius.")
+	if int(wildlife.get("reactive_animal_count")) != int(wildlife.get("generated_animal_count")):
+		_fail("Toda la fauna colocada debe reaccionar cuando detecta al jugador.")
+		return
+	if medieval_set == null or medieval_set.generated_village_count < 3 or medieval_set.generated_house_count < 8:
+		_fail("El valle debe incluir tres pequeños pueblos y al menos ocho casas Quaternius.")
 		return
 	var character_directory := DirAccess.open("res://assets/quaternius/ultimate_animated_characters/glTF")
 	if character_directory == null:
@@ -61,14 +64,8 @@ func _run_test() -> void:
 		_fail("El cielo debe tener una bóveda visible de nubes en movimiento.")
 		return
 	var horizon_cloud := clouds.get_node_or_null("HorizonCloud01") as MeshInstance3D
-	if horizon_cloud == null or float(horizon_cloud.get_meta("drift_speed", 0.0)) <= 0.0:
-		_fail("El horizonte debe tener bancos de nubes desplazándose por script.")
-		return
-	var first_cloud_x := horizon_cloud.position.x
-	for _frame in range(8):
-		await process_frame
-	if horizon_cloud.position.x <= first_cloud_x:
-		_fail("Los bancos de nubes del horizonte deben desplazarse durante el juego.")
+	if horizon_cloud == null or not bool(horizon_cloud.get_meta("shader_driven", false)):
+		_fail("El horizonte debe usar bancos de nubes impulsados por shader.")
 		return
 	for child in clouds.get_children():
 		var cloud_layer := child as MeshInstance3D
@@ -79,6 +76,31 @@ func _run_test() -> void:
 		if material == null or material.shader == null or not material.shader.code.contains("TIME"):
 			_fail("Las nubes deben animarse con TIME en el shader.")
 			return
+	if not (horizon_cloud.material_override as ShaderMaterial).shader.code.contains("warp"):
+		_fail("Las nubes deben deformarse con ruido multicapa, no deslizar una textura plana.")
+		return
+
+	if scatter.generated_green_tree_count + scatter.generated_autumn_tree_count != scatter.generated_tree_count:
+		_fail("El reparto de árboles verdes y otoñales no coincide con el total.")
+		return
+	if scatter.generated_green_tree_count < roundi(scatter.generated_tree_count * 0.93):
+		_fail("Al menos el 93%% de los árboles debe ser verde.")
+		return
+	if scatter.generated_autumn_tree_count > roundi(scatter.generated_tree_count * 0.01):
+		_fail("Los árboles rojos deben ser una excepción de como máximo el 1%.")
+		return
+	var minimum_tree_x := INF
+	var maximum_tree_x := -INF
+	var minimum_tree_z := INF
+	var maximum_tree_z := -INF
+	for tree_position in scatter.tree_positions:
+		minimum_tree_x = minf(minimum_tree_x, tree_position.x)
+		maximum_tree_x = maxf(maximum_tree_x, tree_position.x)
+		minimum_tree_z = minf(minimum_tree_z, tree_position.z)
+		maximum_tree_z = maxf(maximum_tree_z, tree_position.z)
+	if maximum_tree_x - minimum_tree_x < 430.0 or maximum_tree_z - minimum_tree_z < 430.0:
+		_fail("El decorado no ocupa todavía la extensión completa del escenario ampliado.")
+		return
 
 	var count_specs: Array[Array] = [
 		["árboles", scatter.tree_count, scatter.generated_tree_count, EXPECTED_TREE_COUNT],
@@ -156,7 +178,7 @@ func _run_test() -> void:
 			return
 		for index in cell.multimesh.instance_count:
 			var position := cell.multimesh.get_instance_transform(index).origin
-			if scatter.distance_to_route(Vector2(position.x, position.z)) < 7.35:
+			if scatter.distance_to_route(Vector2(position.x, position.z)) < 11.2:
 				_fail("Un árbol invadió el corredor despejado del sendero.")
 				return
 
@@ -199,12 +221,24 @@ func _run_test() -> void:
 			_fail("Falta la animación del protagonista Quaternius: %s" % required_animation)
 			return
 
+	var first_animal := wildlife.get_child(0) as Node3D
+	var animal_start := first_animal.global_position
+	world.get_node("Player").global_position = animal_start + Vector3(0.0, 0.0, 3.0)
+	for _frame in range(24):
+		await physics_frame
+	if first_animal.global_position.distance_to(animal_start) < 0.75:
+		_fail("La fauna no se apartó al detectar al protagonista.")
+		return
+	if int(wildlife.get("reaction_count")) <= 0:
+		_fail("La fauna no registró ninguna reacción visual al jugador.")
+		return
+
 	var generated_cell_total := scatter.generated_cell_count
 	world.queue_free()
 	for _frame in range(8):
 		await process_frame
 	print(
-		"QUATERNIUS TEST OK: %d celdas, %d elementos, %d personajes y caballo animado."
+		"QUATERNIUS TEST OK: %d celdas, %d elementos, %d personajes, fauna reactiva y caballo animado."
 		% [generated_cell_total, EXPECTED_TREE_COUNT + EXPECTED_ROCK_COUNT + EXPECTED_GRASS_COUNT + EXPECTED_FERN_COUNT + EXPECTED_SHRUB_COUNT + EXPECTED_FLOWER_COUNT + EXPECTED_MUSHROOM_COUNT + EXPECTED_PATH_PEBBLE_COUNT, EXPECTED_CHARACTER_COUNT]
 	)
 	quit(0)

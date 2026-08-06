@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Valida protagonista, espada, animaciones y ataque con un blanco aislado.
+## Valida protagonista, cuchillo, animaciones y ataque con un blanco aislado.
 
 
 func _init() -> void:
@@ -38,13 +38,13 @@ func _run_test() -> void:
 		_fail("El protagonista Quaternius no inicia con una animación de locomoción válida.")
 		return
 
-	var sword_grip := player.get_node_or_null("Visual/ModelRoot/RealisticSwordGrip") as Node3D
-	var sword := player.get_node_or_null("Visual/ModelRoot/RealisticSwordGrip/EquippedSword") as MeshInstance3D
-	if sword_grip == null or sword == null or sword.mesh == null or not sword.is_visible_in_tree():
-		_fail("La espada runtime no está visible en el protagonista Quaternius.")
+	var knife_grip := player.get_node_or_null("Visual/ModelRoot/KnifeGrip") as Node3D
+	var knife := player.get_node_or_null("Visual/ModelRoot/KnifeGrip/EquippedKnife") as MeshInstance3D
+	if knife_grip == null or knife == null or knife.mesh == null or not knife.is_visible_in_tree():
+		_fail("El cuchillo del Survival Pack no está visible en el protagonista Quaternius.")
 		return
-	if sword.mesh.get_surface_count() == 0 or sword.mesh.get_aabb().size.length() <= 0.0:
-		_fail("La espada runtime no contiene geometría renderizable.")
+	if knife.mesh.get_surface_count() < 3 or knife.mesh.get_aabb().size.length() <= 0.0:
+		_fail("El cuchillo runtime no conserva su geometría y materiales Quaternius.")
 		return
 
 	var crate := BreakableProp.new()
@@ -61,19 +61,19 @@ func _run_test() -> void:
 	crate.global_position = player.global_position + Vector3(0.0, 0.0, -0.95)
 	crate.rotation = Vector3.ZERO
 	await physics_frame
-	var sword_rotation_before := sword_grip.rotation
+	var knife_rotation_before := knife_grip.rotation
 	if not player.start_attack():
 		_fail("No se pudo iniciar el primer ataque.")
 		return
 	for _frame in 18:
 		await physics_frame
-	if sword_grip.rotation.distance_to(sword_rotation_before) < 0.05:
-		_fail("La espada visible no acompañó el arco del primer ataque.")
+	if knife_grip.rotation.distance_to(knife_rotation_before) < 0.05:
+		_fail("El cuchillo visible no acompañó el arco del primer ataque.")
 		return
 	for _frame in 17:
 		await physics_frame
 	if crate.health != 1:
-		_fail("El primer espadazo no dañó exactamente una vez la caja.")
+		_fail("El primer tajo no dañó exactamente una vez la caja.")
 		return
 	for _frame in 32:
 		await physics_frame
@@ -83,13 +83,13 @@ func _run_test() -> void:
 	for _frame in 35:
 		await physics_frame
 	if not crate.broken:
-		_fail("El segundo espadazo no rompió la caja.")
+		_fail("El segundo tajo no rompió la caja.")
 		return
 
 	world.queue_free()
 	for _frame in 8:
 		await process_frame
-	print("MEDIEVAL COMBAT TEST OK: héroe animado, espada e impactos operativos.")
+	print("MEDIEVAL COMBAT TEST OK: héroe animado, cuchillo Quaternius e impactos operativos.")
 	quit(0)
 
 

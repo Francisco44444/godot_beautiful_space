@@ -11,6 +11,11 @@ const ROUTE: Array[Vector2] = [
 	Vector2(69.0, -86.0),
 	Vector2(98.0, -110.0),
 ]
+const VILLAGE_POINTS: Array[Vector2] = [
+	Vector2(-18.0, 168.0),
+	Vector2(-94.0, 52.0),
+	Vector2(126.0, -32.0),
+]
 
 
 func _init() -> void:
@@ -49,6 +54,14 @@ func _run_test() -> void:
 	if valley_height >= 8.0 or lookout_height < 22.0:
 		_fail("Alturas inesperadas: valle %.2f, mirador %.2f" % [valley_height, lookout_height])
 		return
+	for village_point in VILLAGE_POINTS:
+		var village_height := _height_at(terrain, village_point)
+		if is_nan(village_height):
+			_fail("Un pueblo quedó fuera del Terrain3D ampliado: %s" % village_point)
+			return
+	if VILLAGE_POINTS[1].distance_to(VILLAGE_POINTS[2]) < 210.0:
+		_fail("Los pueblos no aprovechan la anchura del escenario ampliado.")
+		return
 
 	# Teletransportamos al personaje sobre la tarima y dejamos actuar la física.
 	player.global_position = Vector3(98.0, lookout_height + 3.0, -110.0)
@@ -77,4 +90,3 @@ func _height_at(terrain: Terrain3D, point: Vector2) -> float:
 func _fail(message: String) -> void:
 	push_error(message)
 	quit(1)
-

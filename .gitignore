@@ -1,5 +1,6 @@
 # Godot genera esta carpeta al importar el proyecto.
 .godot/
+*.import
 
 # Builds locales y archivos del sistema.
 builds/
@@ -10,7 +11,9 @@ builds/
 tools/godot-mcp/
 tools/runtime/
 
-# Copia recuperable de los packs visuales sustituidos durante la migración a
-# Quaternius. No forma parte del juego ni se importa en Godot.
-archive/*
-!archive/.gdignore
+# De los packs fuente sólo versionamos los formatos útiles para Godot. Los
+# proyectos de Blender/Unity duplican el mismo contenido.
+assets/animations/Universal Animation Library 2\[Standard\]/Female Mannequin/
+assets/animations/Universal Animation Library 2\[Standard\]/Unity/
+assets/animations/Universal Animation Library 2\[Standard\]/*.png
+assets/quaternius/Survival Pack - Sept 2020/Blends/

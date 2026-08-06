@@ -181,11 +181,11 @@ script = ExtResource("4_world")
 environment = SubResource("Environment_world")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-31, -124, 0)
+rotation_degrees = Vector3(-81, -88, 0)
 light_color = Color(1, 0.91, 0.76, 1)
 light_energy = 1.24
 shadow_enabled = true
-directional_shadow_max_distance = 300.0
+directional_shadow_max_distance = 480.0
 directional_shadow_fade_start = 0.82
 light_volumetric_fog_energy = 0.88
 
@@ -197,13 +197,13 @@ sky_mode = 1
 
 [node name="AnimatedClouds" type="Node3D" parent="."]
 script = ExtResource("12_clouds")
-cloud_altitude = 152.0
+cloud_altitude = 178.0
 wind_direction = Vector2(1, 0.33)
-wind_speed = 0.021
+wind_speed = 0.012
 
 [node name="ValleyMist" type="FogVolume" parent="."]
 position = Vector3(18, 4, 12)
-size = Vector3(330, 12, 390)
+size = Vector3(500, 18, 500)
 material = SubResource("FogMaterial_valley")
 
 [node name="Terrain3D" type="Terrain3D" parent="."]
@@ -248,7 +248,7 @@ collision_mask = 1
 [node name="Camera3D" type="Camera3D" parent="CameraRig/SpringArm3D"]
 current = true
 fov = 64.0
-far = 1200.0
+far = 1600.0
 
 [node name="Lookout" type="Node3D" parent="."]
 position = Vector3(98, 0, -110)
@@ -356,7 +356,7 @@ label_settings = SubResource("Label_title")
 
 [node name="Controls" type="Label" parent="HUD/Margin/Panel/Padding/Content"]
 layout_mode = 2
-text = "WASD / flechas · caminar   Espacio · saltar\nMayús · correr   Ratón · mirar"
+text = "WASD / flechas · caminar   Espacio · saltar\nMayús · correr   Clic izq. · cuchillo"
 label_settings = SubResource("Label_body")
 
 [node name="MouseHint" type="Label" parent="HUD/Margin/Panel/Padding/Content"]

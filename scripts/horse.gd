@@ -15,8 +15,8 @@ const HOOFBEATS: Array[AudioStream] = [
 @export_category("Movimiento")
 @export var walk_speed: float = 6.0
 @export var canter_speed: float = 10.5
-@export var gallop_speed: float = 15.5
-@export var acceleration: float = 11.0
+@export var gallop_speed: float = 17.5
+@export var acceleration: float = 18.0
 @export var braking: float = 16.0
 @export var turn_speed: float = 5.0
 
@@ -41,6 +41,7 @@ var _rider_base_height := 0.0
 var _hoof_timer := 0.0
 var _hoof_index := 0
 var hoofbeat_count := 0
+var sprint_requested := false
 
 
 func _ready() -> void:
@@ -95,7 +96,8 @@ func _apply_riding_input(delta: float) -> void:
 	var direction := _camera_relative_direction(input_vector)
 
 	var cruising_speed := lerpf(walk_speed, canter_speed, input_strength)
-	var target_speed := gallop_speed if Input.is_action_pressed("sprint") else cruising_speed
+	sprint_requested = _is_sprint_pressed()
+	var target_speed := gallop_speed if sprint_requested else cruising_speed
 	var target_velocity := direction * target_speed * input_strength
 	var change_rate := acceleration if input_strength > 0.0 else braking
 
@@ -202,3 +204,7 @@ func _update_hoof_audio(delta: float) -> void:
 	hoof_audio.play()
 	_hoof_index = (_hoof_index + 1) % HOOFBEATS.size()
 	hoofbeat_count += 1
+
+
+func _is_sprint_pressed() -> bool:
+	return Input.is_action_pressed("sprint") or Input.is_physical_key_pressed(KEY_SHIFT)

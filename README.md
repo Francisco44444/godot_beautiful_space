@@ -4,19 +4,19 @@ Aventura medieval en tercera persona construida con Godot 4.7, GDScript y Terrai
 
 ## Estado actual
 
-- Protagonista `Knight_Golden_Male` de Quaternius con `Idle`, `Walk`, `Run`, `Jump` y `SwordSlash`.
+- Protagonista `Knight_Golden_Male` de Quaternius con animaciones de reposo, caminar, correr, saltar y atacar.
 - Biblioteca local completa de 50 personajes glTF del *Ultimate Animated Character Pack*.
-- Espada visible, ataque cuerpo a cuerpo, ventana de impacto y objetos rompibles.
-- Caballo animado de Quaternius con reposo, paso y galope; montaje y desmontaje reversibles.
-- Seis animales Quaternius distribuidos por el valle: ciervos, zorro, lobo y venado.
+- Cuchillo del *Survival Pack* visible, ataque cuerpo a cuerpo, ventana de impacto y objetos rompibles.
+- Caballo animado de Quaternius con reposo, paso y galope; jinete sentado sobre la silla y montaje reversible.
+- Seis animales Quaternius —ciervos, zorro, lobo y venado— que detectan al jugador y se apartan.
 - Cámara orbital más abierta: 7,4 m a pie y 12 m al montar, con transición suave.
 - Terrain3D con cuatro regiones, colinas, valle, sendero ocre, colisión y tres materiales CC0 de ambientCG teñidos con una paleta más estilizada.
-- Bosque determinista con 1.050 árboles Quaternius y colisión física.
-- Sotobosque Quaternius con 18.000 hierbas, 1.800 flores, 800 arbustos, 650 helechos y plantas, 260 setas, 280 rocas y 520 guijarros.
+- Escenario explorado de extremo a extremo, con 760 árboles Quaternius y colisión física: más del 99% son verdes y los rojos quedan como acento excepcional.
+- Sotobosque Quaternius con 14.000 hierbas, 1.500 flores, 620 arbustos, 520 helechos y plantas, 190 setas, 220 rocas y 720 guijarros.
 - Todos los grupos numerosos usan `MultiMesh` dividido por celdas y descarte por distancia.
-- Posada, cercas, carro, cajas y ruinas construidos con el *Medieval Village MegaKit* de Quaternius.
+- Tres pequeños pueblos con ocho casas, cercas, carros, cajas y ruinas construidos con el *Medieval Village MegaKit* de Quaternius.
 - Cascada animada de 38 m, poza, río, rocío, niebla y fortaleza estilizada con módulos Quaternius.
-- Cielo procedural luminoso con varias capas de nubes en movimiento.
+- Ciclo solar continuo y cielo procedural con nubes multicapa deformadas y desplazadas por shader en la GPU.
 - Música ambiental, viento, pájaros, cascada y cuatro sonidos de cascos.
 
 ## Abrir y jugar
@@ -42,7 +42,7 @@ Dentro del editor, `F5` ejecuta el proyecto completo.
 | Caminar | `WASD` o flechas | Stick izquierdo |
 | Correr | `Mayús` | Pulsar stick izquierdo |
 | Saltar | `Espacio` | Botón inferior |
-| Atacar | Clic izquierdo | Botón superior |
+| Atacar con cuchillo | Clic izquierdo | Botón superior |
 | Montar / desmontar | `E` junto a Brisa | Botón izquierdo |
 | Galopar | `Mayús` + dirección | Stick + pulsación |
 | Orbitar cámara | Mover ratón | — |
@@ -52,13 +52,13 @@ El objetivo es seguir el sendero hasta el mirador. Si el personaje cae fuera del
 
 ## Dirección visual Quaternius
 
-`VegetationScatter` carga los modelos glTF del *Stylized Nature Mega Kit* en tiempo de ejecución y extrae sus mallas conservando los materiales originales. Los árboles adultos se reparten en masas densas a ambos lados del sendero; la ruta, el inicio, el caballo y el mirador conservan claros jugables. Los árboles y las rocas reciben colisiones simplificadas.
+`VegetationScatter` carga los modelos glTF del *Stylized Nature Mega Kit* en tiempo de ejecución y extrae sus mallas conservando los materiales originales. Los árboles adultos forman bosques separados por praderas y un corredor despejado de más de 22 m; los árboles retorcidos rojos no superan el 1% del total. Los árboles y las rocas reciben colisiones simplificadas.
 
-`MedievalSetDressing` monta una pequeña posada con arquitectura, carro, cercas, enredaderas y cajas rompibles del *Medieval Village MegaKit*. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para integrar la cascada y la fortaleza en la misma estética.
+`MedievalSetDressing` monta tres aldeas repartidas entre los extremos del mapa con ocho casas, carros, cercas, enredaderas y cajas rompibles del *Medieval Village MegaKit*. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para integrar la cascada y la fortaleza en la misma estética.
 
 Los personajes se encuentran en `assets/quaternius/ultimate_animated_characters/glTF`; el juego usa el caballero dorado, pero quedan disponibles aldeanos, trabajadores, vikingos, elfos, goblins, magos, piratas, ninjas y otras variantes para NPC futuros. Los animales viven en `assets/quaternius/ultimate_animated_animals`.
 
-Los formatos duplicados y los antiguos packs fotorrealistas se han retirado del árbol importable. Se conserva una copia recuperable local en `archive/legacy_assets_2026-08-06`, ignorada por Git y por Godot.
+El *Survival Pack - Sept 2020* está disponible en `assets/quaternius/Survival Pack - Sept 2020`; el cuchillo activo se construye directamente desde su OBJ y no depende de cachés locales de importación. La *Universal Animation Library 2* está en `assets/animations` para acciones futuras; la locomoción actual usa las animaciones del propio caballero, aceleradas para sincronizar pies y velocidad.
 
 ## Terreno y atmósfera
 
@@ -83,7 +83,7 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/runtime_stability_test.gd
 ```
 
-La prueba de vegetación valida los 50 personajes, la fauna, el caballo, las 23.360 instancias visuales, las celdas `MultiMesh`, las colisiones y el corredor libre del sendero.
+La prueba de vegetación valida los 50 personajes, la fauna reactiva, el caballo, las 18.530 instancias visuales, los tres pueblos, las celdas `MultiMesh`, las colisiones, el reparto de color y la extensión completa del escenario.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada y no afecta al juego.
 

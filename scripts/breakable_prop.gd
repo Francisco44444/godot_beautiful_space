@@ -1,13 +1,13 @@
 class_name BreakableProp
 extends StaticBody3D
 
-## Objetivo sencillo para la espada: aguanta dos golpes, reacciona y se rompe.
+## Objetivo sencillo para combate cuerpo a cuerpo: aguanta dos golpes y se rompe.
 
 @export var health := 2
 var broken := false
 
 
-func receive_sword_hit(_hit_position: Vector3) -> void:
+func receive_melee_hit(_hit_position: Vector3) -> void:
 	if broken:
 		return
 	health -= 1

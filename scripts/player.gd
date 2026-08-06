@@ -2,33 +2,37 @@ class_name Player
 extends CharacterBody3D
 
 ## Aventurero medieval Quaternius en tercera persona. Mantiene la máquina de
-## estados a pie/montado y añade combate cuerpo a cuerpo con espada.
+## estados a pie/montado y añade combate cuerpo a cuerpo con cuchillo.
 
 signal mount_state_changed(mounted: bool, horse: Horse)
 signal attack_started(combo_index: int)
-signal sword_hit(target: Node)
+signal melee_hit(target: Node)
 
 enum ControlState {
 	ON_FOOT,
 	MOUNTED,
 }
 
-const SWORD_SCENE: PackedScene = preload("res://assets/models/medieval_hero/Sword.fbx")
+const KNIFE_OBJ_PATH := "res://assets/quaternius/Survival Pack - Sept 2020/OBJ/Knife.obj"
+const OBJ_LOADER: Script = preload("res://scripts/quaternius_obj_loader.gd")
 
 const ANIM_IDLE := "Idle"
 const ANIM_WALK := "Walk"
 const ANIM_RUN := "Run"
 const ANIM_JUMP := "Jump"
 const ANIM_ATTACK := "SwordSlash"
+const ANIM_SIT := "SitDown"
 const REALISTIC_IDLE := ANIM_IDLE
 
 @export_category("Movimiento")
-@export var walk_speed: float = 5.0
-@export var sprint_speed: float = 8.0
-@export var acceleration: float = 22.0
+@export var walk_speed: float = 5.5
+@export var sprint_speed: float = 10.0
+@export var acceleration: float = 26.0
 @export var air_acceleration: float = 7.0
 @export var jump_velocity: float = 5.3
 @export var turn_speed: float = 12.0
+@export var walk_animation_rate: float = 1.42
+@export var run_animation_rate: float = 1.18
 
 @export_category("Combate")
 @export var attack_duration: float = 0.78
@@ -68,8 +72,8 @@ var _attack_time := 0.0
 var _attack_cooldown := 0.0
 var _attack_hits: Dictionary = {}
 var _realistic_stride := 0.0
-var _realistic_sword_grip: Node3D
-var _realistic_sword_base_rotation := Vector3.ZERO
+var _weapon_grip: Node3D
+var _weapon_base_rotation := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -80,7 +84,7 @@ func _ready() -> void:
 	_load_quaternius_hero()
 	model_root.visible = true
 	_configure_realistic_hero()
-	_attach_sword_to_realistic_hand()
+	_attach_knife_to_hand()
 	_configure_animation_loops()
 	_play_animation(ANIM_IDLE, 0.0)
 
@@ -163,10 +167,10 @@ func mount_horse(horse: Horse) -> bool:
 	visual.reparent(horse.rider_anchor, false)
 	# El rig conserva la colisión a pie, pero hundimos las piernas en la montura
 	# para que el torso quede sentado sobre la silla real del caballo.
-	visual.position = Vector3(0.0, -1.02, 0.04)
+	visual.position = Vector3(0.0, -0.88, 0.08)
 	visual.rotation = Vector3.ZERO
 	global_position = horse.global_position
-	_play_animation(ANIM_IDLE, 0.12)
+	_play_animation(ANIM_SIT, 0.12, 1.25)
 	mount_state_changed.emit(true, horse)
 	return true
 
@@ -199,21 +203,21 @@ func _update_attack(delta: float) -> void:
 	var active := _attack_time >= attack_hit_start and _attack_time <= attack_hit_end
 	attack_shape.disabled = not active
 	if active:
-		_apply_sword_hits()
+		_apply_melee_hits()
 	if _attack_time >= attack_duration:
 		is_attacking = false
 		attack_shape.disabled = true
 		_attack_cooldown = attack_recovery
 
 
-func _apply_sword_hits() -> void:
+func _apply_melee_hits() -> void:
 	for body in attack_area.get_overlapping_bodies():
 		if body == self or _attack_hits.has(body.get_instance_id()):
 			continue
 		_attack_hits[body.get_instance_id()] = true
-		if body.has_method("receive_sword_hit"):
-			body.call("receive_sword_hit", attack_area.global_position)
-		sword_hit.emit(body)
+		if body.has_method("receive_melee_hit"):
+			body.call("receive_melee_hit", attack_area.global_position)
+		melee_hit.emit(body)
 
 
 func _sync_with_mount() -> void:
@@ -247,7 +251,7 @@ func _apply_movement(delta: float) -> void:
 		camera_right.y = 0.0
 		direction = (camera_right.normalized() * input_vector.x - camera_forward.normalized() * input_vector.y).normalized()
 
-	var target_speed := sprint_speed if Input.is_action_pressed("sprint") else walk_speed
+	var target_speed := sprint_speed if _is_sprint_pressed() else walk_speed
 	if is_attacking:
 		target_speed *= 0.28
 	var target_velocity := direction * target_speed
@@ -267,9 +271,9 @@ func _update_locomotion_animation() -> void:
 		return
 	var horizontal_speed := Vector2(velocity.x, velocity.z).length()
 	if horizontal_speed > walk_speed + 0.8:
-		_play_animation(ANIM_RUN, 0.12, horizontal_speed / sprint_speed)
+		_play_animation(ANIM_RUN, 0.10, clampf(horizontal_speed / sprint_speed * run_animation_rate, 0.95, 1.48))
 	elif horizontal_speed > 0.25:
-		_play_animation(ANIM_WALK, 0.12, horizontal_speed / walk_speed)
+		_play_animation(ANIM_WALK, 0.10, clampf(horizontal_speed / walk_speed * walk_animation_rate, 0.82, 1.68))
 	else:
 		_play_animation(ANIM_IDLE, 0.18)
 
@@ -310,7 +314,7 @@ func _update_realistic_visual(delta: float) -> void:
 	_realistic_stride += delta * lerpf(2.2, 8.5, motion_amount)
 	var desired_position := Vector3.ZERO
 	var desired_rotation := Vector3.ZERO
-	var desired_sword_rotation := _realistic_sword_base_rotation
+	var desired_weapon_rotation := _weapon_base_rotation
 
 	if is_mounted():
 		desired_position.y = sin(_realistic_stride * 2.0) * 0.018
@@ -325,8 +329,8 @@ func _update_realistic_visual(delta: float) -> void:
 		desired_rotation.z = deg_to_rad(-8.0 * strike)
 		# La hoja parte armada junto al hombro y recorre casi 180 grados hasta
 		# terminar al otro lado del cuerpo durante la ventana de impacto.
-		desired_sword_rotation.y += deg_to_rad(18.0 * strike)
-		desired_sword_rotation.z += deg_to_rad(lerpf(72.0, -106.0, slash_progress))
+		desired_weapon_rotation.y += deg_to_rad(22.0 * strike)
+		desired_weapon_rotation.z += deg_to_rad(lerpf(64.0, -118.0, slash_progress))
 	else:
 		desired_position.y = absf(sin(_realistic_stride)) * 0.035 * motion_amount
 		desired_rotation.x = deg_to_rad(-5.5 * motion_amount)
@@ -335,35 +339,31 @@ func _update_realistic_visual(delta: float) -> void:
 	var blend := 1.0 - exp(-14.0 * delta)
 	realistic_pose.position = realistic_pose.position.lerp(desired_position, blend)
 	realistic_pose.rotation = realistic_pose.rotation.lerp(desired_rotation, blend)
-	if _realistic_sword_grip != null:
-		_realistic_sword_grip.rotation = _realistic_sword_grip.rotation.lerp(desired_sword_rotation, blend)
+	if _weapon_grip != null:
+		_weapon_grip.rotation = _weapon_grip.rotation.lerp(desired_weapon_rotation, blend)
 	if realistic_animation != null:
 		realistic_animation.speed_scale = lerpf(0.72, 1.25, motion_amount)
 
 
-func _attach_sword_to_realistic_hand() -> void:
-	# La espada CC0 de Quaternius vive sobre un pivote de combate independiente,
-	# de modo que el arco siga siendo legible sin modificar el rig importado.
-	var source_root := SWORD_SCENE.instantiate()
-	var sword_mesh := source_root.get_node_or_null("Sword") as MeshInstance3D
-	if sword_mesh == null:
-		source_root.free()
-		return
-	source_root.remove_child(sword_mesh)
-	source_root.free()
+func _attach_knife_to_hand() -> void:
+	# El cuchillo del Survival Pack vive sobre un pivote independiente para que
+	# el tajo sea legible sin alterar el rig importado del caballero.
 	var grip := Node3D.new()
-	grip.name = "RealisticSwordGrip"
-	grip.position = Vector3(-0.34, 1.28, -0.12)
-	grip.rotation_degrees = Vector3(90.0, 0.0, -6.0)
+	grip.name = "KnifeGrip"
+	grip.position = Vector3(-0.34, 1.30, -0.13)
+	grip.rotation_degrees = Vector3(72.0, 0.0, -12.0)
 	realistic_pose.add_child(grip)
-	sword_mesh.name = "EquippedSword"
-	# La espada FBX mide centimetros; esta escala encaja con los personajes
-	# Quaternius, que ya vienen en unidades de juego legibles para Godot.
-	sword_mesh.scale = Vector3.ONE * 26.0
-	grip.add_child(sword_mesh)
-	_configure_sword_materials(sword_mesh)
-	_realistic_sword_grip = grip
-	_realistic_sword_base_rotation = grip.rotation
+	var knife := MeshInstance3D.new()
+	knife.name = "EquippedKnife"
+	knife.mesh = OBJ_LOADER.load_mesh(KNIFE_OBJ_PATH)
+	if knife.mesh == null:
+		knife.queue_free()
+		return
+	knife.scale = Vector3.ONE * 0.58
+	grip.add_child(knife)
+	_configure_knife_materials(knife)
+	_weapon_grip = grip
+	_weapon_base_rotation = grip.rotation
 
 
 func _load_quaternius_hero() -> void:
@@ -391,15 +391,19 @@ func _load_gltf_scene(path: String) -> Node3D:
 	return node as Node3D
 
 
-func _configure_sword_materials(sword_mesh: MeshInstance3D) -> void:
-	for surface in sword_mesh.mesh.get_surface_count():
-		var source := sword_mesh.mesh.surface_get_material(surface) as StandardMaterial3D
+func _configure_knife_materials(knife_mesh: MeshInstance3D) -> void:
+	for surface in knife_mesh.mesh.get_surface_count():
+		var source := knife_mesh.mesh.surface_get_material(surface) as StandardMaterial3D
 		if source == null:
 			continue
 		var material := source.duplicate() as StandardMaterial3D
-		material.roughness = 0.24 if surface in [0, 2] else 0.78
-		material.metallic = 0.95 if surface in [0, 2] else 0.05
-		sword_mesh.set_surface_override_material(surface, material)
+		material.roughness = 0.22 if surface in [1, 2] else 0.74
+		material.metallic = 0.92 if surface in [1, 2] else 0.04
+		knife_mesh.set_surface_override_material(surface, material)
+
+
+func _is_sprint_pressed() -> bool:
+	return Input.is_action_pressed("sprint") or Input.is_physical_key_pressed(KEY_SHIFT)
 
 
 func _find_skeleton(parent: Node) -> Skeleton3D:
