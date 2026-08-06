@@ -35,6 +35,6 @@ Estos materiales se conservan como biblioteca CC0 local, pero el juego ya no los
 
 ## Contenido original
 
-Los tres tiles estilizados de terreno, la música, el viento, los pájaros y los cascos son contenido original del proyecto. La antigua cascada, su agua y su audio han sido eliminados.
+Los cinco tiles estilizados de terreno —incluidas arena y nieve low-poly—, la música, el viento, los pájaros y los cascos son contenido original del proyecto. La antigua cascada, su agua y su audio han sido eliminados.
 
 No se han incorporado modelos, texturas, música ni otros recursos extraídos de videojuegos comerciales.

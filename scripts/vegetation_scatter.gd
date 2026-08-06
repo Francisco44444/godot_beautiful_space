@@ -44,40 +44,48 @@ const PEBBLE_FILES: PackedStringArray = [
 	"Pebble_Square_5.gltf", "Pebble_Square_6.gltf",
 ]
 
-const ROUTE: Array[Vector2] = [
-	Vector2(0.0, 190.0),
-	Vector2(-4.0, 95.0),
-	Vector2(7.0, 25.0),
-	Vector2(22.0, -25.0),
-	Vector2(43.0, -58.0),
-	Vector2(69.0, -86.0),
-	Vector2(98.0, -110.0),
+const ROAD_NETWORK: Array = [
+	[Vector2(0, 190), Vector2(-120, 520), Vector2(-420, 760), Vector2(-980, 780), Vector2(-1450, 650)],
+	[Vector2(0, 190), Vector2(80, -240), Vector2(320, -720), Vector2(40, -1320), Vector2(-420, -2150)],
+	[Vector2(-1450, 650), Vector2(-1780, 230), Vector2(-2050, -420), Vector2(-2200, -900)],
+	[Vector2(0, 190), Vector2(620, 320), Vector2(1260, 120), Vector2(1840, -420), Vector2(2260, -980)],
+	[Vector2(620, 320), Vector2(1120, 820), Vector2(1660, 1320), Vector2(2180, 1880)],
+	[Vector2(-1450, 650), Vector2(-1850, 1120), Vector2(-2180, 1650)],
+	[Vector2(-420, -2150), Vector2(260, -2500), Vector2(720, -3080)],
+	[Vector2(98, -110), Vector2(420, -420), Vector2(920, -560), Vector2(1840, -420)],
 ]
+const ROUTE: Array[Vector2] = [Vector2(0, 190), Vector2(80, -240), Vector2(320, -720), Vector2(40, -1320), Vector2(-420, -2150)]
 const LOOKOUT := Vector2(98.0, -110.0)
 const PLAYER_START := Vector2(0.0, 190.0)
 const HORSE_START := Vector2(4.0, 180.0)
 const EPIC_LANDMARK := Vector2(16.0, -155.0)
 const VILLAGE_CLEARINGS: Array[Vector3] = [
-	Vector3(-18.0, 168.0, 27.0),
-	Vector3(-94.0, 52.0, 31.0),
-	Vector3(126.0, -32.0, 30.0),
+	Vector3(0.0, 190.0, 95.0), Vector3(-1450.0, 650.0, 125.0),
+	Vector3(-2200.0, -900.0, 105.0), Vector3(2260.0, -980.0, 125.0),
+	Vector3(2180.0, 1880.0, 105.0), Vector3(-420.0, -2150.0, 125.0),
 ]
-const TREE_CELL_SIZE := 92.0
-const DETAIL_CELL_SIZE := 68.0
-const GROUND_CELL_SIZE := 56.0
+const FOREST_ZONES: Array[Vector4] = [
+	Vector4(-2180.0, 1650.0, 760.0, 660.0),
+	Vector4(-2200.0, -900.0, 820.0, 720.0),
+	Vector4(760.0, -1550.0, 760.0, 920.0),
+	Vector4(2450.0, -1750.0, 620.0, 760.0),
+]
+const TREE_CELL_SIZE := 340.0
+const DETAIL_CELL_SIZE := 440.0
+const GROUND_CELL_SIZE := 380.0
 
 @export var terrain_path: NodePath = NodePath("../Terrain3D")
 @export_category("Claro y bosque Quaternius")
-@export var tree_count := 760
+@export var tree_count := 2600
 @export_range(0.0, 0.15, 0.001) var autumn_tree_ratio := 0.004
-@export var rock_count := 220
-@export var grass_count := 14000
-@export var fern_count := 520
-@export var shrub_count := 620
-@export var flower_count := 1500
-@export var mushroom_count := 190
-@export var path_pebble_count := 720
-@export var forest_detail_count := 32
+@export var rock_count := 420
+@export var grass_count := 18000
+@export var fern_count := 1300
+@export var shrub_count := 1450
+@export var flower_count := 1800
+@export var mushroom_count := 520
+@export var path_pebble_count := 2400
+@export var forest_detail_count := 180
 @export var random_seed := 731947
 
 @onready var terrain: Terrain3D = get_node(terrain_path) as Terrain3D
@@ -146,7 +154,7 @@ func _scatter_forest() -> void:
 	var attempts := 0
 	while generated_tree_count < tree_count and attempts < tree_count * 34:
 		attempts += 1
-		var point := _corridor_point(17.0, 138.0, 0.68)
+		var point := _forest_point()
 		if (
 			distance_to_route(point) < 11.5
 			or _inside_clearing(point, 13.5, 23.0)
@@ -180,7 +188,7 @@ func _scatter_forest() -> void:
 		tree_positions.append(position)
 		_add_tree_collision(position, _tree_meshes[variant].get_aabb(), scale_value)
 		generated_tree_count += 1
-	_install_cell_buckets("TreeCells", buckets, _tree_meshes, 520.0, true)
+	_install_cell_buckets("TreeCells", buckets, _tree_meshes, 820.0, true)
 
 
 func _scatter_rocks() -> void:
@@ -404,7 +412,7 @@ func _make_transform(position: Vector3, yaw: float, scale_value: Vector3) -> Tra
 
 func _corridor_point(minimum_offset: float, maximum_offset: float, corridor_chance: float) -> Vector2:
 	if _random.randf() > corridor_chance:
-		return Vector2(_random.randf_range(-245.0, 245.0), _random.randf_range(-245.0, 245.0))
+		return _forest_point()
 	var sample := _route_sample()
 	var point: Vector2 = sample[0]
 	var normal: Vector2 = sample[1]
@@ -413,9 +421,10 @@ func _corridor_point(minimum_offset: float, maximum_offset: float, corridor_chan
 
 
 func _route_sample() -> Array[Vector2]:
-	var segment_index := _random.randi_range(0, ROUTE.size() - 2)
-	var start := ROUTE[segment_index]
-	var finish := ROUTE[segment_index + 1]
+	var road: Array = ROAD_NETWORK[_random.randi_range(0, ROAD_NETWORK.size() - 1)]
+	var segment_index := _random.randi_range(0, road.size() - 2)
+	var start: Vector2 = road[segment_index]
+	var finish: Vector2 = road[segment_index + 1]
 	var direction := (finish - start).normalized()
 	return [start.lerp(finish, _random.randf()), Vector2(-direction.y, direction.x)]
 
@@ -435,13 +444,21 @@ func _slope_at(point: Vector2) -> float:
 
 func distance_to_route(point: Vector2) -> float:
 	var best_distance := INF
-	for index in ROUTE.size() - 1:
-		var start := ROUTE[index]
-		var finish := ROUTE[index + 1]
-		var segment := finish - start
-		var progress := clampf((point - start).dot(segment) / segment.length_squared(), 0.0, 1.0)
-		best_distance = minf(best_distance, point.distance_to(start + segment * progress))
+	for road in ROAD_NETWORK:
+		for index in road.size() - 1:
+			var start: Vector2 = road[index]
+			var finish: Vector2 = road[index + 1]
+			var segment := finish - start
+			var progress := clampf((point - start).dot(segment) / segment.length_squared(), 0.0, 1.0)
+			best_distance = minf(best_distance, point.distance_to(start + segment * progress))
 	return best_distance
+
+
+func _forest_point() -> Vector2:
+	var zone := FOREST_ZONES[_random.randi_range(0, FOREST_ZONES.size() - 1)]
+	var angle := _random.randf_range(0.0, TAU)
+	var radius := sqrt(_random.randf())
+	return Vector2(zone.x + cos(angle) * zone.z * radius, zone.y + sin(angle) * zone.w * radius)
 
 
 func _inside_clearing(point: Vector2, start_radius: float, lookout_radius: float) -> bool:

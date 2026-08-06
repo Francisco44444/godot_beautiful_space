@@ -61,6 +61,10 @@ func _run_test() -> void:
 		world.call("_update_sun_cycle", 1.0)
 		if sun.rotation_degrees.distance_to(sun_rotation_before) < 0.1:
 			failures.append("El sol no avanza durante el ciclo de luz")
+		world.call("_update_sun_cycle", float(world.sun_cycle_seconds) * 0.5)
+		if float(world.daylight_factor) > 0.15 or str(world.time_of_day) != "Noche":
+			failures.append("El ciclo no alcanza una noche real")
+		world.call("_update_sun_cycle", float(world.sun_cycle_seconds) * 0.5)
 
 	var animated_clouds := world.get_node_or_null("AnimatedClouds")
 	if animated_clouds == null or not animated_clouds.has_method("_process"):
@@ -77,6 +81,13 @@ func _run_test() -> void:
 		failures.append("Falta la bruma localizada del valle")
 	elif (valley_mist.material as FogMaterial).density <= 0.0:
 		failures.append("La bruma del valle no tiene densidad")
+	var island_environment := world.get_node_or_null("IslandEnvironment")
+	if island_environment == null or int(island_environment.get("fog_zone_count")) < 3:
+		failures.append("Faltan los bancos de niebla regionales de los bosques")
+	elif island_environment.get("ocean") == null or not bool(island_environment.get("ocean").get_meta("low_poly_waves", false)):
+		failures.append("Falta el mar low-poly animado")
+	elif island_environment.get("stars") == null or int(island_environment.get("star_count")) < 200:
+		failures.append("La noche necesita un campo de estrellas")
 
 	var ambient_audio := world.get_node("AmbientAudio") as AmbientAudio
 	ambient_audio.music.stop()
@@ -88,7 +99,7 @@ func _run_test() -> void:
 		_fail(failures)
 		return
 
-	print("ATMOSPHERE TEST OK: ciclo solar, cielo procedural, dos capas GPU sin costura y bruma volumétrica.")
+	print("ATMOSPHERE TEST OK: día, atardecer, noche, estrellas, mar low-poly y niebla regional.")
 	quit(0)
 
 

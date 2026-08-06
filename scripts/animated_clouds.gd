@@ -89,6 +89,20 @@ func _process(delta: float) -> void:
 	var follow_weight := 1.0 - exp(-2.5 * delta)
 	global_position.x = lerpf(global_position.x, active_camera.global_position.x, follow_weight)
 	global_position.z = lerpf(global_position.z, active_camera.global_position.z, follow_weight)
+	var daylight := float(get_parent().get("daylight_factor"))
+	var day_color := Color(0.98, 0.99, 1.0, 1.0)
+	var night_color := Color(0.11, 0.15, 0.27, 1.0)
+	var day_shadow := Color(0.68, 0.74, 0.82, 1.0)
+	var night_shadow := Color(0.035, 0.05, 0.12, 1.0)
+	for child in get_children():
+		var layer := child as MeshInstance3D
+		if layer == null:
+			continue
+		var material := layer.material_override as ShaderMaterial
+		if material == null:
+			continue
+		material.set_shader_parameter("cloud_color", night_color.lerp(day_color, daylight))
+		material.set_shader_parameter("shadow_color", night_shadow.lerp(day_shadow, daylight))
 
 
 func _rebuild_cloud_layers() -> void:

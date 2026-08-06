@@ -10,13 +10,16 @@ Aventura medieval en tercera persona construida con Godot 4.7, GDScript y Terrai
 - Caballo animado de Quaternius con reposo, paso y galope; jinete sentado sobre la silla y montaje reversible.
 - Seis animales Quaternius —ciervos, zorro, lobo y venado— que detectan al jugador y se apartan.
 - Cámara orbital abierta: 10 m a pie y 16 m al montar, con transición suave y mayor campo visual.
-- Terrain3D con cuatro regiones, colinas, valle, sendero ocre, colisión y tres tiles originales totalmente estilizados, sin microdetalle PBR fotográfico.
-- Escenario explorado de extremo a extremo, con 760 árboles Quaternius y colisión física: más del 99% son verdes y los rojos quedan como acento excepcional.
-- Sotobosque Quaternius con 14.000 hierbas, 1.500 flores, 620 arbustos, 520 helechos y plantas, 190 setas, 220 rocas y 720 guijarros.
+- Isla Terrain3D de 10×10 km —100 km²— dividida en 16 regiones con costa, cordillera nevada, desierto, praderas, riscos y ocho caminos conectados.
+- Cinco tiles originales low-poly: pradera, sendero, roca, arena y nieve, sin microdetalle PBR fotográfico.
+- Cuatro bosques densos pero aislados con 2.600 árboles Quaternius y colisión física; más del 99% son verdes y los rojos quedan como acento excepcional.
+- Sotobosque Quaternius con 18.000 hierbas, 1.800 flores, 1.450 arbustos, 1.300 helechos y plantas, 520 setas, 420 rocas y 2.400 guijarros.
 - Todos los grupos numerosos usan `MultiMesh` dividido por celdas y descarte por distancia.
-- Tres pequeños pueblos con ocho casas, cercas, carros, cajas y ruinas construidos con el *Medieval Village MegaKit* de Quaternius.
+- Seis villas con 30 casas modulares corregidas, calles, faroles nocturnos y tres castillos construidos con el *Medieval Village MegaKit* de Quaternius.
 - Risco y fortaleza estilizados con módulos Quaternius; la cascada, poza y río han sido retirados.
-- Ciclo solar continuo y cielo procedural con solo dos capas ligeras de nubes deformadas y desplazadas por shader en la GPU, sin bóveda UV ni costura vertical.
+- Ciclo completo de día, atardecer y noche con estrellas, luz lunar, faroles y dos capas ligeras de nubes sin costura.
+- Mar low-poly animado rodeando la isla, playas facetadas y tres bancos de niebla regional en bosques y zonas tenebrosas.
+- Minimap superior permanente y mapa completo con pueblos, castillos, bosques, biomas y posición del jugador mediante `M`.
 - Música ambiental, viento, pájaros y cuatro sonidos de cascos.
 
 ## Abrir y jugar
@@ -47,14 +50,15 @@ Dentro del editor, `F5` ejecuta el proyecto completo.
 | Galopar | `Mayús` + dirección | Stick + pulsación |
 | Orbitar cámara | Mover ratón | — |
 | Liberar ratón | `Esc` | — |
+| Abrir / cerrar mapa de la isla | `M` | — |
 
 El objetivo es seguir el sendero hasta el mirador. Si el personaje cae fuera del escenario, reaparece en el inicio.
 
 ## Dirección visual Quaternius
 
-`VegetationScatter` carga los modelos glTF del *Stylized Nature Mega Kit* en tiempo de ejecución y extrae sus mallas conservando los materiales originales. Los árboles adultos forman bosques separados por praderas y un corredor despejado de más de 22 m; los árboles retorcidos rojos no superan el 1% del total. Los árboles y las rocas reciben colisiones simplificadas.
+`VegetationScatter` carga los modelos glTF del *Stylized Nature Mega Kit* en tiempo de ejecución y extrae sus mallas conservando los materiales originales. Los árboles adultos se concentran en cuatro reservas forestales separadas por praderas y rutas; los árboles retorcidos rojos no superan el 1% del total. Los árboles y las rocas reciben colisiones simplificadas.
 
-`MedievalSetDressing` monta tres aldeas repartidas entre los extremos del mapa con ocho casas, carros, cercas, enredaderas y cajas rompibles del *Medieval Village MegaKit*. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para formar un risco coronado por una fortaleza.
+`MedievalSetDressing` monta seis villas, 30 casas y tres castillos. Las viviendas 4×6 y 6×8 respetan la cuadrícula real de módulos de 2 m, usan el tejado correspondiente, cimiento único y colisión unificada. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para formar un risco coronado por una fortaleza.
 
 Los personajes se encuentran en `assets/quaternius/ultimate_animated_characters/glTF`; el juego usa el caballero dorado, pero quedan disponibles aldeanos, trabajadores, vikingos, elfos, goblins, magos, piratas, ninjas y otras variantes para NPC futuros. Los animales viven en `assets/quaternius/ultimate_animated_animals`.
 
@@ -62,7 +66,7 @@ El *Survival Pack - Sept 2020* está disponible en `assets/quaternius/Survival P
 
 ## Terreno y atmósfera
 
-Terrain3D utiliza tres tiles de albedo originales en `assets/textures/stylized_terrain`: pradera, sendero ocre y roca con musgo. Están diseñados a 1024², preparados para repetición exacta y deliberadamente prescinden de normal/height fotográficos para conservar la lectura low-poly de Quaternius. El escenario usa cielo procedural, iluminación cálida, tonemapping ACES, niebla volumétrica ligera y dos capas de nubes animadas.
+Terrain3D utiliza cinco tiles de albedo originales en `assets/textures/stylized_terrain`: pradera, sendero ocre, roca con musgo, arena dorada y nieve alpina. Están diseñados a 1024², preparados para repetición exacta y deliberadamente prescinden de normal/height fotográficos. Las 16 regiones usan una separación de vértices de 9,765625 m para representar exactamente 100 km² con geometría low-poly y LOD. El escenario añade mar facetado animado, cielo procedural, ciclo nocturno, estrellas, tonemapping ACES, niebla global y bancos locales en bosques.
 
 El relieve se puede regenerar de forma determinista con:
 
@@ -81,9 +85,10 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/vegetation_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/epic_landmark_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/runtime_stability_test.gd
+tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/island_world_test.gd
 ```
 
-La prueba de vegetación valida los 50 personajes, la fauna reactiva, el caballo, las 18.530 instancias visuales, los tres pueblos, las celdas `MultiMesh`, las colisiones, el reparto de color y la extensión completa del escenario.
+La prueba de vegetación valida los 50 personajes, la fauna reactiva, el caballo, las 28.490 instancias visuales, los bosques aislados, las celdas `MultiMesh`, las colisiones y el reparto de color. `island_world_test.gd` comprueba los 100 km², ocho rutas, mapa con `M`, 30 casas modulares y tres castillos.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada y no afecta al juego.
 

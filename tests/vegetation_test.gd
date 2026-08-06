@@ -3,16 +3,16 @@ extends SceneTree
 ## Comprueba que el valle Quaternius sea determinista, esté dividido en celdas
 ## y no invada el sendero jugable. También valida personajes y caballo.
 
-const EXPECTED_TREE_COUNT := 760
-const EXPECTED_ROCK_COUNT := 220
-const EXPECTED_GRASS_COUNT := 14000
-const EXPECTED_FERN_COUNT := 520
-const EXPECTED_SHRUB_COUNT := 620
-const EXPECTED_FLOWER_COUNT := 1500
-const EXPECTED_MUSHROOM_COUNT := 190
-const EXPECTED_PATH_PEBBLE_COUNT := 720
+const EXPECTED_TREE_COUNT := 2600
+const EXPECTED_ROCK_COUNT := 420
+const EXPECTED_GRASS_COUNT := 18000
+const EXPECTED_FERN_COUNT := 1300
+const EXPECTED_SHRUB_COUNT := 1450
+const EXPECTED_FLOWER_COUNT := 1800
+const EXPECTED_MUSHROOM_COUNT := 520
+const EXPECTED_PATH_PEBBLE_COUNT := 2400
 const EXPECTED_CHARACTER_COUNT := 50
-const MIN_EXPECTED_CELL_COUNT := 1200
+const MIN_EXPECTED_CELL_COUNT := 2800
 
 
 func _init() -> void:
@@ -42,8 +42,8 @@ func _run_test() -> void:
 	if int(wildlife.get("reactive_animal_count")) != int(wildlife.get("generated_animal_count")):
 		_fail("Toda la fauna colocada debe reaccionar cuando detecta al jugador.")
 		return
-	if medieval_set == null or medieval_set.generated_village_count < 3 or medieval_set.generated_house_count < 8:
-		_fail("El valle debe incluir tres pequeños pueblos y al menos ocho casas Quaternius.")
+	if medieval_set == null or medieval_set.generated_village_count < 6 or medieval_set.generated_house_count < 30 or medieval_set.generated_castle_count < 3:
+		_fail("La isla debe incluir seis villas, treinta casas modulares correctas y tres castillos.")
 		return
 	var character_directory := DirAccess.open("res://assets/quaternius/ultimate_animated_characters/glTF")
 	if character_directory == null:
@@ -80,8 +80,8 @@ func _run_test() -> void:
 			return
 
 	var terrain_assets := load("res://terrain/data/assets.tres") as Terrain3DAssets
-	if terrain_assets == null or terrain_assets.get_texture_count() != 3:
-		_fail("Terrain3D debe conservar tres materiales estilizados.")
+	if terrain_assets == null or terrain_assets.get_texture_count() != 5:
+		_fail("Terrain3D debe incluir pradera, camino, roca, arena y nieve estilizados.")
 		return
 	for index in terrain_assets.get_texture_count():
 		var texture_asset := terrain_assets.get_texture(index) as Terrain3DTextureAsset
@@ -116,8 +116,8 @@ func _run_test() -> void:
 		maximum_tree_x = maxf(maximum_tree_x, tree_position.x)
 		minimum_tree_z = minf(minimum_tree_z, tree_position.z)
 		maximum_tree_z = maxf(maximum_tree_z, tree_position.z)
-	if maximum_tree_x - minimum_tree_x < 430.0 or maximum_tree_z - minimum_tree_z < 430.0:
-		_fail("El decorado no ocupa todavía la extensión completa del escenario ampliado.")
+	if maximum_tree_x - minimum_tree_x < 4000.0 or maximum_tree_z - minimum_tree_z < 3500.0:
+		_fail("Los bosques aislados no aprovechan todavía la extensión de la isla.")
 		return
 
 	var count_specs: Array[Array] = [

@@ -3,6 +3,8 @@
 [ext_resource type="Texture2D" path="res://assets/textures/stylized_terrain/quaternius_grass_albedo_seamless.png" id="1_grass"]
 [ext_resource type="Texture2D" path="res://assets/textures/stylized_terrain/quaternius_path_albedo_seamless.png" id="2_path"]
 [ext_resource type="Texture2D" path="res://assets/textures/stylized_terrain/quaternius_rock_albedo_seamless.png" id="3_rock"]
+[ext_resource type="Texture2D" path="res://assets/textures/stylized_terrain/island_sand_albedo_seamless.png" id="4_sand"]
+[ext_resource type="Texture2D" path="res://assets/textures/stylized_terrain/island_snow_albedo_seamless.png" id="5_snow"]
 
 [sub_resource type="Terrain3DTextureAsset" id="Terrain3DTextureAsset_2q265"]
 name = "Pradera Quaternius"
@@ -36,5 +38,27 @@ detiling_shift = 0.07
 normal_depth = 0.0
 roughness = 0.96
 
+[sub_resource type="Terrain3DTextureAsset" id="Terrain3DTextureAsset_sand"]
+name = "Arena dorada low-poly"
+id = 3
+albedo_texture = ExtResource("4_sand")
+albedo_color = Color(0.95, 0.82, 0.54, 1)
+uv_scale = 0.035
+detiling_rotation = 0.1
+detiling_shift = 0.05
+normal_depth = 0.0
+roughness = 0.98
+
+[sub_resource type="Terrain3DTextureAsset" id="Terrain3DTextureAsset_snow"]
+name = "Nieve alpina low-poly"
+id = 4
+albedo_texture = ExtResource("5_snow")
+albedo_color = Color(0.94, 0.97, 1, 1)
+uv_scale = 0.032
+detiling_rotation = 0.08
+detiling_shift = 0.04
+normal_depth = 0.0
+roughness = 0.9
+
 [resource]
-texture_list = Array[Terrain3DTextureAsset]([SubResource("Terrain3DTextureAsset_2q265"), SubResource("Terrain3DTextureAsset_gf2b0"), SubResource("Terrain3DTextureAsset_oxdhj")])
+texture_list = Array[Terrain3DTextureAsset]([SubResource("Terrain3DTextureAsset_2q265"), SubResource("Terrain3DTextureAsset_gf2b0"), SubResource("Terrain3DTextureAsset_oxdhj"), SubResource("Terrain3DTextureAsset_sand"), SubResource("Terrain3DTextureAsset_snow")])
