@@ -1,15 +1,18 @@
 extends SceneTree
 
-## Comprueba que el bosque PBR sea determinista, esté dividido en celdas y no
-## invada el sendero jugable. También valida el caballo visual animado.
+## Comprueba que el valle Quaternius sea determinista, esté dividido en celdas
+## y no invada el sendero jugable. También valida personajes y caballo.
 
-const EXPECTED_TREE_COUNT := 720
-const EXPECTED_ROCK_COUNT := 170
-const EXPECTED_GRASS_COUNT := 7000
-const EXPECTED_MEADOW_GRASS_COUNT := 32000
-const EXPECTED_FERN_COUNT := 800
-const EXPECTED_SHRUB_COUNT := 900
-const MIN_EXPECTED_CELL_COUNT := 600
+const EXPECTED_TREE_COUNT := 1050
+const EXPECTED_ROCK_COUNT := 280
+const EXPECTED_GRASS_COUNT := 18000
+const EXPECTED_FERN_COUNT := 650
+const EXPECTED_SHRUB_COUNT := 800
+const EXPECTED_FLOWER_COUNT := 1800
+const EXPECTED_MUSHROOM_COUNT := 260
+const EXPECTED_PATH_PEBBLE_COUNT := 520
+const EXPECTED_CHARACTER_COUNT := 50
+const MIN_EXPECTED_CELL_COUNT := 800
 
 
 func _init() -> void:
@@ -28,12 +31,27 @@ func _run_test() -> void:
 	var horse := world.get_node("Horse") as Horse
 	var clouds := world.get_node_or_null("AnimatedClouds") as Node3D
 	var wildlife := world.get_node_or_null("QuaterniusWildlife") as Node3D
+	var medieval_set := world.get_node_or_null("MedievalSetDressing") as MedievalSetDressing
 
 	for _frame in range(4):
 		await process_frame
 
 	if wildlife == null or int(wildlife.get("generated_animal_count")) < 6:
 		_fail("El valle debe cargar fauna Quaternius desde el pack de animales.")
+		return
+	if medieval_set == null or medieval_set.generated_prop_count < 30:
+		_fail("El valle debe incluir el decorado medieval Quaternius.")
+		return
+	var character_directory := DirAccess.open("res://assets/quaternius/ultimate_animated_characters/glTF")
+	if character_directory == null:
+		_fail("Falta la biblioteca completa de personajes Quaternius.")
+		return
+	var character_count := 0
+	for file_name in character_directory.get_files():
+		if file_name.get_extension().to_lower() == "gltf":
+			character_count += 1
+	if character_count != EXPECTED_CHARACTER_COUNT:
+		_fail("La biblioteca debería contener %d personajes glTF; contiene %d." % [EXPECTED_CHARACTER_COUNT, character_count])
 		return
 
 	if clouds == null or clouds.get_child_count() < 5:
@@ -65,10 +83,12 @@ func _run_test() -> void:
 	var count_specs: Array[Array] = [
 		["árboles", scatter.tree_count, scatter.generated_tree_count, EXPECTED_TREE_COUNT],
 		["rocas", scatter.rock_count, scatter.generated_rock_count, EXPECTED_ROCK_COUNT],
-		["matas", scatter.grass_count, scatter.generated_grass_count, EXPECTED_GRASS_COUNT],
-		["hierba Bermuda", scatter.bermuda_grass_count, scatter.generated_bermuda_grass_count, EXPECTED_MEADOW_GRASS_COUNT],
+		["hierba", scatter.grass_count, scatter.generated_grass_count, EXPECTED_GRASS_COUNT],
 		["helechos", scatter.fern_count, scatter.generated_fern_count, EXPECTED_FERN_COUNT],
 		["arbustos", scatter.shrub_count, scatter.generated_shrub_count, EXPECTED_SHRUB_COUNT],
+		["flores", scatter.flower_count, scatter.generated_flower_count, EXPECTED_FLOWER_COUNT],
+		["setas", scatter.mushroom_count, scatter.generated_mushroom_count, EXPECTED_MUSHROOM_COUNT],
+		["guijarros", scatter.path_pebble_count, scatter.generated_path_pebble_count, EXPECTED_PATH_PEBBLE_COUNT],
 	]
 	for spec in count_specs:
 		var label: String = spec[0]
@@ -86,9 +106,11 @@ func _run_test() -> void:
 		["TreeCells", scatter.generated_tree_count],
 		["RockCells", scatter.generated_rock_count],
 		["GrassCells", scatter.generated_grass_count],
-		["MeadowGrassCells", scatter.generated_bermuda_grass_count],
 		["FernCells", scatter.generated_fern_count],
 		["ShrubCells", scatter.generated_shrub_count],
+		["FlowerCells", scatter.generated_flower_count],
+		["MushroomCells", scatter.generated_mushroom_count],
+		["PathDetailCells", scatter.generated_path_pebble_count],
 		["ForestDetailCells", scatter.forest_detail_count],
 	]
 	var counted_cells := 0
@@ -123,17 +145,14 @@ func _run_test() -> void:
 		)
 		return
 	if scatter.generated_cell_count != counted_cells:
-		_fail("El contador de celdas no coincide con las %d celdas PBR instaladas." % counted_cells)
+		_fail("El contador de celdas no coincide con las %d celdas Quaternius instaladas." % counted_cells)
 		return
 
 	var tree_cells := scatter.get_node("TreeCells") as Node3D
 	for child in tree_cells.get_children():
 		var cell := child as MultiMeshInstance3D
-		if cell.multimesh.mesh.get_surface_count() != 2:
-			_fail("Cada pino adulto debe combinar corteza y follaje del LOD1.")
-			return
-		if cell.multimesh.mesh.get_aabb().size.z < 9.0:
-			_fail("El bosque volvió a usar árboles jóvenes en lugar de variantes adultas.")
+		if cell.multimesh.mesh.get_aabb().size.y < 6.0:
+			_fail("El bosque debe utilizar árboles adultos Quaternius de al menos seis metros.")
 			return
 		for index in cell.multimesh.instance_count:
 			var position := cell.multimesh.get_instance_transform(index).origin
@@ -185,8 +204,8 @@ func _run_test() -> void:
 	for _frame in range(8):
 		await process_frame
 	print(
-		"VEGETATION TEST OK: %d celdas PBR, %d instancias y caballo animado."
-		% [generated_cell_total, EXPECTED_TREE_COUNT + EXPECTED_ROCK_COUNT + EXPECTED_GRASS_COUNT + EXPECTED_MEADOW_GRASS_COUNT + EXPECTED_FERN_COUNT + EXPECTED_SHRUB_COUNT]
+		"QUATERNIUS TEST OK: %d celdas, %d elementos, %d personajes y caballo animado."
+		% [generated_cell_total, EXPECTED_TREE_COUNT + EXPECTED_ROCK_COUNT + EXPECTED_GRASS_COUNT + EXPECTED_FERN_COUNT + EXPECTED_SHRUB_COUNT + EXPECTED_FLOWER_COUNT + EXPECTED_MUSHROOM_COUNT + EXPECTED_PATH_PEBBLE_COUNT, EXPECTED_CHARACTER_COUNT]
 	)
 	quit(0)
 

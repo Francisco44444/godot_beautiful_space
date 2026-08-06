@@ -34,10 +34,14 @@ func _run_test() -> void:
 			failures.append("El fondo debe usar un cielo")
 		if environment.sky == null:
 			failures.append("Falta el recurso Sky")
-		elif not environment.sky.sky_material is PanoramaSkyMaterial:
-			failures.append("El cielo debe usar PanoramaSkyMaterial")
-		elif (environment.sky.sky_material as PanoramaSkyMaterial).panorama == null:
-			failures.append("El cielo panorámico no tiene un HDRI asignado")
+		elif not environment.sky.sky_material is ProceduralSkyMaterial:
+			failures.append("El cielo debe usar ProceduralSkyMaterial")
+		else:
+			var sky_material := environment.sky.sky_material as ProceduralSkyMaterial
+			if sky_material.sky_energy_multiplier <= 0.0:
+				failures.append("El cielo procedural no aporta iluminación")
+			if sky_material.sky_top_color.get_luminance() <= 0.0:
+				failures.append("El cielo procedural no tiene color superior")
 		if not environment.volumetric_fog_enabled:
 			failures.append("La niebla volumétrica está desactivada")
 		if environment.volumetric_fog_density <= 0.0:
@@ -50,8 +54,12 @@ func _run_test() -> void:
 	var sun := world.get_node_or_null("Sun") as DirectionalLight3D
 	if sun == null:
 		failures.append("Falta el sol direccional")
-	elif sun.rotation_degrees.x > -8.0 or sun.rotation_degrees.x < -22.0:
-		failures.append("El sol no está bajo sobre el horizonte")
+	elif sun.rotation_degrees.x > -20.0 or sun.rotation_degrees.x < -42.0:
+		failures.append("El sol no tiene la inclinación cálida prevista")
+
+	var animated_clouds := world.get_node_or_null("AnimatedClouds")
+	if animated_clouds == null or not animated_clouds.has_method("_process"):
+		failures.append("Falta el sistema de nubes animadas")
 
 	var sky_fill := world.get_node_or_null("SkyFill") as DirectionalLight3D
 	if sky_fill == null or sky_fill.light_energy <= 0.0:
@@ -73,7 +81,7 @@ func _run_test() -> void:
 		_fail(failures)
 		return
 
-	print("ATMOSPHERE TEST OK: Forward+, cielo HDRI panorámico, sol bajo y bruma volumétrica.")
+	print("ATMOSPHERE TEST OK: Forward+, cielo procedural, nubes animadas y bruma volumétrica.")
 	quit(0)
 
 

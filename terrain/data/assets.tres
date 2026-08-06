@@ -11,6 +11,7 @@
 name = "Pradera humeda"
 albedo_texture = ExtResource("1_ovnq8")
 normal_texture = ExtResource("2_8uucr")
+albedo_color = Color(0.72, 0.96, 0.48, 1)
 uv_scale = 0.16
 detiling_rotation = 0.22
 
@@ -19,6 +20,7 @@ name = "Sendero natural"
 id = 1
 albedo_texture = ExtResource("3_2iybd")
 normal_texture = ExtResource("4_u785q")
+albedo_color = Color(1, 0.82, 0.5, 1)
 uv_scale = 0.14
 detiling_rotation = 0.2
 
@@ -27,6 +29,7 @@ name = "Roca erosionada"
 id = 2
 albedo_texture = ExtResource("5_s8tni")
 normal_texture = ExtResource("6_dgtan")
+albedo_color = Color(0.82, 0.9, 0.83, 1)
 uv_scale = 0.12
 detiling_rotation = 0.18
 

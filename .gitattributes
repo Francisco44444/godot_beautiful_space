@@ -1,0 +1,7 @@
+*.bin binary
+*.glb binary
+*.fbx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.hdr binary

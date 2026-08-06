@@ -14,13 +14,6 @@ enum ControlState {
 }
 
 const SWORD_SCENE: PackedScene = preload("res://assets/models/medieval_hero/Sword.fbx")
-const WOOL_ALBEDO: Texture2D = preload("res://assets/textures/medieval/forest_wool_albedo.png")
-const WOOL_NORMAL_ROUGHNESS: Texture2D = preload("res://assets/textures/medieval/forest_wool_normal_roughness.png")
-const LEATHER_ALBEDO: Texture2D = preload("res://assets/textures/medieval/aged_leather_albedo.png")
-const LEATHER_NORMAL_ROUGHNESS: Texture2D = preload("res://assets/textures/medieval/aged_leather_normal_roughness.png")
-const PLATE_ALBEDO: Texture2D = preload("res://assets/textures/cc0/polyhaven/metal_plate/albedo.jpg")
-const PLATE_NORMAL_ROUGHNESS: Texture2D = preload("res://assets/textures/cc0/polyhaven/metal_plate/normal_roughness.png")
-const PLATE_METALLIC: Texture2D = preload("res://assets/textures/cc0/polyhaven/metal_plate/metallic.jpg")
 
 const ANIM_IDLE := "Idle"
 const ANIM_WALK := "Walk"
@@ -348,20 +341,9 @@ func _update_realistic_visual(delta: float) -> void:
 		realistic_animation.speed_scale = lerpf(0.72, 1.25, motion_amount)
 
 
-func _configure_character_materials() -> void:
-	character_mesh.set_surface_override_material(0, _make_plate_material())
-	character_mesh.set_surface_override_material(2, _make_pbr_material(LEATHER_ALBEDO, LEATHER_NORMAL_ROUGHNESS, 0.82, 0.0, Color(1.3, 1.2, 1.1, 1.0)))
-	var skin_source := character_mesh.mesh.surface_get_material(1) as StandardMaterial3D
-	if skin_source != null:
-		var skin := skin_source.duplicate() as StandardMaterial3D
-		skin.roughness = 0.62
-		character_mesh.set_surface_override_material(1, skin)
-
-
 func _attach_sword_to_realistic_hand() -> void:
-	# El GLB realista solo trae el caballero y su escudo. Conservamos la espada
-	# funcional del prototipo, a escala métrica, sobre un pivote de combate que
-	# permite un arco muy legible sin alterar el rig importado.
+	# La espada CC0 de Quaternius vive sobre un pivote de combate independiente,
+	# de modo que el arco siga siendo legible sin modificar el rig importado.
 	var source_root := SWORD_SCENE.instantiate()
 	var sword_mesh := source_root.get_node_or_null("Sword") as MeshInstance3D
 	if sword_mesh == null:
@@ -407,121 +389,6 @@ func _load_gltf_scene(path: String) -> Node3D:
 		return null
 	var node := document.generate_scene(state)
 	return node as Node3D
-
-
-func _make_plate_material() -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_texture = PLATE_ALBEDO
-	material.albedo_color = Color(0.82, 0.88, 0.86, 1.0)
-	material.roughness = 0.36
-	material.roughness_texture = PLATE_NORMAL_ROUGHNESS
-	material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_ALPHA
-	material.normal_enabled = true
-	material.normal_texture = PLATE_NORMAL_ROUGHNESS
-	material.normal_scale = 0.52
-	material.metallic = 0.92
-	material.metallic_texture = PLATE_METALLIC
-	material.uv1_scale = Vector3(3.2, 3.2, 3.2)
-	return material
-
-
-func _make_pbr_material(albedo: Texture2D, normal_roughness: Texture2D, roughness: float, metallic: float, tint: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_texture = albedo
-	material.albedo_color = tint
-	material.roughness = roughness
-	material.roughness_texture = normal_roughness
-	material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_ALPHA
-	material.normal_enabled = true
-	material.normal_texture = normal_roughness
-	material.normal_scale = 0.72
-	material.metallic = metallic
-	return material
-
-
-func _attach_sword_to_hand() -> void:
-	var source_root := SWORD_SCENE.instantiate()
-	var sword_mesh := source_root.get_node_or_null("Sword") as MeshInstance3D
-	if sword_mesh == null:
-		source_root.free()
-		return
-	source_root.remove_child(sword_mesh)
-	source_root.free()
-	var attachment := BoneAttachment3D.new()
-	attachment.name = "SwordHandAttachment"
-	attachment.bone_name = "Palm.R"
-	skeleton.add_child(attachment)
-	attachment.add_child(sword_mesh)
-	sword_mesh.name = "EquippedSword"
-	# El FBX de la espada y el esqueleto llevan conversión de centímetros. Al
-	# anidarlos se compensa una de las dos escalas para conservar 1,30 m reales.
-	sword_mesh.scale *= 0.01
-	sword_mesh.position = Vector3(0.0, 0.0, 0.0)
-	_configure_sword_materials(sword_mesh)
-
-
-func _attach_closed_helmet() -> void:
-	# El modelo técnico original deja una cabeza muy facetada. Un gran yelmo
-	# suave y PBR corrige la silueta sin interferir con el esqueleto o ataques.
-	var attachment := BoneAttachment3D.new()
-	attachment.name = "HelmetAttachment"
-	attachment.bone_name = "Head"
-	skeleton.add_child(attachment)
-	# BoneAttachment escribe su propio transform cada fotograma. La corrección
-	# de centímetros debe vivir en un nodo hijo para que no la sobrescriba.
-	var helmet_root := Node3D.new()
-	helmet_root.name = "HelmetScaleRoot"
-	helmet_root.scale = Vector3.ONE * 0.01
-	attachment.add_child(helmet_root)
-
-	var shell_mesh := CylinderMesh.new()
-	shell_mesh.top_radius = 0.59
-	shell_mesh.bottom_radius = 0.62
-	shell_mesh.height = 1.32
-	shell_mesh.radial_segments = 32
-	shell_mesh.rings = 6
-	shell_mesh.material = _make_plate_material()
-	var shell := MeshInstance3D.new()
-	shell.name = "GreatHelm"
-	shell.mesh = shell_mesh
-	shell.position = Vector3(0.0, 0.12, 0.0)
-	helmet_root.add_child(shell)
-
-	var visor_material := StandardMaterial3D.new()
-	visor_material.albedo_color = Color(0.012, 0.016, 0.018, 1.0)
-	visor_material.metallic = 0.72
-	visor_material.roughness = 0.2
-	var slit_mesh := BoxMesh.new()
-	slit_mesh.size = Vector3(1.02, 0.16, 0.10)
-	slit_mesh.material = visor_material
-	var slit := MeshInstance3D.new()
-	slit.name = "VisorSlit"
-	slit.mesh = slit_mesh
-	slit.position = Vector3(0.0, 0.18, -0.6)
-	helmet_root.add_child(slit)
-
-	var guard_mesh := BoxMesh.new()
-	guard_mesh.size = Vector3(0.14, 0.66, 0.12)
-	guard_mesh.material = _make_plate_material()
-	var guard := MeshInstance3D.new()
-	guard.name = "NasalGuard"
-	guard.mesh = guard_mesh
-	guard.position = Vector3(0.0, -0.05, -0.63)
-	helmet_root.add_child(guard)
-
-	var crest_material := StandardMaterial3D.new()
-	crest_material.albedo_texture = WOOL_ALBEDO
-	crest_material.albedo_color = Color(0.12, 0.23, 0.16, 1.0)
-	crest_material.roughness = 0.92
-	var crest_mesh := PrismMesh.new()
-	crest_mesh.size = Vector3(0.12, 0.48, 0.78)
-	crest_mesh.material = crest_material
-	var crest := MeshInstance3D.new()
-	crest.name = "ForestCrest"
-	crest.mesh = crest_mesh
-	crest.position = Vector3(0.0, 0.88, 0.04)
-	crest.rotation_degrees.z = 90.0
-	helmet_root.add_child(crest)
 
 
 func _configure_sword_materials(sword_mesh: MeshInstance3D) -> void:

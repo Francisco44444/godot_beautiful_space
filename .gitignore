@@ -9,3 +9,8 @@ builds/
 # Dependencias locales opcionales del servidor MCP.
 tools/godot-mcp/
 tools/runtime/
+
+# Copia recuperable de los packs visuales sustituidos durante la migración a
+# Quaternius. No forma parte del juego ni se importa en Godot.
+archive/*
+!archive/.gdignore

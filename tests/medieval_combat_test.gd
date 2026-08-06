@@ -18,46 +18,30 @@ func _run_test() -> void:
 		await physics_frame
 
 	var player := world.get_node("Player") as Player
-	var legacy_root := player.get_node_or_null("Visual/ModelRoot") as Node3D
-	if legacy_root == null or legacy_root.visible or legacy_root.is_visible_in_tree():
-		_fail("El rig jugable anterior debe existir, pero permanecer oculto.")
+	var model_root := player.get_node_or_null("Visual/ModelRoot") as Node3D
+	if model_root == null or not model_root.is_visible_in_tree():
+		_fail("El protagonista Quaternius no está visible en el árbol.")
 		return
-	var skeleton := legacy_root.get_node_or_null("HumanArmature/Skeleton3D") as Skeleton3D
-	var animator := legacy_root.get_node_or_null("AnimationPlayer") as AnimationPlayer
-	if skeleton == null or animator == null:
-		_fail("Falta el rig oculto que conserva las animaciones de gameplay.")
+	var skeleton := _find_skeleton(model_root)
+	var animator := model_root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if skeleton == null or skeleton.get_bone_count() < 20 or animator == null:
+		_fail("Falta el rig animado completo del protagonista Quaternius.")
 		return
-	if skeleton.find_bone("Palm.R") < 0:
-		_fail("El esqueleto no contiene el hueso Palm.R.")
+	if not _has_visible_mesh(model_root):
+		_fail("El protagonista Quaternius no contiene una malla visible.")
 		return
-	for required_animation in ["HumanArmature|Idle_swordRight", "HumanArmature|Walking", "HumanArmature|Run_swordRight", "HumanArmature|swordAttackJump"]:
+	for required_animation in ["Idle", "Walk", "Run", "SwordSlash"]:
 		if not animator.has_animation(required_animation):
-			_fail("Falta la animación medieval: %s" % required_animation)
+			_fail("Falta la animación Quaternius: %s" % required_animation)
 			return
-
-	var realistic_hero := player.get_node_or_null("Visual/RealisticPose/RealisticHero") as Node3D
-	if realistic_hero == null or not realistic_hero.is_visible_in_tree():
-		_fail("El héroe realista no está visible en el árbol.")
-		return
-	var realistic_skeleton := _find_skeleton(realistic_hero)
-	if realistic_skeleton == null or realistic_skeleton.get_bone_count() < 20:
-		_fail("El héroe realista no conserva un esqueleto válido.")
-		return
-	if not _has_visible_mesh(realistic_hero):
-		_fail("El héroe realista no contiene ninguna malla visible y renderizable.")
-		return
-	var realistic_animator := realistic_hero.get_node_or_null("AnimationPlayer") as AnimationPlayer
-	if realistic_animator == null or not realistic_animator.has_animation("mixamo_com"):
-		_fail("El héroe realista no conserva su animación importada.")
-		return
-	if realistic_animator.current_animation != "mixamo_com":
-		_fail("El héroe realista no inicia su animación visible.")
+	if animator.current_animation not in ["Idle", "Jump"]:
+		_fail("El protagonista Quaternius no inicia con una animación de locomoción válida.")
 		return
 
-	var sword_grip := player.get_node_or_null("Visual/RealisticPose/RealisticSwordGrip") as Node3D
-	var sword := player.get_node_or_null("Visual/RealisticPose/RealisticSwordGrip/EquippedSword") as MeshInstance3D
+	var sword_grip := player.get_node_or_null("Visual/ModelRoot/RealisticSwordGrip") as Node3D
+	var sword := player.get_node_or_null("Visual/ModelRoot/RealisticSwordGrip/EquippedSword") as MeshInstance3D
 	if sword_grip == null or sword == null or sword.mesh == null or not sword.is_visible_in_tree():
-		_fail("La espada runtime no está visible en la pose realista.")
+		_fail("La espada runtime no está visible en el protagonista Quaternius.")
 		return
 	if sword.mesh.get_surface_count() == 0 or sword.mesh.get_aabb().size.length() <= 0.0:
 		_fail("La espada runtime no contiene geometría renderizable.")

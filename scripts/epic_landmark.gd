@@ -1,15 +1,11 @@
 class_name EpicLandmark
 extends Node3D
 
-## Hito visual del valle: una pared rocosa CC0 sostiene una fortaleza modular,
-## mientras la cascada, la poza y el río se generan con geometría ligera.
+## Hito visual del valle: una pared rocosa y una fortaleza construidas sólo
+## con piezas CC0 de Quaternius, acompañadas por cascada, poza y río.
 ## Las posiciones se adaptan a la altura real de Terrain3D al arrancar.
 
-const MOUNTAINSIDE: PackedScene = preload("res://assets/models/photorealistic/mountainside/mountainside_1k.gltf")
-const ROCK_FACE: PackedScene = preload("res://assets/models/photorealistic/rock_face_01/rock_face_01_1k.gltf")
-const MODULAR_FORT: PackedScene = preload("res://assets/models/photorealistic/modular_fort_01/modular_fort_01_1k.gltf")
-const DEAD_TREE: PackedScene = preload("res://assets/models/photorealistic/dead_tree_trunk/dead_tree_trunk_1k.gltf")
-const TREE_STUMP: PackedScene = preload("res://assets/models/photorealistic/tree_stump_01/tree_stump_01_1k.gltf")
+const QUATERNIUS_ROOT := "res://assets/quaternius/store_bundle/glTF/"
 const WATERFALL_SHADER: Shader = preload("res://shaders/waterfall.gdshader")
 const LAKE_SHADER: Shader = preload("res://shaders/lake_water.gdshader")
 const WATERFALL_AUDIO: AudioStream = preload("res://assets/audio/original/waterfall.ogg")
@@ -52,28 +48,35 @@ func _ready() -> void:
 
 
 func _cache_source_meshes() -> void:
-	_mountainside_mesh = _extract_mesh(MOUNTAINSIDE, "mountainside")
-	_rock_face_mesh = _extract_mesh(ROCK_FACE, "rock_face")
-	_dead_tree_mesh = _extract_mesh(DEAD_TREE, "dead_tree")
-	_stump_mesh = _extract_mesh(TREE_STUMP, "tree_stump")
-	for mesh_name in [
-		"tower_round",
-		"wall_thick_straight_01",
-		"wall_thin_gate_01",
-		"wall_thick_corner_01",
-	]:
-		_fort_meshes[mesh_name] = _extract_mesh(MODULAR_FORT, mesh_name)
+	_mountainside_mesh = _load_quaternius_mesh("Rock_Medium_1.gltf")
+	_rock_face_mesh = _load_quaternius_mesh("Rock_Medium_2.gltf")
+	_dead_tree_mesh = _load_quaternius_mesh("DeadTree_2.gltf")
+	_stump_mesh = _load_quaternius_mesh("DeadTree_5.gltf")
+	_fort_meshes["tower_round"] = _load_quaternius_mesh("Roof_Tower_RoundTiles.gltf")
+	_fort_meshes["wall_thick_straight_01"] = _load_quaternius_mesh("Wall_UnevenBrick_Straight.gltf")
+	_fort_meshes["wall_thin_gate_01"] = _load_quaternius_mesh("Wall_Arch.gltf")
+	_fort_meshes["wall_thick_corner_01"] = _load_quaternius_mesh("Wall_Plaster_WoodGrid.gltf")
 
 
 func _build_cliff_wall() -> void:
-	# El macizo central funciona como gran silueta; las piezas laterales rompen
-	# la repetición. Cada módulo consulta su propia altura del terreno.
+	# Tres estratos de rocas estilizadas forman una pared amplia y luminosa.
 	var cliff_layout: Array[Array] = [
-		[Vector2(64.0, -159.0), 0.0, Vector3(4.25, 4.15, 3.45)],
-		[Vector2(30.0, -162.0), 0.12, Vector3(3.55, 3.65, 3.15)],
-		[Vector2(97.0, -160.0), -0.16, Vector3(3.75, 3.85, 3.25)],
-		[Vector2(5.0, -168.0), 0.25, Vector3(3.10, 3.20, 2.85)],
-		[Vector2(122.0, -168.0), -0.30, Vector3(3.05, 3.10, 2.80)],
+		[Vector2(8.0, -167.0), 0.18, Vector3(4.8, 4.2, 4.1), 0.0],
+		[Vector2(25.0, -163.0), -0.22, Vector3(5.1, 4.6, 4.2), 0.0],
+		[Vector2(43.0, -161.0), 0.12, Vector3(5.2, 4.8, 4.4), 0.0],
+		[Vector2(64.0, -160.0), -0.08, Vector3(5.8, 5.0, 4.7), 0.0],
+		[Vector2(85.0, -161.0), 0.19, Vector3(5.3, 4.7, 4.4), 0.0],
+		[Vector2(104.0, -164.0), -0.27, Vector3(5.0, 4.4, 4.1), 0.0],
+		[Vector2(122.0, -168.0), 0.24, Vector3(4.6, 4.0, 3.9), 0.0],
+		[Vector2(19.0, -169.0), -0.16, Vector3(4.7, 4.1, 4.0), 7.0],
+		[Vector2(38.0, -166.0), 0.23, Vector3(5.0, 4.5, 4.2), 7.5],
+		[Vector2(58.0, -165.0), -0.12, Vector3(5.4, 4.8, 4.4), 8.0],
+		[Vector2(78.0, -165.0), 0.18, Vector3(5.2, 4.6, 4.3), 7.6],
+		[Vector2(98.0, -168.0), -0.20, Vector3(4.8, 4.3, 4.1), 7.0],
+		[Vector2(32.0, -171.0), 0.16, Vector3(4.5, 3.8, 3.8), 14.0],
+		[Vector2(52.0, -169.0), -0.21, Vector3(4.8, 4.1, 4.0), 14.5],
+		[Vector2(73.0, -169.0), 0.10, Vector3(4.9, 4.2, 4.0), 14.8],
+		[Vector2(93.0, -171.0), -0.14, Vector3(4.4, 3.8, 3.7), 14.0],
 	]
 	for index in cliff_layout.size():
 		var entry := cliff_layout[index]
@@ -81,29 +84,9 @@ func _build_cliff_wall() -> void:
 		var height := _height_at(point)
 		_spawn_visual(
 			epic_cliffs,
-			"Mountainside%02d" % index,
-			_mountainside_mesh,
-			Vector3(point.x, height - 0.35, point.y),
-			Vector3(0.0, entry[1], 0.0),
-			entry[2]
-		)
-		cliff_piece_count += 1
-
-	# Fachadas de roca húmeda junto a la caída y en la base de la pared.
-	var face_layout: Array[Array] = [
-		[Vector2(48.0, -151.5), -0.06, Vector3(3.25, 3.65, 2.25), 4.0],
-		[Vector2(77.0, -151.8), 0.08, Vector3(3.45, 3.80, 2.30), 3.0],
-		[Vector2(22.0, -154.0), 0.20, Vector3(3.0, 3.25, 2.05), 1.5],
-		[Vector2(108.0, -154.0), -0.23, Vector3(3.10, 3.35, 2.10), 1.0],
-	]
-	for index in face_layout.size():
-		var entry := face_layout[index]
-		var point: Vector2 = entry[0]
-		_spawn_visual(
-			epic_cliffs,
-			"RockFace%02d" % index,
-			_rock_face_mesh,
-			Vector3(point.x, _height_at(point) + float(entry[3]), point.y),
+			"QuaterniusCliff%02d" % index,
+			_mountainside_mesh if index % 2 == 0 else _rock_face_mesh,
+			Vector3(point.x, height - 0.35 + float(entry[3]), point.y),
 			Vector3(0.0, entry[1], 0.0),
 			entry[2]
 		)
@@ -227,7 +210,7 @@ func _build_pool_and_river() -> void:
 		river_mesh.surface_set_material(0, _create_water_material(0.055, 0.79))
 		_spawn_visual(pool, "River", river_mesh, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 
-	# Rocas de ribera: grandes piezas fotorrealistas, sin primitivas visibles.
+	# Rocas de ribera del mismo kit Quaternius que el bosque.
 	for index in 8:
 		var angle := TAU * float(index) / 8.0 + 0.22
 		var radius := Vector2(18.2, 13.0)
@@ -251,12 +234,14 @@ func _build_fortress() -> void:
 
 	# Solo se extraen y colocan estos módulos: no se instancia la lámina completa
 	# del pack, que incluye todas las piezas separadas sobre una cuadrícula.
-	_spawn_fort_piece("WestTower", tower_mesh, Vector3(46.0, fort_base, -163.0), 0.0, Vector3.ONE * 0.78)
-	_spawn_fort_piece("EastTower", tower_mesh, Vector3(80.0, fort_base, -163.0), 0.0, Vector3.ONE * 0.78)
-	_spawn_fort_piece("WallWest", wall_mesh, Vector3(48.0, fort_base, -158.0), PI * 0.5, Vector3.ONE * 0.82)
-	_spawn_fort_piece("WallEast", wall_mesh, Vector3(60.0, fort_base, -158.0), PI * 0.5, Vector3.ONE * 0.82)
-	_spawn_fort_piece("CentralGate", gate_mesh, Vector3(63.0, fort_base, -151.5), PI * 0.5, Vector3.ONE * 1.08)
-	_spawn_fort_piece("RearCorner", corner_mesh, Vector3(62.0, fort_base, -171.0), PI, Vector3.ONE * 0.84)
+	_spawn_fort_piece("WestTower", corner_mesh, Vector3(46.0, fort_base, -163.0), 0.0, Vector3.ONE * 2.8)
+	_spawn_fort_piece("WestTowerRoof", tower_mesh, Vector3(46.0, fort_base + 8.0, -163.0), 0.0, Vector3.ONE * 2.6)
+	_spawn_fort_piece("EastTower", corner_mesh, Vector3(80.0, fort_base, -163.0), 0.0, Vector3.ONE * 2.8)
+	_spawn_fort_piece("EastTowerRoof", tower_mesh, Vector3(80.0, fort_base + 8.0, -163.0), 0.0, Vector3.ONE * 2.6)
+	_spawn_fort_piece("WallWest", wall_mesh, Vector3(51.0, fort_base, -158.0), PI * 0.5, Vector3.ONE * 2.8)
+	_spawn_fort_piece("WallEast", wall_mesh, Vector3(72.0, fort_base, -158.0), PI * 0.5, Vector3.ONE * 2.8)
+	_spawn_fort_piece("CentralGate", gate_mesh, Vector3(63.0, fort_base, -153.0), PI * 0.5, Vector3.ONE * 3.2)
+	_spawn_fort_piece("RearCorner", wall_mesh, Vector3(63.0, fort_base, -171.0), 0.0, Vector3.ONE * 2.8)
 
 	_add_box_collider(
 		fortress,
@@ -477,12 +462,17 @@ func _add_fortress_beacon(beacon_position: Vector3) -> void:
 	fortress.add_child(glow)
 
 
-func _extract_mesh(source: PackedScene, name_fragment: String) -> Mesh:
-	var instance := source.instantiate()
-	var result := _find_mesh(instance, name_fragment)
+func _load_quaternius_mesh(file_name: String) -> Mesh:
+	var document := GLTFDocument.new()
+	var state := GLTFState.new()
+	var path := QUATERNIUS_ROOT + file_name
+	var error := document.append_from_file(path, state)
+	if error != OK:
+		push_error("No se pudo cargar el módulo Quaternius: %s (%s)" % [path, error_string(error)])
+		return null
+	var instance := document.generate_scene(state)
+	var result := _find_mesh(instance, "")
 	instance.free()
-	if result == null:
-		push_warning("No se encontró mesh '%s' en %s" % [name_fragment, source.resource_path])
 	return result
 
 

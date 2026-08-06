@@ -10,47 +10,55 @@
 [ext_resource type="PackedScene" path="res://scenes/vegetation_scatter.tscn" id="8_vegetation"]
 [ext_resource type="PackedScene" path="res://scenes/audio_environment.tscn" id="9_audio"]
 [ext_resource type="PackedScene" path="res://scenes/epic_landmark.tscn" id="10_epic"]
-[ext_resource type="Texture2D" path="res://assets/models/photorealistic/hdri/kloppenheim_06_puresky_2k.hdr" id="11_hdri"]
 [ext_resource type="Script" path="res://scripts/animated_clouds.gd" id="12_clouds"]
 [ext_resource type="Script" path="res://scripts/quaternius_wildlife.gd" id="13_wildlife"]
+[ext_resource type="PackedScene" path="res://scenes/medieval_set_dressing.tscn" id="14_medieval"]
 
-[sub_resource type="PanoramaSkyMaterial" id="PanoramaSky_misty"]
-panorama = ExtResource("11_hdri")
-energy_multiplier = 0.58
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSky_quaternius"]
+sky_top_color = Color(0.18, 0.55, 0.92, 1)
+sky_horizon_color = Color(0.84, 0.94, 1, 1)
+sky_curve = 0.18
+sky_energy_multiplier = 1.05
+ground_bottom_color = Color(0.2, 0.31, 0.18, 1)
+ground_horizon_color = Color(0.72, 0.83, 0.64, 1)
+ground_curve = 0.28
+sun_angle_max = 18.0
+sun_curve = 0.08
+sun_energy_multiplier = 4.0
 
 [sub_resource type="Sky" id="Sky_sunset"]
 radiance_size = 4
-sky_material = SubResource("PanoramaSky_misty")
+sky_material = SubResource("ProceduralSky_quaternius")
 
 [sub_resource type="Environment" id="Environment_world"]
 background_mode = 2
 sky = SubResource("Sky_sunset")
-background_energy_multiplier = 0.78
+background_energy_multiplier = 1.0
 ambient_light_source = 3
-ambient_light_color = Color(0.7, 0.78, 0.86, 1)
-ambient_light_energy = 0.5
+ambient_light_color = Color(0.91, 0.93, 0.87, 1)
+ambient_light_energy = 0.66
 reflected_light_source = 2
 tonemap_mode = 3
-tonemap_exposure = 0.84
+tonemap_exposure = 0.98
 ssao_enabled = true
 ssao_radius = 2.2
 ssao_intensity = 2.0
 ssao_power = 1.35
 glow_enabled = true
 glow_normalized = true
-glow_intensity = 0.38
-glow_bloom = 0.035
+glow_intensity = 0.26
+glow_bloom = 0.025
 volumetric_fog_enabled = true
-volumetric_fog_density = 0.00125
-volumetric_fog_albedo = Color(0.72, 0.79, 0.84, 1)
+volumetric_fog_density = 0.00072
+volumetric_fog_albedo = Color(0.9, 0.92, 0.84, 1)
 volumetric_fog_emission = Color(0.012, 0.014, 0.022, 1)
 volumetric_fog_emission_energy = 0.08
 volumetric_fog_length = 520.0
 volumetric_fog_sky_affect = 0.26
 volumetric_fog_temporal_reprojection_amount = 0.72
 adjustment_enabled = true
-adjustment_contrast = 1.06
-adjustment_saturation = 1.08
+adjustment_contrast = 1.04
+adjustment_saturation = 1.04
 
 [sub_resource type="FogMaterial" id="FogMaterial_valley"]
 density = 0.0065
@@ -173,9 +181,9 @@ script = ExtResource("4_world")
 environment = SubResource("Environment_world")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-19, -118, 0)
-light_color = Color(1, 0.88, 0.74, 1)
-light_energy = 0.96
+rotation_degrees = Vector3(-31, -124, 0)
+light_color = Color(1, 0.91, 0.76, 1)
+light_energy = 1.24
 shadow_enabled = true
 directional_shadow_max_distance = 300.0
 directional_shadow_fade_start = 0.82
@@ -215,6 +223,8 @@ metadata/_edit_lock_ = true
 [node name="QuaterniusWildlife" type="Node3D" parent="."]
 script = ExtResource("13_wildlife")
 
+[node name="MedievalSetDressing" parent="." instance=ExtResource("14_medieval")]
+
 [node name="EpicLandmark" parent="." instance=ExtResource("10_epic")]
 position = Vector3(-48, 0, 0)
 
@@ -231,13 +241,13 @@ script = ExtResource("2_camera")
 target_path = NodePath("../Player")
 
 [node name="SpringArm3D" type="SpringArm3D" parent="CameraRig"]
-spring_length = 4.65
+spring_length = 7.4
 margin = 0.15
 collision_mask = 1
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig/SpringArm3D"]
 current = true
-fov = 61.5
+fov = 64.0
 far = 1200.0
 
 [node name="Lookout" type="Node3D" parent="."]

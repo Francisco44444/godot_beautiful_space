@@ -23,14 +23,14 @@ func _run_test() -> void:
 	if landmark == null:
 		_fail("Falta EpicLandmark en el mundo.")
 		return
-	if world.has_node("MedievalSetDressing"):
-		_fail("El mundo todavía instancia MedievalSetDressing.")
+	if not world.has_node("MedievalSetDressing"):
+		_fail("Falta el decorado medieval de Quaternius.")
 		return
-	if landmark.cliff_piece_count != 9:
-		_fail("La pared rocosa debería contener 9 piezas visuales.")
+	if landmark.cliff_piece_count != 16:
+		_fail("La pared rocosa Quaternius debería contener 16 piezas visuales.")
 		return
-	if landmark.fortress_piece_count != 6:
-		_fail("La fortaleza debería contener 6 módulos.")
+	if landmark.fortress_piece_count != 8:
+		_fail("La fortaleza Quaternius debería contener 8 módulos.")
 		return
 	if is_nan(landmark.landmark_ground_height):
 		_fail("EpicLandmark no pudo leer la altura del terreno.")
