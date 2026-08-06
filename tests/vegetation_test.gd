@@ -27,9 +27,14 @@ func _run_test() -> void:
 	var scatter := world.get_node("VegetationScatter") as VegetationScatter
 	var horse := world.get_node("Horse") as Horse
 	var clouds := world.get_node_or_null("AnimatedClouds") as Node3D
+	var wildlife := world.get_node_or_null("QuaterniusWildlife") as Node3D
 
 	for _frame in range(4):
 		await process_frame
+
+	if wildlife == null or int(wildlife.get("generated_animal_count")) < 6:
+		_fail("El valle debe cargar fauna Quaternius desde el pack de animales.")
+		return
 
 	if clouds == null or clouds.get_child_count() < 5:
 		_fail("El cielo debe tener varias capas de nubes animadas.")
@@ -153,17 +158,27 @@ func _run_test() -> void:
 	if not _has_visible_mesh(horse_model_root):
 		_fail("El caballo no contiene ninguna malla visible y renderizable.")
 		return
-	var animator := horse_model_root.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	var animator := horse_model_root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if animator == null:
 		_fail("El caballo no contiene AnimationPlayer.")
 		return
-	for required_animation in ["Skeleton|1 Ilde", "Skeleton|Walk", "Skeleton|Gallop"]:
+	for required_animation in ["Idle", "Walk", "Gallop"]:
 		if not animator.has_animation(required_animation):
 			_fail("Falta la animación del caballo: %s" % required_animation)
 			return
-	if animator.current_animation != "Skeleton|1 Ilde":
-		_fail("El caballo no inicia con su animación realista Idle.")
+	if animator.current_animation != "Idle":
+		_fail("El caballo no inicia con su animación Quaternius Idle.")
 		return
+
+	var player_model_root := world.get_node("Player/Visual/ModelRoot") as Node3D
+	var player_animator := player_model_root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if player_model_root.get_child_count() == 0:
+		_fail("El protagonista debe cargar el caballero dorado Quaternius.")
+		return
+	for required_animation in ["Idle", "Walk", "Run", "SwordSlash"]:
+		if player_animator == null or not player_animator.has_animation(required_animation):
+			_fail("Falta la animación del protagonista Quaternius: %s" % required_animation)
+			return
 
 	var generated_cell_total := scatter.generated_cell_count
 	world.queue_free()

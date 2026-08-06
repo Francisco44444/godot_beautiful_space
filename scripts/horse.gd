@@ -24,12 +24,16 @@ const HOOFBEATS: Array[AudioStream] = [
 @export var horse_name: String = "Brisa"
 @export var respawn_height: float = -12.0
 
+@export_category("Quaternius")
+@export_file("*.gltf") var quaternius_horse_path := "res://assets/quaternius/ultimate_animated_animals/glTF/Horse.gltf"
+
 @onready var visual: Node3D = $Visual
 @onready var rider_anchor: Marker3D = $Visual/RiderAnchor
 @onready var name_label: Label3D = $NameLabel
-@onready var animation_player: AnimationPlayer = $Visual/ModelRoot/AnimationPlayer
+@onready var model_root: Node3D = $Visual/ModelRoot
 @onready var hoof_audio: AudioStreamPlayer3D = $HoofAudio
 
+var animation_player: AnimationPlayer
 var spawn_position: Vector3
 var mounted := false
 var _stride_time := 0.0
@@ -47,6 +51,7 @@ func _ready() -> void:
 	# La acción contextual vive en el HUD y solo aparece cuando está al alcance.
 	name_label.text = horse_name.to_upper()
 	name_label.visible = false
+	_load_quaternius_horse()
 	_prepare_animation_library()
 
 
@@ -123,10 +128,13 @@ func _slow_to_stop(delta: float) -> void:
 
 
 func _prepare_animation_library() -> void:
-	for animation_name in ["Skeleton|1 Ilde", "Skeleton|2 Ilde", "Skeleton|3 Ilde", "Skeleton|Walk", "Skeleton|Walk_L", "Skeleton|Walk_R", "Skeleton|Gallop", "Skeleton|Gallop_L", "Skeleton|Gallop_R"]:
+	if animation_player == null:
+		return
+	for animation_name in ["Idle", "Idle_2", "Idle_Headlow", "Walk", "Gallop", "Gallop_Jump", "Jump_toIdle"]:
 		if animation_player.has_animation(animation_name):
 			animation_player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
-	animation_player.play("Skeleton|1 Ilde")
+	if animation_player.has_animation("Idle"):
+		animation_player.play("Idle")
 
 
 func _update_animation(delta: float) -> void:
@@ -134,15 +142,17 @@ func _update_animation(delta: float) -> void:
 	var motion_amount := clampf(horizontal_speed / gallop_speed, 0.0, 1.0)
 	_stride_time += delta * lerpf(2.5, 10.0, motion_amount)
 
-	var requested_animation := "Skeleton|1 Ilde"
+	var requested_animation := "Idle"
 	var playback_speed := 1.0
 	if horizontal_speed > 7.0:
-		requested_animation = "Skeleton|Gallop"
+		requested_animation = "Gallop"
 		playback_speed = clampf(horizontal_speed / gallop_speed, 0.75, 1.15)
 	elif horizontal_speed > 0.25:
-		requested_animation = "Skeleton|Walk"
+		requested_animation = "Walk"
 		playback_speed = clampf(horizontal_speed / walk_speed, 0.55, 1.15)
 
+	if animation_player == null or not animation_player.has_animation(requested_animation):
+		return
 	if animation_player.current_animation != requested_animation:
 		animation_player.play(requested_animation, 0.22)
 	animation_player.speed_scale = playback_speed
@@ -150,6 +160,27 @@ func _update_animation(delta: float) -> void:
 	# El ancla acompaña suavemente el lomo para que el jinete siga la zancada.
 	var bob := absf(sin(_stride_time * 2.0)) * 0.075 * motion_amount
 	rider_anchor.position.y = lerpf(rider_anchor.position.y, _rider_base_height + bob, 0.3)
+
+
+func _load_quaternius_horse() -> void:
+	var loaded_scene := _load_gltf_scene(quaternius_horse_path)
+	if loaded_scene == null:
+		return
+	model_root.add_child(loaded_scene)
+	loaded_scene.rotation_degrees.y = 180.0
+	loaded_scene.scale = Vector3.ONE * 1.05
+	animation_player = model_root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+
+
+func _load_gltf_scene(path: String) -> Node3D:
+	var state := GLTFState.new()
+	var document := GLTFDocument.new()
+	var error := document.append_from_file(path, state)
+	if error != OK:
+		push_error("No se pudo cargar el modelo Quaternius: %s" % path)
+		return null
+	var node := document.generate_scene(state)
+	return node as Node3D
 
 
 func _update_hoof_audio(delta: float) -> void:

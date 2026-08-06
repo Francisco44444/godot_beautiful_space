@@ -1,7 +1,7 @@
 class_name Player
 extends CharacterBody3D
 
-## Aventurero medieval original en tercera persona. Mantiene la máquina de
+## Aventurero medieval Quaternius en tercera persona. Mantiene la máquina de
 ## estados a pie/montado y añade combate cuerpo a cuerpo con espada.
 
 signal mount_state_changed(mounted: bool, horse: Horse)
@@ -22,12 +22,12 @@ const PLATE_ALBEDO: Texture2D = preload("res://assets/textures/cc0/polyhaven/met
 const PLATE_NORMAL_ROUGHNESS: Texture2D = preload("res://assets/textures/cc0/polyhaven/metal_plate/normal_roughness.png")
 const PLATE_METALLIC: Texture2D = preload("res://assets/textures/cc0/polyhaven/metal_plate/metallic.jpg")
 
-const ANIM_IDLE := "HumanArmature|Idle_swordRight"
-const ANIM_WALK := "HumanArmature|Walking"
-const ANIM_RUN := "HumanArmature|Run_swordRight"
-const ANIM_JUMP := "HumanArmature|Jump"
-const ANIM_ATTACK := "HumanArmature|swordAttackJump"
-const REALISTIC_IDLE := "mixamo_com"
+const ANIM_IDLE := "Idle"
+const ANIM_WALK := "Walk"
+const ANIM_RUN := "Run"
+const ANIM_JUMP := "Jump"
+const ANIM_ATTACK := "SwordSlash"
+const REALISTIC_IDLE := ANIM_IDLE
 
 @export_category("Movimiento")
 @export var walk_speed: float = 5.0
@@ -46,6 +46,9 @@ const REALISTIC_IDLE := "mixamo_com"
 @export_category("Seguridad")
 @export var respawn_height: float = -12.0
 
+@export_category("Quaternius")
+@export_file("*.gltf") var quaternius_hero_path := "res://assets/quaternius/ultimate_animated_characters/glTF/Knight_Golden_Male.gltf"
+
 @export_category("Montura")
 @export var mount_distance: float = 3.6
 @export var dismount_offset: float = 1.65
@@ -53,16 +56,16 @@ const REALISTIC_IDLE := "mixamo_com"
 @onready var visual: Node3D = $Visual
 @onready var collision: CollisionShape3D = $Collision
 @onready var model_root: Node3D = $Visual/ModelRoot
-@onready var skeleton: Skeleton3D = $Visual/ModelRoot/HumanArmature/Skeleton3D
-@onready var character_mesh: MeshInstance3D = $Visual/ModelRoot/HumanArmature/Skeleton3D/Knight
-@onready var animation_player: AnimationPlayer = $Visual/ModelRoot/AnimationPlayer
-@onready var realistic_pose: Node3D = $Visual/RealisticPose
-@onready var realistic_model: Node3D = $Visual/RealisticPose/RealisticHero
-@onready var realistic_skeleton: Skeleton3D = realistic_model.find_child("Skeleton3D", true, false) as Skeleton3D
-@onready var realistic_animation: AnimationPlayer = $Visual/RealisticPose/RealisticHero/AnimationPlayer
 @onready var attack_area: Area3D = $Visual/AttackArea
 @onready var attack_shape: CollisionShape3D = $Visual/AttackArea/CollisionShape3D
 
+var skeleton: Skeleton3D
+var character_mesh: MeshInstance3D
+var animation_player: AnimationPlayer
+var realistic_pose: Node3D
+var realistic_model: Node3D
+var realistic_skeleton: Skeleton3D
+var realistic_animation: AnimationPlayer
 var spawn_position: Vector3
 var control_state := ControlState.ON_FOOT
 var current_mount: Horse
@@ -81,7 +84,8 @@ func _ready() -> void:
 	floor_snap_length = 0.35
 	floor_max_angle = deg_to_rad(48.0)
 	attack_shape.disabled = true
-	model_root.visible = false
+	_load_quaternius_hero()
+	model_root.visible = true
 	_configure_realistic_hero()
 	_attach_sword_to_realistic_hand()
 	_configure_animation_loops()
@@ -278,6 +282,8 @@ func _update_locomotion_animation() -> void:
 
 
 func _play_animation(animation_name: String, blend: float, speed: float = 1.0) -> void:
+	if animation_player == null:
+		return
 	if not animation_player.has_animation(animation_name):
 		return
 	if animation_player.current_animation != animation_name:
@@ -287,12 +293,16 @@ func _play_animation(animation_name: String, blend: float, speed: float = 1.0) -
 
 
 func _configure_animation_loops() -> void:
+	if animation_player == null:
+		return
 	for animation_name in [ANIM_IDLE, ANIM_WALK, ANIM_RUN]:
 		if animation_player.has_animation(animation_name):
 			animation_player.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
 
 
 func _configure_realistic_hero() -> void:
+	if realistic_animation == null:
+		return
 	if realistic_animation.has_animation(REALISTIC_IDLE):
 		var idle := realistic_animation.get_animation(REALISTIC_IDLE)
 		idle.loop_mode = Animation.LOOP_LINEAR
@@ -361,17 +371,42 @@ func _attach_sword_to_realistic_hand() -> void:
 	source_root.free()
 	var grip := Node3D.new()
 	grip.name = "RealisticSwordGrip"
-	grip.position = Vector3(-1.82, 3.82, -0.18)
+	grip.position = Vector3(-0.34, 1.28, -0.12)
 	grip.rotation_degrees = Vector3(90.0, 0.0, -6.0)
 	realistic_pose.add_child(grip)
 	sword_mesh.name = "EquippedSword"
-	# La espada FBX mide 4,35 cm en el mesh importado. Visual está a 0,3,
-	# por lo que x92 deja una hoja de aproximadamente 1,20 m en el mundo.
-	sword_mesh.scale = Vector3.ONE * 92.0
+	# La espada FBX mide centimetros; esta escala encaja con los personajes
+	# Quaternius, que ya vienen en unidades de juego legibles para Godot.
+	sword_mesh.scale = Vector3.ONE * 26.0
 	grip.add_child(sword_mesh)
 	_configure_sword_materials(sword_mesh)
 	_realistic_sword_grip = grip
 	_realistic_sword_base_rotation = grip.rotation
+
+
+func _load_quaternius_hero() -> void:
+	var loaded_scene := _load_gltf_scene(quaternius_hero_path)
+	if loaded_scene != null:
+		model_root.add_child(loaded_scene)
+		loaded_scene.rotation_degrees.y = 180.0
+	realistic_pose = model_root
+	realistic_model = model_root
+	skeleton = _find_skeleton(model_root)
+	character_mesh = _find_visible_mesh(model_root)
+	animation_player = model_root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	realistic_skeleton = skeleton
+	realistic_animation = animation_player
+
+
+func _load_gltf_scene(path: String) -> Node3D:
+	var state := GLTFState.new()
+	var document := GLTFDocument.new()
+	var error := document.append_from_file(path, state)
+	if error != OK:
+		push_error("No se pudo cargar el modelo Quaternius: %s" % path)
+		return null
+	var node := document.generate_scene(state)
+	return node as Node3D
 
 
 func _make_plate_material() -> StandardMaterial3D:
@@ -498,6 +533,20 @@ func _configure_sword_materials(sword_mesh: MeshInstance3D) -> void:
 		material.roughness = 0.24 if surface in [0, 2] else 0.78
 		material.metallic = 0.95 if surface in [0, 2] else 0.05
 		sword_mesh.set_surface_override_material(surface, material)
+
+
+func _find_skeleton(parent: Node) -> Skeleton3D:
+	for node in parent.find_children("*", "Skeleton3D", true, false):
+		return node as Skeleton3D
+	return null
+
+
+func _find_visible_mesh(parent: Node) -> MeshInstance3D:
+	for node in parent.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance != null and mesh_instance.mesh != null:
+			return mesh_instance
+	return null
 
 
 func _respawn() -> void:

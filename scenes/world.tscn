@@ -1,4 +1,4 @@
-[gd_scene load_steps=42 format=3]
+[gd_scene load_steps=43 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
@@ -12,6 +12,7 @@
 [ext_resource type="PackedScene" path="res://scenes/epic_landmark.tscn" id="10_epic"]
 [ext_resource type="Texture2D" path="res://assets/models/photorealistic/hdri/kloppenheim_06_puresky_2k.hdr" id="11_hdri"]
 [ext_resource type="Script" path="res://scripts/animated_clouds.gd" id="12_clouds"]
+[ext_resource type="Script" path="res://scripts/quaternius_wildlife.gd" id="13_wildlife"]
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSky_misty"]
 panorama = ExtResource("11_hdri")
@@ -210,6 +211,9 @@ top_level = true
 metadata/_edit_lock_ = true
 
 [node name="VegetationScatter" parent="." instance=ExtResource("8_vegetation")]
+
+[node name="QuaterniusWildlife" type="Node3D" parent="."]
+script = ExtResource("13_wildlife")
 
 [node name="EpicLandmark" parent="." instance=ExtResource("10_epic")]
 position = Vector3(-48, 0, 0)
