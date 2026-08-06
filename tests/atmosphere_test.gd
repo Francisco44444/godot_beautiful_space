@@ -88,6 +88,19 @@ func _run_test() -> void:
 		failures.append("Falta el mar low-poly animado")
 	elif island_environment.get("stars") == null or int(island_environment.get("star_count")) < 200:
 		failures.append("La noche necesita un campo de estrellas")
+	else:
+		var moon := island_environment.get("moon_visual") as MeshInstance3D
+		var moon_light := island_environment.get("moon_light") as DirectionalLight3D
+		if moon == null or not bool(moon.get_meta("low_poly_moon", false)) or float(island_environment.get("moon_radius")) < 80.0:
+			failures.append("Falta la gran luna facetada de al menos 80 metros de radio")
+		elif moon_light == null:
+			failures.append("La luna no dispone de luz direccional nocturna")
+		else:
+			world.sun_cycle_radians = 4.72
+			world.call("_update_sun_cycle", 0.0)
+			await process_frame
+			if moon_light.light_energy < 0.55 or not moon_light.shadow_enabled:
+				failures.append("La luna no alumbra ni proyecta sombras durante la noche")
 
 	var ambient_audio := world.get_node("AmbientAudio") as AmbientAudio
 	ambient_audio.music.stop()
@@ -99,7 +112,7 @@ func _run_test() -> void:
 		_fail(failures)
 		return
 
-	print("ATMOSPHERE TEST OK: día, atardecer, noche, estrellas, mar low-poly y niebla regional.")
+	print("ATMOSPHERE TEST OK: ciclo completo, luna low-poly luminosa, estrellas, mar y niebla regional.")
 	quit(0)
 
 

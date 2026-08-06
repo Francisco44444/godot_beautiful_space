@@ -117,8 +117,10 @@ func _control_pixel(point: Vector2, height: float) -> Color:
 
 	var road_distance := distance_to_roads(point)
 	var bits := Terrain3DUtil.enc_base(base_texture)
-	if road_distance < 32.0 and height > 0.5:
-		var road_strength := 1.0 - smoothstep(9.0, 32.0, road_distance)
+	# Sendero de 9-19 m en vez de una franja de 64 m: a la resolución low-poly
+	# del terreno conserva un centro legible y permite que el bosque lo abrace.
+	if road_distance < 19.0 and height > 0.5:
+		var road_strength := 1.0 - smoothstep(4.5, 19.0, road_distance)
 		bits |= Terrain3DUtil.enc_overlay(1)
 		bits |= Terrain3DUtil.enc_blend(roundi(road_strength * 255.0))
 	else:

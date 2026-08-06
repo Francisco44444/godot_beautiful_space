@@ -3,14 +3,14 @@ extends SceneTree
 ## Comprueba que el valle Quaternius sea determinista, esté dividido en celdas
 ## y no invada el sendero jugable. También valida personajes y caballo.
 
-const EXPECTED_TREE_COUNT := 2600
-const EXPECTED_ROCK_COUNT := 420
-const EXPECTED_GRASS_COUNT := 18000
-const EXPECTED_FERN_COUNT := 1300
-const EXPECTED_SHRUB_COUNT := 1450
-const EXPECTED_FLOWER_COUNT := 1800
-const EXPECTED_MUSHROOM_COUNT := 520
-const EXPECTED_PATH_PEBBLE_COUNT := 2400
+const EXPECTED_TREE_COUNT := 24000
+const EXPECTED_ROCK_COUNT := 3000
+const EXPECTED_GRASS_COUNT := 110000
+const EXPECTED_FERN_COUNT := 10000
+const EXPECTED_SHRUB_COUNT := 10000
+const EXPECTED_FLOWER_COUNT := 8000
+const EXPECTED_MUSHROOM_COUNT := 2200
+const EXPECTED_PATH_PEBBLE_COUNT := 12000
 const EXPECTED_CHARACTER_COUNT := 50
 const MIN_EXPECTED_CELL_COUNT := 2800
 
@@ -201,9 +201,12 @@ func _run_test() -> void:
 				return
 
 	var collision_body := scatter.get_node_or_null("DecorCollisions") as StaticBody3D
-	var expected_collisions := scatter.generated_tree_count + scatter.generated_rock_count
+	var expected_collisions := scatter.generated_tree_collision_count + scatter.generated_rock_collision_count
 	if collision_body == null or collision_body.get_child_count() != expected_collisions:
-		_fail("Los %d árboles y rocas deben tener colisión." % expected_collisions)
+		_fail("Las %d colisiones selectivas del arbolado y las rocas no coinciden." % expected_collisions)
+		return
+	if scatter.generated_tree_collision_count < 4000 or scatter.generated_rock_collision_count < 900:
+		_fail("El corredor jugable no conserva suficiente colisión entre árboles y rocas.")
 		return
 
 	var horse_model_root := horse.get_node_or_null("Visual/ModelRoot") as Node3D

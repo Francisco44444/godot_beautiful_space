@@ -32,6 +32,8 @@ func _run_test() -> void:
 		_check_node(world, "MedievalSetDressing", "Node3D", failures)
 		_check_node(world, "IslandEnvironment/LowPolyOcean", "MeshInstance3D", failures)
 		_check_node(world, "IslandEnvironment/NightStars", "MultiMeshInstance3D", failures)
+		_check_node(world, "IslandEnvironment/LowPolyMoon", "MeshInstance3D", failures)
+		_check_node(world, "IslandEnvironment/MoonLight", "DirectionalLight3D", failures)
 		_check_node(world, "HUD/MiniMap", "Control", failures)
 		_check_node(world, "HUD/FullMap", "Control", failures)
 		_check_node(world, "Player/Visual/ModelRoot", "Node3D", failures)
@@ -53,7 +55,7 @@ func _run_test() -> void:
 			failures.append("Falta la acción de entrada: %s" % action)
 
 	if failures.is_empty():
-		print("SMOKE TEST OK: isla de 100 km², mar low-poly, mapa, hito, audio y controles disponibles.")
+		print("SMOKE TEST OK: isla de 100 km², luna y mar low-poly, mapa, audio y controles disponibles.")
 		quit(0)
 	else:
 		for failure in failures:

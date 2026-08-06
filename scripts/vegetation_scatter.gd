@@ -3,8 +3,8 @@ extends Node3D
 
 ## Valle estilizado construido exclusivamente con el Stylized Nature Mega Kit
 ## de Quaternius. Los modelos se cargan desde glTF y se agrupan por celdas en
-## MultiMesh para mantener claros amplios y masas de bosque legibles sin
-## disparar los draw calls.
+## MultiMesh para mantener senderos frondosos y masas de bosque muy densas sin
+## convertir cada planta en un draw call independiente.
 
 const ASSET_ROOT := "res://assets/quaternius/store_bundle/glTF/"
 const GREEN_TREE_FILES: PackedStringArray = [
@@ -76,16 +76,16 @@ const GROUND_CELL_SIZE := 380.0
 
 @export var terrain_path: NodePath = NodePath("../Terrain3D")
 @export_category("Claro y bosque Quaternius")
-@export var tree_count := 2600
+@export var tree_count := 24000
 @export_range(0.0, 0.15, 0.001) var autumn_tree_ratio := 0.004
-@export var rock_count := 420
-@export var grass_count := 18000
-@export var fern_count := 1300
-@export var shrub_count := 1450
-@export var flower_count := 1800
-@export var mushroom_count := 520
-@export var path_pebble_count := 2400
-@export var forest_detail_count := 180
+@export var rock_count := 3000
+@export var grass_count := 110000
+@export var fern_count := 10000
+@export var shrub_count := 10000
+@export var flower_count := 8000
+@export var mushroom_count := 2200
+@export var path_pebble_count := 12000
+@export var forest_detail_count := 1200
 @export var random_seed := 731947
 
 @onready var terrain: Terrain3D = get_node(terrain_path) as Terrain3D
@@ -101,6 +101,8 @@ var generated_path_pebble_count := 0
 var generated_cell_count := 0
 var generated_green_tree_count := 0
 var generated_autumn_tree_count := 0
+var generated_tree_collision_count := 0
+var generated_rock_collision_count := 0
 var tree_positions: Array[Vector3] = []
 
 var _random := RandomNumberGenerator.new()
@@ -159,6 +161,7 @@ func _scatter_forest() -> void:
 			distance_to_route(point) < 11.5
 			or _inside_clearing(point, 13.5, 23.0)
 			or _inside_village_clearing(point, 5.0)
+			or _inside_desert(point)
 			or point.distance_to(EPIC_LANDMARK) < 37.0
 			or _slope_at(point) > 0.80
 		):
@@ -186,9 +189,13 @@ func _scatter_forest() -> void:
 			_make_transform(position, _random.randf_range(0.0, TAU), Vector3.ONE * scale_value)
 		)
 		tree_positions.append(position)
-		_add_tree_collision(position, _tree_meshes[variant].get_aabb(), scale_value)
+		# Colisión completa alrededor de las rutas jugables y una muestra densa en
+		# el bosque profundo. La geometría distante sigue siendo MultiMesh barata.
+		if distance_to_route(point) < 34.0 or generated_tree_count % 10 == 0:
+			_add_tree_collision(position, _tree_meshes[variant].get_aabb(), scale_value)
+			generated_tree_collision_count += 1
 		generated_tree_count += 1
-	_install_cell_buckets("TreeCells", buckets, _tree_meshes, 820.0, true)
+	_install_cell_buckets("TreeCells", buckets, _tree_meshes, 980.0, true)
 
 
 func _scatter_rocks() -> void:
@@ -197,7 +204,7 @@ func _scatter_rocks() -> void:
 	while generated_rock_count < rock_count and attempts < rock_count * 24:
 		attempts += 1
 		var point := _corridor_point(5.2, 142.0, 0.62)
-		if distance_to_route(point) < 4.8 or _inside_clearing(point, 9.0, 16.0) or _inside_village_clearing(point, -5.0):
+		if distance_to_route(point) < 8.0 or _inside_clearing(point, 9.0, 16.0) or _inside_village_clearing(point, -5.0):
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -211,9 +218,11 @@ func _scatter_rocks() -> void:
 		)
 		var position := Vector3(point.x, height + 0.03, point.y)
 		_bucket_transform(buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(position, _random.randf_range(0.0, TAU), scale_vector))
-		_add_rock_collision(position, _rock_meshes[variant].get_aabb().size * scale_vector)
+		if distance_to_route(point) < 28.0 or generated_rock_count % 4 == 0:
+			_add_rock_collision(position, _rock_meshes[variant].get_aabb().size * scale_vector)
+			generated_rock_collision_count += 1
 		generated_rock_count += 1
-	_install_cell_buckets("RockCells", buckets, _rock_meshes, 310.0, true)
+	_install_cell_buckets("RockCells", buckets, _rock_meshes, 420.0, true)
 
 
 func _scatter_ground_cover() -> void:
@@ -222,24 +231,28 @@ func _scatter_ground_cover() -> void:
 	while generated_grass_count < grass_count and attempts < grass_count * 14:
 		attempts += 1
 		var point := _corridor_point(2.35, 126.0, 0.76)
-		if distance_to_route(point) < 1.8 or _inside_clearing(point, 4.3, 8.0) or _slope_at(point) > 0.88:
+		if distance_to_route(point) < 1.8 or _inside_clearing(point, 4.3, 8.0) or _inside_desert(point) or _slope_at(point) > 0.88:
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
 			continue
 		var variant := _random.randi_range(0, _grass_meshes.size() - 1)
-		var scale_value := _random.randf_range(0.42, 0.88)
-		var scale_vector := Vector3(scale_value * _random.randf_range(0.72, 1.28), scale_value, scale_value * _random.randf_range(0.72, 1.28))
+		var scale_value := _random.randf_range(0.64, 1.28)
+		var scale_vector := Vector3(
+			scale_value * _random.randf_range(1.30, 2.10),
+			scale_value,
+			scale_value * _random.randf_range(1.30, 2.10)
+		)
 		_bucket_transform(grass_buckets, variant, point, GROUND_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.02, point.y), _random.randf_range(0.0, TAU), scale_vector))
 		generated_grass_count += 1
-	_install_cell_buckets("GrassCells", grass_buckets, _grass_meshes, 145.0, false)
+	_install_cell_buckets("GrassCells", grass_buckets, _grass_meshes, 210.0, false)
 
 	var fern_buckets: Dictionary = {}
 	attempts = 0
 	while generated_fern_count < fern_count and attempts < fern_count * 16:
 		attempts += 1
 		var point := _corridor_point(2.8, 132.0, 0.70)
-		if distance_to_route(point) < 2.15 or _inside_clearing(point, 5.4, 10.0) or _slope_at(point) > 0.82:
+		if distance_to_route(point) < 2.15 or _inside_clearing(point, 5.4, 10.0) or _inside_desert(point) or _slope_at(point) > 0.82:
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -248,14 +261,14 @@ func _scatter_ground_cover() -> void:
 		var scale_value := _random.randf_range(0.30, 0.62) if variant == 0 else _random.randf_range(0.52, 1.10)
 		_bucket_transform(fern_buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.03, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		generated_fern_count += 1
-	_install_cell_buckets("FernCells", fern_buckets, _fern_meshes, 180.0, true)
+	_install_cell_buckets("FernCells", fern_buckets, _fern_meshes, 245.0, true)
 
 	var shrub_buckets: Dictionary = {}
 	attempts = 0
 	while generated_shrub_count < shrub_count and attempts < shrub_count * 16:
 		attempts += 1
 		var point := _corridor_point(3.4, 136.0, 0.68)
-		if distance_to_route(point) < 2.8 or _inside_clearing(point, 6.2, 11.5) or _slope_at(point) > 0.82:
+		if distance_to_route(point) < 2.8 or _inside_clearing(point, 6.2, 11.5) or _inside_desert(point) or _slope_at(point) > 0.82:
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -264,7 +277,7 @@ func _scatter_ground_cover() -> void:
 		var scale_value := _random.randf_range(0.82, 1.62)
 		_bucket_transform(shrub_buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.04, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		generated_shrub_count += 1
-	_install_cell_buckets("ShrubCells", shrub_buckets, _shrub_meshes, 200.0, true)
+	_install_cell_buckets("ShrubCells", shrub_buckets, _shrub_meshes, 270.0, true)
 
 
 func _scatter_color_details() -> void:
@@ -273,23 +286,23 @@ func _scatter_color_details() -> void:
 	while generated_flower_count < flower_count and attempts < flower_count * 15:
 		attempts += 1
 		var point := _corridor_point(1.9, 108.0, 0.78)
-		if distance_to_route(point) < 1.45 or _inside_clearing(point, 3.8, 7.0) or _slope_at(point) > 0.84:
+		if distance_to_route(point) < 1.45 or _inside_clearing(point, 3.8, 7.0) or _inside_desert(point) or _slope_at(point) > 0.84:
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
 			continue
 		var variant := _random.randi_range(0, _flower_meshes.size() - 1)
-		var scale_value := _random.randf_range(0.28, 0.58)
+		var scale_value := _random.randf_range(0.40, 0.82)
 		_bucket_transform(flower_buckets, variant, point, GROUND_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.025, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		generated_flower_count += 1
-	_install_cell_buckets("FlowerCells", flower_buckets, _flower_meshes, 125.0, false)
+	_install_cell_buckets("FlowerCells", flower_buckets, _flower_meshes, 185.0, false)
 
 	var mushroom_buckets: Dictionary = {}
 	attempts = 0
 	while generated_mushroom_count < mushroom_count and attempts < mushroom_count * 18:
 		attempts += 1
 		var point := _corridor_point(2.0, 112.0, 0.72)
-		if distance_to_route(point) < 1.6 or _inside_clearing(point, 3.8, 7.5):
+		if distance_to_route(point) < 1.6 or _inside_clearing(point, 3.8, 7.5) or _inside_desert(point):
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -298,7 +311,7 @@ func _scatter_color_details() -> void:
 		var scale_value := _random.randf_range(0.72, 1.42)
 		_bucket_transform(mushroom_buckets, variant, point, GROUND_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.02, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		generated_mushroom_count += 1
-	_install_cell_buckets("MushroomCells", mushroom_buckets, _mushroom_meshes, 105.0, false)
+	_install_cell_buckets("MushroomCells", mushroom_buckets, _mushroom_meshes, 150.0, false)
 
 
 func _scatter_path_pebbles() -> void:
@@ -417,7 +430,8 @@ func _corridor_point(minimum_offset: float, maximum_offset: float, corridor_chan
 	var point: Vector2 = sample[0]
 	var normal: Vector2 = sample[1]
 	var side := -1.0 if _random.randf() < 0.5 else 1.0
-	return point + normal * _random.randf_range(minimum_offset, maximum_offset) * side
+	var edge_bias := pow(_random.randf(), 2.15)
+	return point + normal * lerpf(minimum_offset, maximum_offset, edge_bias) * side
 
 
 func _route_sample() -> Array[Vector2]:
@@ -455,10 +469,25 @@ func distance_to_route(point: Vector2) -> float:
 
 
 func _forest_point() -> Vector2:
+	# Siete de cada diez muestras forman un cinturón de vegetación de hasta
+	# 132 m a cada lado de todos los senderos. El resto rellena las reservas
+	# forestales aisladas para que desde dentro parezcan realmente interminables.
+	if _random.randf() < 0.70:
+		var sample := _route_sample()
+		var point: Vector2 = sample[0]
+		var normal: Vector2 = sample[1]
+		var side := -1.0 if _random.randf() < 0.5 else 1.0
+		var edge_bias := pow(_random.randf(), 1.65)
+		return point + normal * lerpf(13.0, 132.0, edge_bias) * side
 	var zone := FOREST_ZONES[_random.randi_range(0, FOREST_ZONES.size() - 1)]
 	var angle := _random.randf_range(0.0, TAU)
 	var radius := sqrt(_random.randf())
 	return Vector2(zone.x + cos(angle) * zone.z * radius, zone.y + sin(angle) * zone.w * radius)
+
+
+func _inside_desert(point: Vector2) -> bool:
+	var local := point - Vector2(2350.0, 2050.0)
+	return pow(local.x / 1420.0, 2.0) + pow(local.y / 1220.0, 2.0) < 1.0
 
 
 func _inside_clearing(point: Vector2, start_radius: float, lookout_radius: float) -> bool:

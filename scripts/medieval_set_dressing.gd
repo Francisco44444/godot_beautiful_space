@@ -1,19 +1,20 @@
 class_name MedievalSetDressing
 extends Node3D
 
-## Villas modulares construidas sobre una cuadrícula real de 2 m. Las casas
-## 4x6 usan exactamente dos módulos en fachada, tres en los laterales y el
-## tejado 4x6 correspondiente; así ninguna pared queda abierta o inclinada.
+## Villas modulares Quaternius a escala habitable. Cada vivienda ocupa 8 x 14 m,
+## tiene dos plantas visuales, puerta física abierta e interior transitable.
 
 const ROOT := "res://assets/quaternius/store_bundle/glTF/"
+const HOUSE_SCALE := Vector3(1.35, 1.18, 1.35)
 const WALL: PackedScene = preload(ROOT + "Wall_Plaster_Straight.gltf")
 const WALL_DOOR: PackedScene = preload(ROOT + "Wall_Plaster_Door_Round.gltf")
 const WALL_WINDOW: PackedScene = preload(ROOT + "Wall_Plaster_Window_Wide_Round.gltf")
 const WALL_TIMBER: PackedScene = preload(ROOT + "Wall_Plaster_WoodGrid.gltf")
 const WALL_STONE: PackedScene = preload(ROOT + "Wall_UnevenBrick_Straight.gltf")
 const WALL_ARCH: PackedScene = preload(ROOT + "Wall_Arch.gltf")
-const ROOF_4X6: PackedScene = preload(ROOT + "Roof_RoundTiles_4x6.gltf")
-const ROOF_6X8: PackedScene = preload(ROOT + "Roof_RoundTiles_6x8.gltf")
+const ROOF_8X14: PackedScene = preload(ROOT + "Roof_RoundTiles_8x14.gltf")
+const BALCONY: PackedScene = preload(ROOT + "Balcony_Simple_Straight.gltf")
+const FLOOR_BRICK: PackedScene = preload(ROOT + "Floor_UnevenBrick.gltf")
 const TOWER_ROOF: PackedScene = preload(ROOT + "Roof_Tower_RoundTiles.gltf")
 const FENCE: PackedScene = preload(ROOT + "Prop_WoodenFence_Single.gltf")
 const WAGON: PackedScene = preload(ROOT + "Prop_Wagon.gltf")
@@ -41,6 +42,7 @@ var generated_house_count := 0
 var generated_village_count := 0
 var generated_castle_count := 0
 var generated_light_count := 0
+var generated_enterable_house_count := 0
 var _foundation_material: StandardMaterial3D
 
 
@@ -60,9 +62,9 @@ func _build_village(spec: Dictionary) -> void:
 	var village_name: String = spec.name
 	generated_village_count += 1
 	var layout: Array[Vector3] = [
-		Vector3(-26, -16, -0.42), Vector3(24, -17, 0.38),
-		Vector3(-31, 15, -0.12), Vector3(29, 17, 0.18),
-		Vector3(-3, 31, PI),
+		Vector3(-45, -30, -0.42), Vector3(45, -30, 0.38),
+		Vector3(-50, 30, -0.12), Vector3(50, 32, 0.18),
+		Vector3(0, 58, PI),
 	]
 	for index in layout.size():
 		var item := layout[index]
@@ -79,38 +81,72 @@ func _build_village(spec: Dictionary) -> void:
 		_build_village_street(center, yaw)
 	_add_village_lights(center, yaw)
 	if bool(spec.castle):
-		var castle_offset := Vector2(78, 3).rotated(yaw)
+		var castle_offset := Vector2(125, 3).rotated(yaw)
 		_build_castle(center + castle_offset, yaw, village_name)
 
 
 func _build_cottage(center: Vector2, yaw: float, house_name: String) -> void:
-	var body := _create_building_body(center, yaw, house_name, Vector3(4.15, 3.15, 6.15))
-	_add_foundation(body, Vector3(4.45, 0.48, 6.45))
-	for z in [-2.0, 0.0, 2.0]:
-		_add_part(body, WALL_TIMBER if z == 0.0 else WALL, Vector3(-2.0, 0.25, z), PI * 0.5)
-		_add_part(body, WALL_WINDOW if z == 0.0 else WALL, Vector3(2.0, 0.25, z), -PI * 0.5)
-	_add_part(body, WALL_DOOR, Vector3(-1.0, 0.25, 3.0), PI)
-	_add_part(body, WALL_WINDOW, Vector3(1.0, 0.25, 3.0), PI)
-	_add_part(body, WALL, Vector3(-1.0, 0.25, -3.0), 0.0)
-	_add_part(body, WALL_WINDOW, Vector3(1.0, 0.25, -3.0), 0.0)
-	_add_part(body, ROOF_4X6, Vector3(0.0, 3.38, 0.0), 0.0)
-	_add_part(body, CHIMNEY, Vector3(-1.15, 3.42, -1.15), 0.0)
-	_add_part(body, VINE, Vector3(2.06, 0.35, 1.25), -PI * 0.5)
-	generated_house_count += 1
+	_build_large_house(center, yaw, house_name, false)
 
 
 func _build_hall(center: Vector2, yaw: float, house_name: String) -> void:
-	var body := _create_building_body(center, yaw, house_name, Vector3(6.15, 3.15, 8.15))
-	_add_foundation(body, Vector3(6.5, 0.52, 8.5))
-	for z in [-3.0, -1.0, 1.0, 3.0]:
-		_add_part(body, WALL_TIMBER if absf(z) < 2.0 else WALL, Vector3(-3.0, 0.27, z), PI * 0.5)
-		_add_part(body, WALL_WINDOW, Vector3(3.0, 0.27, z), -PI * 0.5)
-	for x in [-2.0, 0.0, 2.0]:
-		_add_part(body, WALL_DOOR if x == 0.0 else WALL_WINDOW, Vector3(x, 0.27, 4.0), PI)
-		_add_part(body, WALL_STONE if x == 0.0 else WALL, Vector3(x, 0.27, -4.0), 0.0)
-	_add_part(body, ROOF_6X8, Vector3(0.0, 3.52, 0.0), 0.0)
-	_add_part(body, CHIMNEY, Vector3(-1.9, 3.6, -1.8), 0.0)
+	_build_large_house(center, yaw, house_name, true)
+
+
+func _build_large_house(center: Vector2, yaw: float, house_name: String, is_hall: bool) -> void:
+	var body := _create_building_body(center, yaw, house_name)
+	body.scale = HOUSE_SCALE
+	body.set_meta("enterable", true)
+	body.set_meta("footprint", Vector2(8.0 * HOUSE_SCALE.x, 14.0 * HOUSE_SCALE.z))
+	body.set_meta("door_width", 2.0 * HOUSE_SCALE.x)
+	_add_foundation(body, Vector3(8.5, 0.34, 14.5), true)
+
+	# Pavimento Quaternius continuo: 28 losas de 2 x 2 m dentro de la casa.
+	for x in [-3.0, -1.0, 1.0, 3.0]:
+		for z in [-6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0]:
+			_add_part(body, FLOOR_BRICK, Vector3(x, 0.35, z), 0.0)
+
+	# Dos pisos de módulos de tres metros. La pieza de puerta se renderiza, pero
+	# deliberadamente no recibe BoxShape: el hueco puede cruzarse de verdad.
+	for level in 2:
+		var base_y := 0.25 + level * 3.1
+		for z in [-6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0]:
+			var left_scene := WALL_STONE if is_hall and level == 0 else (WALL_TIMBER if int(z) % 4 == 0 else WALL)
+			_add_wall_part(body, left_scene, Vector3(-4.0, base_y, z), PI * 0.5)
+			_add_wall_part(body, WALL_WINDOW if level == 1 or int(z) % 4 == 0 else WALL, Vector3(4.0, base_y, z), -PI * 0.5)
+		for x in [-3.0, -1.0, 1.0, 3.0]:
+			if level == 0 and x == -1.0:
+				_add_wall_part(body, WALL_DOOR, Vector3(x, base_y, 7.0), PI, false)
+			else:
+				_add_wall_part(body, WALL_WINDOW if level == 1 or absf(x) == 1.0 else WALL, Vector3(x, base_y, 7.0), PI)
+			_add_wall_part(body, WALL_TIMBER if level == 1 else WALL_STONE, Vector3(x, base_y, -7.0), 0.0)
+
+	_add_part(body, ROOF_8X14, Vector3(0.0, 6.58, 0.0), 0.0)
+	_add_part(body, CHIMNEY, Vector3(-2.6, 6.64, -3.4), 0.0)
+	_add_part(body, VINE, Vector3(4.06, 0.42, 2.4), -PI * 0.5)
+	for x in [1.0, 3.0]:
+		_add_part(body, BALCONY, Vector3(x, 3.42, 7.12), PI)
+
+	var doorway := Node3D.new()
+	doorway.name = "Doorway"
+	doorway.position = Vector3(-1.0, 1.15, 7.65)
+	body.add_child(doorway)
+	var interior := Node3D.new()
+	interior.name = "InteriorPoint"
+	interior.position = Vector3(-1.0, 1.15, 4.25)
+	body.add_child(interior)
+	var interior_light := OmniLight3D.new()
+	interior_light.name = "InteriorWarmLight"
+	interior_light.position = Vector3(0.0, 3.0, 0.0)
+	interior_light.light_color = Color(1.0, 0.48, 0.17)
+	interior_light.light_energy = 0.18
+	interior_light.omni_range = 16.0
+	interior_light.shadow_enabled = false
+	interior_light.add_to_group("night_lantern")
+	body.add_child(interior_light)
+	generated_light_count += 1
 	generated_house_count += 1
+	generated_enterable_house_count += 1
 
 
 func _build_castle(center: Vector2, yaw: float, village_name: String) -> void:
@@ -196,25 +232,18 @@ func _add_village_lights(center: Vector2, yaw: float) -> void:
 		generated_light_count += 1
 
 
-func _create_building_body(center: Vector2, yaw: float, node_name: String, collision_size: Vector3) -> StaticBody3D:
+func _create_building_body(center: Vector2, yaw: float, node_name: String) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = node_name
 	body.position = Vector3(center.x, _height_at(center), center.y)
 	body.rotation.y = yaw
 	body.collision_layer = 1
 	body.collision_mask = 0
-	var shape := BoxShape3D.new()
-	shape.size = collision_size
-	var collision := CollisionShape3D.new()
-	collision.shape = shape
-	collision.position.y = collision_size.y * 0.5 + 0.24
-	body.add_child(collision)
 	add_child(body)
-	generated_collision_count += 1
 	return body
 
 
-func _add_foundation(body: Node3D, size: Vector3) -> void:
+func _add_foundation(body: Node3D, size: Vector3, collidable: bool = false) -> void:
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	mesh.material = _foundation_material
@@ -223,7 +252,31 @@ func _add_foundation(body: Node3D, size: Vector3) -> void:
 	visual.mesh = mesh
 	visual.position.y = size.y * 0.5
 	body.add_child(visual)
+	if collidable:
+		var shape := BoxShape3D.new()
+		shape.size = size
+		var collision := CollisionShape3D.new()
+		collision.name = "FloorCollision"
+		collision.shape = shape
+		collision.position.y = size.y * 0.5
+		body.add_child(collision)
+		generated_collision_count += 1
 	generated_prop_count += 1
+
+
+func _add_wall_part(parent: StaticBody3D, scene: PackedScene, local_position: Vector3, yaw: float, collidable: bool = true) -> void:
+	_add_part(parent, scene, local_position, yaw)
+	if not collidable:
+		return
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(2.0, 3.1, 0.42)
+	var collision := CollisionShape3D.new()
+	collision.name = "WallCollision%03d" % generated_collision_count
+	collision.shape = shape
+	collision.position = local_position + Vector3(0.0, 1.55, 0.0)
+	collision.rotation.y = yaw
+	parent.add_child(collision)
+	generated_collision_count += 1
 
 
 func _add_part(parent: Node3D, scene: PackedScene, local_position: Vector3, yaw: float) -> Node3D:

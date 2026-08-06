@@ -1,9 +1,10 @@
 class_name IslandEnvironment
 extends Node3D
 
-## Mar facetado animado y bancos de niebla locales para los bosques aislados.
+## Mar facetado, bancos de niebla y una luna low-poly que ilumina la noche.
 
 const WORLD_SIZE := 10000.0
+const MOON_DIRECTION := Vector3(-0.58, 0.69, -0.43)
 const OCEAN_SHADER := """
 shader_type spatial;
 render_mode blend_mix, depth_draw_always, cull_disabled;
@@ -34,6 +35,35 @@ void fragment() {
 }
 """
 
+const MOON_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_mix, cull_back;
+
+uniform vec3 moon_color : source_color = vec3(0.72, 0.82, 1.0);
+uniform float visibility = 0.0;
+
+float crater(vec2 uv, vec2 center, float radius) {
+	float distance_to_center = distance(uv, center);
+	float bowl = 1.0 - smoothstep(radius * 0.52, radius, distance_to_center);
+	float rim = smoothstep(radius * 0.58, radius * 0.78, distance_to_center)
+		* (1.0 - smoothstep(radius * 0.78, radius, distance_to_center));
+	return rim * 0.22 - bowl * 0.18;
+}
+
+void fragment() {
+	float facets = floor((NORMAL.x * 0.22 + NORMAL.y * 0.36 + NORMAL.z * 0.14 + 0.65) * 7.0) / 7.0;
+	float markings = crater(UV, vec2(0.38, 0.37), 0.105);
+	markings += crater(UV, vec2(0.61, 0.55), 0.072);
+	markings += crater(UV, vec2(0.50, 0.72), 0.052);
+	markings += crater(UV, vec2(0.72, 0.31), 0.036);
+	vec3 color = moon_color * (0.72 + facets * 0.42 + markings);
+	ALBEDO = color;
+	EMISSION = color * 1.32;
+	ROUGHNESS = 1.0;
+	ALPHA = visibility;
+}
+"""
+
 const FOG_ZONES: Array = [
 	{"name": "BosqueUmbrio", "center": Vector3(-2180, 26, 1650), "size": Vector3(1050, 64, 920), "color": Color(0.25, 0.34, 0.31, 1), "density": 0.032},
 	{"name": "AldeaBruma", "center": Vector3(-2200, 24, -900), "size": Vector3(980, 58, 860), "color": Color(0.42, 0.48, 0.56, 1), "density": 0.026},
@@ -44,24 +74,37 @@ var fog_zone_count := 0
 var ocean: MeshInstance3D
 var stars: MultiMeshInstance3D
 var star_count := 260
+var moon_visual: MeshInstance3D
+var moon_light: DirectionalLight3D
+var moon_radius := 88.0
 var _star_material: StandardMaterial3D
+var _moon_material: ShaderMaterial
 
 
 func _ready() -> void:
 	_build_ocean()
 	_build_fog_zones()
 	_build_stars()
+	_build_moon()
 
 
 func _process(_delta: float) -> void:
 	var camera := get_viewport().get_camera_3d()
-	if camera != null and stars != null:
-		stars.global_position = Vector3(camera.global_position.x, 0.0, camera.global_position.z)
+	if camera != null:
+		if stars != null:
+			stars.global_position = Vector3(camera.global_position.x, 0.0, camera.global_position.z)
+		if moon_visual != null:
+			moon_visual.global_position = camera.global_position + MOON_DIRECTION.normalized() * 760.0
 	var daylight := float(get_parent().get("daylight_factor"))
 	var night := 1.0 - smoothstep(0.08, 0.34, daylight)
 	if _star_material != null:
 		_star_material.albedo_color = Color(0.88, 0.94, 1.0, night)
 		_star_material.emission_energy_multiplier = 1.2 + night * 2.6
+	if _moon_material != null:
+		_moon_material.set_shader_parameter("visibility", smoothstep(0.04, 0.42, night))
+	if moon_light != null:
+		moon_light.light_energy = night * 0.72
+		moon_light.shadow_enabled = night > 0.08
 
 
 func _build_ocean() -> void:
@@ -134,3 +177,35 @@ func _build_stars() -> void:
 	stars.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stars.set_meta("night_only", true)
 	add_child(stars)
+
+
+func _build_moon() -> void:
+	var moon_mesh := SphereMesh.new()
+	moon_mesh.radius = moon_radius
+	moon_mesh.height = moon_radius * 2.0
+	moon_mesh.radial_segments = 12
+	moon_mesh.rings = 6
+	var shader := Shader.new()
+	shader.code = MOON_SHADER
+	_moon_material = ShaderMaterial.new()
+	_moon_material.shader = shader
+	moon_mesh.material = _moon_material
+	moon_visual = MeshInstance3D.new()
+	moon_visual.name = "LowPolyMoon"
+	moon_visual.mesh = moon_mesh
+	moon_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	moon_visual.visibility_range_end = 2400.0
+	moon_visual.set_meta("low_poly_moon", true)
+	moon_visual.set_meta("radius_metres", moon_radius)
+	add_child(moon_visual)
+
+	moon_light = DirectionalLight3D.new()
+	moon_light.name = "MoonLight"
+	moon_light.rotation_degrees = Vector3(-48.0, -38.0, 0.0)
+	moon_light.light_color = Color(0.52, 0.66, 1.0)
+	moon_light.light_energy = 0.0
+	moon_light.shadow_enabled = false
+	moon_light.directional_shadow_max_distance = 720.0
+	moon_light.light_volumetric_fog_energy = 0.72
+	moon_light.set_meta("night_only", true)
+	add_child(moon_light)
