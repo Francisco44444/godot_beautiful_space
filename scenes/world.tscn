@@ -24,9 +24,9 @@ sky_energy_multiplier = 1.05
 ground_bottom_color = Color(0.2, 0.31, 0.18, 1)
 ground_horizon_color = Color(0.72, 0.83, 0.64, 1)
 ground_curve = 0.28
-sun_angle_max = 18.0
-sun_curve = 0.08
-sun_energy_multiplier = 4.0
+sun_angle_max = 0.0
+sun_curve = 0.15
+sun_energy_multiplier = 2.8
 
 [sub_resource type="Sky" id="Sky_sunset"]
 radiance_size = 4

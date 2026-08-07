@@ -93,13 +93,20 @@ func _run_test() -> void:
 		var moon_light := island_environment.get("moon_light") as DirectionalLight3D
 		if moon == null or not bool(moon.get_meta("low_poly_moon", false)) or float(island_environment.get("moon_radius")) < 80.0:
 			failures.append("Falta la gran luna facetada de al menos 80 metros de radio")
+		elif str(moon.get_meta("crater_texture", "")) != "res://assets/textures/moon/moon_craters_lowpoly.png":
+			failures.append("La luna no usa la textura propia de cráteres")
 		elif moon_light == null:
 			failures.append("La luna no dispone de luz direccional nocturna")
 		else:
+			world.sun_cycle_radians = 0.86
+			world.call("_update_sun_cycle", 0.0)
+			await process_frame
+			if moon.visible:
+				failures.append("La luna transparente sigue dejando un punto negro durante el día")
 			world.sun_cycle_radians = 4.72
 			world.call("_update_sun_cycle", 0.0)
 			await process_frame
-			if moon_light.light_energy < 0.55 or not moon_light.shadow_enabled:
+			if not moon.visible or moon_light.light_energy < 0.55 or not moon_light.shadow_enabled:
 				failures.append("La luna no alumbra ni proyecta sombras durante la noche")
 
 	var ambient_audio := world.get_node("AmbientAudio") as AmbientAudio

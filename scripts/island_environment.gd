@@ -5,6 +5,7 @@ extends Node3D
 
 const WORLD_SIZE := 10000.0
 const MOON_DIRECTION := Vector3(-0.58, 0.69, -0.43)
+const MOON_TEXTURE: Texture2D = preload("res://assets/textures/moon/moon_craters_lowpoly.png")
 const OCEAN_SHADER := """
 shader_type spatial;
 render_mode blend_mix, depth_draw_always, cull_disabled;
@@ -37,30 +38,18 @@ void fragment() {
 
 const MOON_SHADER := """
 shader_type spatial;
-render_mode unshaded, blend_mix, cull_back;
+render_mode unshaded, cull_back;
 
-uniform vec3 moon_color : source_color = vec3(0.72, 0.82, 1.0);
-uniform float visibility = 0.0;
-
-float crater(vec2 uv, vec2 center, float radius) {
-	float distance_to_center = distance(uv, center);
-	float bowl = 1.0 - smoothstep(radius * 0.52, radius, distance_to_center);
-	float rim = smoothstep(radius * 0.58, radius * 0.78, distance_to_center)
-		* (1.0 - smoothstep(radius * 0.78, radius, distance_to_center));
-	return rim * 0.22 - bowl * 0.18;
-}
+uniform sampler2D moon_texture : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec3 moon_tint : source_color = vec3(0.78, 0.86, 1.0);
 
 void fragment() {
-	float facets = floor((NORMAL.x * 0.22 + NORMAL.y * 0.36 + NORMAL.z * 0.14 + 0.65) * 7.0) / 7.0;
-	float markings = crater(UV, vec2(0.38, 0.37), 0.105);
-	markings += crater(UV, vec2(0.61, 0.55), 0.072);
-	markings += crater(UV, vec2(0.50, 0.72), 0.052);
-	markings += crater(UV, vec2(0.72, 0.31), 0.036);
-	vec3 color = moon_color * (0.72 + facets * 0.42 + markings);
+	vec3 lunar_surface = texture(moon_texture, UV).rgb;
+	float facets = floor(clamp(NORMAL.x * 0.20 + NORMAL.y * 0.32 + NORMAL.z * 0.12 + 0.62, 0.0, 1.0) * 7.0) / 7.0;
+	vec3 color = lunar_surface * moon_tint * (0.82 + facets * 0.28);
 	ALBEDO = color;
-	EMISSION = color * 1.32;
+	EMISSION = color * 1.38;
 	ROUGHNESS = 1.0;
-	ALPHA = visibility;
 }
 """
 
@@ -100,8 +89,10 @@ func _process(_delta: float) -> void:
 	if _star_material != null:
 		_star_material.albedo_color = Color(0.88, 0.94, 1.0, night)
 		_star_material.emission_energy_multiplier = 1.2 + night * 2.6
-	if _moon_material != null:
-		_moon_material.set_shader_parameter("visibility", smoothstep(0.04, 0.42, night))
+	if moon_visual != null:
+		# No se deja una esfera transparente en el pase diurno: se retira del
+		# render por completo para impedir el punto negro que producía la niebla.
+		moon_visual.visible = night > 0.06
 	if moon_light != null:
 		moon_light.light_energy = night * 0.72
 		moon_light.shadow_enabled = night > 0.08
@@ -189,13 +180,16 @@ func _build_moon() -> void:
 	shader.code = MOON_SHADER
 	_moon_material = ShaderMaterial.new()
 	_moon_material.shader = shader
+	_moon_material.set_shader_parameter("moon_texture", MOON_TEXTURE)
 	moon_mesh.material = _moon_material
 	moon_visual = MeshInstance3D.new()
 	moon_visual.name = "LowPolyMoon"
 	moon_visual.mesh = moon_mesh
 	moon_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	moon_visual.visibility_range_end = 2400.0
+	moon_visual.visible = false
 	moon_visual.set_meta("low_poly_moon", true)
+	moon_visual.set_meta("crater_texture", MOON_TEXTURE.resource_path)
 	moon_visual.set_meta("radius_metres", moon_radius)
 	add_child(moon_visual)
 

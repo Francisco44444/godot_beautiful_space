@@ -13,11 +13,12 @@ Aventura medieval en tercera persona construida con Godot 4.7, GDScript y Terrai
 - Isla Terrain3D de 10×10 km —100 km²— dividida en 16 regiones con costa, cordillera nevada, desierto, praderas, riscos y ocho caminos conectados.
 - Cinco tiles originales low-poly: pradera, sendero, roca, arena y nieve, sin microdetalle PBR fotográfico.
 - Senderos abrazados por un bosque masivo de 24.000 árboles Quaternius, además de cuatro reservas forestales profundas; más del 99% son verdes y los rojos quedan como acento excepcional.
-- Sotobosque Quaternius con 110.000 hierbas, 10.000 arbustos, 10.000 helechos y plantas, 8.000 flores, 2.200 setas, 3.000 rocas y 12.000 guijarros, concentrados visualmente junto a las rutas.
+- Sotobosque Quaternius con 110.000 hierbas animadas por brisa y ráfagas, 10.000 arbustos, 10.000 helechos y plantas, 8.000 flores, 2.200 setas, 3.000 rocas y 12.000 guijarros, concentrados visualmente junto a las rutas.
+- Rutas estrechas de tierra y tres calzadas mixtas reforzadas con 9.000 piezas de piedra Quaternius.
 - Todos los grupos numerosos usan `MultiMesh` dividido por celdas y descarte por distancia.
-- Seis villas con 30 casas de dos alturas y unos 11×19 m, interiores transitables, calles, faroles nocturnos y tres castillos construidos con el *Medieval Village MegaKit* de Quaternius.
+- Seis villas y ocho caseríos rurales con 54 casas de unos 11×19 m; diez tienen tres plantas, todas poseen acceso a ras del terreno y hastiales cerrados, además de calles, faroles nocturnos y tres castillos construidos con el *Medieval Village MegaKit* de Quaternius.
 - Risco y fortaleza estilizados con módulos Quaternius; la cascada, poza y río han sido retirados.
-- Ciclo completo de día, atardecer y noche con una luna low-poly de 176 m de diámetro que ilumina y proyecta sombras, estrellas, faroles y dos capas ligeras de nubes sin costura.
+- Ciclo completo de día, atardecer y noche con una luna low-poly de 176 m, textura original de cráteres, iluminación y sombras; durante el día se retira por completo del render para evitar artefactos negros.
 - Mar low-poly animado rodeando la isla, playas facetadas y tres bancos de niebla regional en bosques y zonas tenebrosas.
 - Minimap superior permanente y mapa completo con pueblos, castillos, bosques, biomas y posición del jugador mediante `M`.
 - Música ambiental, viento, pájaros y cuatro sonidos de cascos.
@@ -56,9 +57,9 @@ El objetivo es seguir el sendero hasta el mirador. Si el personaje cae fuera del
 
 ## Dirección visual Quaternius
 
-`VegetationScatter` carga los modelos glTF del *Stylized Nature Mega Kit* en tiempo de ejecución y extrae sus mallas conservando los materiales originales. Los árboles adultos forman bandas densas a ambos lados de los ocho caminos y cuatro reservas forestales; los árboles retorcidos rojos no superan el 1% del total. Los elementos cercanos a las rutas y una muestra del bosque profundo reciben colisiones simplificadas, mientras la geometría distante permanece en `MultiMesh` para conservar rendimiento.
+`VegetationScatter` carga los modelos glTF del *Stylized Nature Mega Kit* en tiempo de ejecución y extrae sus mallas conservando los materiales originales. Los árboles adultos forman bandas densas a ambos lados de los ocho caminos y cuatro reservas forestales; los árboles retorcidos rojos no superan el 1% del total. La hierba usa un shader de deformación con movimiento base muy leve y ráfagas periódicas. Los elementos cercanos a las rutas y una muestra del bosque profundo reciben colisiones simplificadas, mientras la geometría distante permanece en `MultiMesh` para conservar rendimiento.
 
-`MedievalSetDressing` monta seis villas, 30 casas y tres castillos. Cada vivienda parte de un módulo Quaternius 8×14 ampliado a unos 11×19 m, con dos pisos visuales, suelo interior, paredes físicas independientes y un hueco de puerta de 2,7 m realmente atravesable. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para formar un risco coronado por una fortaleza.
+`MedievalSetDressing` monta seis villas, ocho caseríos, 54 casas y tres castillos. Cada vivienda parte de un módulo Quaternius 8×14 ampliado a unos 11×19 m, con dos o tres pisos visuales, suelo interior, paredes físicas independientes, dos hastiales completos y un hueco de puerta de 2,7 m realmente atravesable. La cota de cada suelo se calcula en la puerta para que el umbral quede a ras del terreno. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para formar un risco coronado por una fortaleza.
 
 Los personajes se encuentran en `assets/quaternius/ultimate_animated_characters/glTF`; el juego usa el caballero dorado, pero quedan disponibles aldeanos, trabajadores, vikingos, elfos, goblins, magos, piratas, ninjas y otras variantes para NPC futuros. Los animales viven en `assets/quaternius/ultimate_animated_animals`.
 
@@ -66,7 +67,9 @@ El *Survival Pack - Sept 2020* está disponible en `assets/quaternius/Survival P
 
 ## Terreno y atmósfera
 
-Terrain3D utiliza cinco tiles de albedo originales en `assets/textures/stylized_terrain`: pradera, sendero ocre, roca con musgo, arena dorada y nieve alpina. Están diseñados a 1024², preparados para repetición exacta y deliberadamente prescinden de normal/height fotográficos. Las 16 regiones usan una separación de vértices de 9,765625 m para representar exactamente 100 km² con geometría low-poly y LOD. Los senderos se estrechan a una banda nominal de 9–19 m para que la vegetación llegue hasta sus bordes. El escenario añade mar facetado animado, cielo procedural, luna geométrica luminosa, ciclo nocturno, estrellas, tonemapping ACES, niebla global y bancos locales en bosques.
+Terrain3D utiliza cinco tiles de albedo originales en `assets/textures/stylized_terrain`: pradera, sendero ocre, roca con musgo, arena dorada y nieve alpina. Están diseñados a 1024², preparados para repetición exacta y deliberadamente prescinden de normal/height fotográficos. Las 16 regiones usan una separación de vértices de 9,765625 m para representar exactamente 100 km² con geometría low-poly y LOD. Los senderos se estrechan a una banda nominal de 5–13 m; algunos permanecen de tierra y otros reciben una capa discontinua de piedra. El escenario añade mar facetado animado, cielo procedural sin disco negro, luna texturizada luminosa, ciclo nocturno, estrellas, tonemapping ACES, niebla global y bancos locales en bosques.
+
+La textura lunar original está en `assets/textures/moon/moon_craters_lowpoly.png` y se generó como albedo estilizado para envolver la esfera 3D, no como una imagen plana de la luna sobre el cielo.
 
 El relieve se puede regenerar de forma determinista con:
 
@@ -88,7 +91,7 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/island_world_test.gd
 ```
 
-La prueba de vegetación valida los 50 personajes, la fauna reactiva, el caballo, las 179.200 instancias principales, los bosques densos, las celdas `MultiMesh`, las colisiones y el reparto de color. `island_world_test.gd` comprueba los 100 km², ocho rutas, mapa con `M`, 30 casas grandes transitables y tres castillos; `atmosphere_test.gd` valida además la luz y las sombras de la luna.
+La prueba de vegetación valida los 50 personajes, la fauna reactiva, el caballo, las 188.200 instancias principales, las calzadas, el viento de la hierba, los bosques densos, las celdas `MultiMesh`, las colisiones y el reparto de color. `island_world_test.gd` comprueba los 100 km², ocho rutas, mapa con `M`, 54 casas transitables, umbrales, pisos y hastiales; `atmosphere_test.gd` valida la textura, visibilidad y sombras de la luna.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada y no afecta al juego.
 

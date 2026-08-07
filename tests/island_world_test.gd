@@ -41,6 +41,7 @@ func _run_test() -> void:
 	var medieval := world.get_node("MedievalSetDressing") as MedievalSetDressing
 	var building_count := 0
 	var doorway_checked := false
+	var three_storey_count := 0
 	for child in medieval.get_children():
 		if not child is StaticBody3D:
 			continue
@@ -61,11 +62,22 @@ func _run_test() -> void:
 					_fail("Una pieza de %s está inclinada fuera de la cuadrícula modular." % child.name)
 					return
 		var footprint: Vector2 = building.get_meta("footprint", Vector2.ZERO)
+		var floor_count := int(building.get_meta("floor_count", 0))
 		if foundation == null or collision_count < 40 or doorway == null or interior == null:
 			_fail("%s no tiene suelo, paredes físicas y entrada interior completas." % child.name)
 			return
 		if not bool(building.get_meta("enterable", false)) or footprint.x < 8.0 or footprint.y < 14.0:
 			_fail("%s no conserva la escala habitable mínima de 8 x 14 metros." % child.name)
+			return
+		if floor_count == 3:
+			three_storey_count += 1
+		elif floor_count != 2:
+			_fail("%s no tiene dos o tres pisos declarados." % child.name)
+			return
+		var threshold_point := building.to_global(Vector3(-1.0, 0.34, 7.65))
+		var terrain_height := terrain.data.get_height(threshold_point)
+		if is_nan(terrain_height) or absf(threshold_point.y - terrain_height) > 0.08 or float(building.get_meta("threshold_height", 1.0)) > 0.01:
+			_fail("El umbral de %s no está a ras del terreno." % child.name)
 			return
 		if not doorway_checked:
 			var outside: Vector3 = building.to_global(Vector3(-1.0, 1.7, 8.6))
@@ -76,15 +88,18 @@ func _run_test() -> void:
 				_fail("La puerta de %s sigue bloqueada por una colisión invisible." % child.name)
 				return
 			doorway_checked = true
-	if building_count != 30 or medieval.generated_castle_count != 3:
-		_fail("Se esperaban 30 edificios correctos y 3 castillos; hay %d y %d." % [building_count, medieval.generated_castle_count])
+	if building_count != 54 or medieval.generated_castle_count != 3:
+		_fail("Se esperaban 54 edificios correctos y 3 castillos; hay %d y %d." % [building_count, medieval.generated_castle_count])
 		return
 
-	if medieval.generated_enterable_house_count != 30 or not doorway_checked:
-		_fail("Las treinta viviendas deben registrarse como edificios accesibles.")
+	if medieval.generated_enterable_house_count != 54 or medieval.generated_hamlet_count != 8 or not doorway_checked:
+		_fail("Las cincuenta y cuatro viviendas de villas y caseríos deben ser accesibles.")
+		return
+	if three_storey_count != 10 or medieval.generated_roof_facade_count != 108:
+		_fail("Deben existir diez edificios de tres pisos y 108 hastiales cerrados.")
 		return
 
-	print("ISLAND WORLD TEST OK: 100 km², 8 rutas, 30 casas 11x19 transitables y 3 castillos.")
+	print("ISLAND WORLD TEST OK: 54 casas transitables, 8 caseríos, 10 edificios de tres pisos y hastiales cerrados.")
 	quit(0)
 
 

@@ -11,6 +11,7 @@ const EXPECTED_SHRUB_COUNT := 10000
 const EXPECTED_FLOWER_COUNT := 8000
 const EXPECTED_MUSHROOM_COUNT := 2200
 const EXPECTED_PATH_PEBBLE_COUNT := 12000
+const EXPECTED_STONE_PATH_COUNT := 9000
 const EXPECTED_CHARACTER_COUNT := 50
 const MIN_EXPECTED_CELL_COUNT := 2800
 
@@ -42,8 +43,8 @@ func _run_test() -> void:
 	if int(wildlife.get("reactive_animal_count")) != int(wildlife.get("generated_animal_count")):
 		_fail("Toda la fauna colocada debe reaccionar cuando detecta al jugador.")
 		return
-	if medieval_set == null or medieval_set.generated_village_count < 6 or medieval_set.generated_house_count < 30 or medieval_set.generated_castle_count < 3:
-		_fail("La isla debe incluir seis villas, treinta casas modulares correctas y tres castillos.")
+	if medieval_set == null or medieval_set.generated_village_count < 6 or medieval_set.generated_hamlet_count < 8 or medieval_set.generated_house_count < 54 or medieval_set.generated_castle_count < 3:
+		_fail("La isla debe incluir seis villas, ocho caseríos, cincuenta y cuatro casas y tres castillos.")
 		return
 	var character_directory := DirAccess.open("res://assets/quaternius/ultimate_animated_characters/glTF")
 	if character_directory == null:
@@ -128,6 +129,7 @@ func _run_test() -> void:
 		["arbustos", scatter.shrub_count, scatter.generated_shrub_count, EXPECTED_SHRUB_COUNT],
 		["flores", scatter.flower_count, scatter.generated_flower_count, EXPECTED_FLOWER_COUNT],
 		["setas", scatter.mushroom_count, scatter.generated_mushroom_count, EXPECTED_MUSHROOM_COUNT],
+		["piedras de calzada", scatter.stone_path_count, scatter.generated_stone_path_count, EXPECTED_STONE_PATH_COUNT],
 		["guijarros", scatter.path_pebble_count, scatter.generated_path_pebble_count, EXPECTED_PATH_PEBBLE_COUNT],
 	]
 	for spec in count_specs:
@@ -150,6 +152,7 @@ func _run_test() -> void:
 		["ShrubCells", scatter.generated_shrub_count],
 		["FlowerCells", scatter.generated_flower_count],
 		["MushroomCells", scatter.generated_mushroom_count],
+		["StonePathCells", scatter.generated_stone_path_count],
 		["PathDetailCells", scatter.generated_path_pebble_count],
 		["ForestDetailCells", scatter.forest_detail_count],
 	]
@@ -208,6 +211,11 @@ func _run_test() -> void:
 	if scatter.generated_tree_collision_count < 4000 or scatter.generated_rock_collision_count < 900:
 		_fail("El corredor jugable no conserva suficiente colisión entre árboles y rocas.")
 		return
+	var first_grass_cell := scatter.get_node("GrassCells").get_child(0) as MultiMeshInstance3D
+	var grass_material := first_grass_cell.multimesh.mesh.surface_get_material(0) as ShaderMaterial
+	if grass_material == null or grass_material.shader == null or not grass_material.shader.code.contains("TIME") or not grass_material.shader.code.contains("gust"):
+		_fail("La hierba Quaternius no tiene el shader de brisa y ráfagas ocasionales.")
+		return
 
 	var horse_model_root := horse.get_node_or_null("Visual/ModelRoot") as Node3D
 	if horse_model_root == null or not horse_model_root.is_visible_in_tree():
@@ -260,7 +268,7 @@ func _run_test() -> void:
 		await process_frame
 	print(
 		"QUATERNIUS TEST OK: %d celdas, %d elementos, %d personajes, fauna reactiva y caballo animado."
-		% [generated_cell_total, EXPECTED_TREE_COUNT + EXPECTED_ROCK_COUNT + EXPECTED_GRASS_COUNT + EXPECTED_FERN_COUNT + EXPECTED_SHRUB_COUNT + EXPECTED_FLOWER_COUNT + EXPECTED_MUSHROOM_COUNT + EXPECTED_PATH_PEBBLE_COUNT, EXPECTED_CHARACTER_COUNT]
+		% [generated_cell_total, EXPECTED_TREE_COUNT + EXPECTED_ROCK_COUNT + EXPECTED_GRASS_COUNT + EXPECTED_FERN_COUNT + EXPECTED_SHRUB_COUNT + EXPECTED_FLOWER_COUNT + EXPECTED_MUSHROOM_COUNT + EXPECTED_STONE_PATH_COUNT + EXPECTED_PATH_PEBBLE_COUNT, EXPECTED_CHARACTER_COUNT]
 	)
 	quit(0)
 

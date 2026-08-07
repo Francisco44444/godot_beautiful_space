@@ -43,6 +43,38 @@ const PEBBLE_FILES: PackedStringArray = [
 	"Pebble_Square_2.gltf", "Pebble_Square_3.gltf", "Pebble_Square_4.gltf",
 	"Pebble_Square_5.gltf", "Pebble_Square_6.gltf",
 ]
+const ROCK_PATH_FILES: PackedStringArray = [
+	"RockPath_Round_Small_1.gltf", "RockPath_Round_Small_2.gltf",
+	"RockPath_Round_Small_3.gltf", "RockPath_Round_Thin.gltf",
+]
+const GRASS_WIND_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, depth_prepass_alpha;
+
+uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic;
+uniform float breeze_strength = 0.035;
+uniform float gust_strength = 0.16;
+
+void vertex() {
+	vec3 instance_origin = MODEL_MATRIX[3].xyz;
+	float phase = instance_origin.x * 0.041 + instance_origin.z * 0.057;
+	float slow_cycle = sin(TIME * 0.20 + phase * 0.27) * 0.5 + 0.5;
+	float gust = smoothstep(0.72, 0.98, slow_cycle);
+	float wave = sin(TIME * 1.35 + phase + VERTEX.y * 0.42);
+	float height_mask = smoothstep(0.05, 1.65, VERTEX.y);
+	float bend = (breeze_strength + gust * gust_strength) * wave * height_mask;
+	VERTEX.x += bend;
+	VERTEX.z += bend * 0.58 + sin(TIME * 0.83 + phase * 1.7) * 0.018 * height_mask;
+}
+
+void fragment() {
+	vec4 tex = texture(albedo_texture, UV);
+	ALBEDO = tex.rgb;
+	ROUGHNESS = 0.92;
+	ALPHA = tex.a;
+	ALPHA_SCISSOR_THRESHOLD = 0.32;
+}
+"""
 
 const ROAD_NETWORK: Array = [
 	[Vector2(0, 190), Vector2(-120, 520), Vector2(-420, 760), Vector2(-980, 780), Vector2(-1450, 650)],
@@ -54,6 +86,7 @@ const ROAD_NETWORK: Array = [
 	[Vector2(-420, -2150), Vector2(260, -2500), Vector2(720, -3080)],
 	[Vector2(98, -110), Vector2(420, -420), Vector2(920, -560), Vector2(1840, -420)],
 ]
+const STONE_ROAD_INDICES: Array[int] = [0, 2, 7]
 const ROUTE: Array[Vector2] = [Vector2(0, 190), Vector2(80, -240), Vector2(320, -720), Vector2(40, -1320), Vector2(-420, -2150)]
 const LOOKOUT := Vector2(98.0, -110.0)
 const PLAYER_START := Vector2(0.0, 190.0)
@@ -63,6 +96,12 @@ const VILLAGE_CLEARINGS: Array[Vector3] = [
 	Vector3(0.0, 190.0, 95.0), Vector3(-1450.0, 650.0, 125.0),
 	Vector3(-2200.0, -900.0, 105.0), Vector3(2260.0, -980.0, 125.0),
 	Vector3(2180.0, 1880.0, 105.0), Vector3(-420.0, -2150.0, 125.0),
+]
+const RURAL_CLEARINGS: Array[Vector3] = [
+	Vector3(-720.0, 740.0, 58.0), Vector3(-1680.0, 310.0, 58.0),
+	Vector3(-940.0, -1110.0, 58.0), Vector3(970.0, -170.0, 58.0),
+	Vector3(1510.0, 830.0, 58.0), Vector3(1720.0, -1030.0, 58.0),
+	Vector3(-1040.0, -1900.0, 58.0), Vector3(910.0, -2360.0, 58.0),
 ]
 const FOREST_ZONES: Array[Vector4] = [
 	Vector4(-2180.0, 1650.0, 760.0, 660.0),
@@ -85,6 +124,7 @@ const GROUND_CELL_SIZE := 380.0
 @export var flower_count := 8000
 @export var mushroom_count := 2200
 @export var path_pebble_count := 12000
+@export var stone_path_count := 9000
 @export var forest_detail_count := 1200
 @export var random_seed := 731947
 
@@ -98,6 +138,7 @@ var generated_shrub_count := 0
 var generated_flower_count := 0
 var generated_mushroom_count := 0
 var generated_path_pebble_count := 0
+var generated_stone_path_count := 0
 var generated_cell_count := 0
 var generated_green_tree_count := 0
 var generated_autumn_tree_count := 0
@@ -115,6 +156,7 @@ var _flower_meshes: Array[Mesh] = []
 var _mushroom_meshes: Array[Mesh] = []
 var _dead_tree_meshes: Array[Mesh] = []
 var _pebble_meshes: Array[Mesh] = []
+var _rock_path_meshes: Array[Mesh] = []
 
 
 func _ready() -> void:
@@ -131,23 +173,27 @@ func _ready() -> void:
 	_mushroom_meshes = _load_mesh_library(MUSHROOM_FILES)
 	_dead_tree_meshes = _load_mesh_library(DEAD_TREE_FILES)
 	_pebble_meshes = _load_mesh_library(PEBBLE_FILES)
+	_rock_path_meshes = _load_mesh_library(ROCK_PATH_FILES)
 	if (
 		_tree_meshes.is_empty() or _rock_meshes.is_empty() or _grass_meshes.is_empty()
 		or _fern_meshes.is_empty() or _shrub_meshes.is_empty() or _flower_meshes.is_empty()
 		or _mushroom_meshes.is_empty() or _dead_tree_meshes.is_empty() or _pebble_meshes.is_empty()
+		or _rock_path_meshes.is_empty()
 	):
 		push_error("No se pudo cargar la biblioteca visual Quaternius completa.")
 		return
+	_apply_grass_wind_materials()
 
 	_scatter_forest()
 	_scatter_rocks()
 	_scatter_ground_cover()
 	_scatter_color_details()
+	_scatter_stone_paths()
 	_scatter_path_pebbles()
 	_scatter_forest_details()
 	print(
-		"QUATERNIUS VALLEY READY: %d árboles verdes, %d otoñales, %d rocas, %d hierbas, %d helechos, %d arbustos, %d flores, %d setas y %d guijarros en %d celdas."
-		% [generated_green_tree_count, generated_autumn_tree_count, generated_rock_count, generated_grass_count, generated_fern_count, generated_shrub_count, generated_flower_count, generated_mushroom_count, generated_path_pebble_count, generated_cell_count]
+		"QUATERNIUS VALLEY READY: %d árboles verdes, %d otoñales, %d rocas, %d hierbas animadas, %d helechos, %d arbustos, %d flores, %d setas, %d piedras de calzada y %d guijarros en %d celdas."
+		% [generated_green_tree_count, generated_autumn_tree_count, generated_rock_count, generated_grass_count, generated_fern_count, generated_shrub_count, generated_flower_count, generated_mushroom_count, generated_stone_path_count, generated_path_pebble_count, generated_cell_count]
 	)
 
 
@@ -331,6 +377,30 @@ func _scatter_path_pebbles() -> void:
 	_install_cell_buckets("PathDetailCells", buckets, _pebble_meshes, 190.0, true)
 
 
+func _scatter_stone_paths() -> void:
+	var buckets: Dictionary = {}
+	for _index in stone_path_count:
+		var route_sample := _stone_route_sample()
+		var point: Vector2 = route_sample[0]
+		var normal: Vector2 = route_sample[1]
+		point += normal * _random.randf_range(-3.1, 3.1)
+		var height := _height_at(point)
+		if is_nan(height):
+			continue
+		var variant := _random.randi_range(0, _rock_path_meshes.size() - 1)
+		var scale_value := _random.randf_range(0.62, 1.16)
+		var scale_vector := Vector3(scale_value * _random.randf_range(0.82, 1.22), 0.62, scale_value * _random.randf_range(0.82, 1.22))
+		_bucket_transform(
+			buckets,
+			variant,
+			point,
+			DETAIL_CELL_SIZE,
+			_make_transform(Vector3(point.x, height + 0.045, point.y), _random.randf_range(0.0, TAU), scale_vector)
+		)
+		generated_stone_path_count += 1
+	_install_cell_buckets("StonePathCells", buckets, _rock_path_meshes, 320.0, true)
+
+
 func _scatter_forest_details() -> void:
 	var buckets: Dictionary = {}
 	var attempts := 0
@@ -361,6 +431,20 @@ func _load_mesh_library(file_names: PackedStringArray) -> Array[Mesh]:
 			result.append(mesh)
 		source.free()
 	return result
+
+
+func _apply_grass_wind_materials() -> void:
+	var shader := Shader.new()
+	shader.code = GRASS_WIND_SHADER
+	for mesh in _grass_meshes:
+		for surface_index in mesh.get_surface_count():
+			var source_material := mesh.surface_get_material(surface_index) as BaseMaterial3D
+			if source_material == null or source_material.albedo_texture == null:
+				continue
+			var wind_material := ShaderMaterial.new()
+			wind_material.shader = shader
+			wind_material.set_shader_parameter("albedo_texture", source_material.albedo_texture)
+			mesh.surface_set_material(surface_index, wind_material)
 
 
 func _load_gltf_scene(path: String) -> Node3D:
@@ -443,6 +527,16 @@ func _route_sample() -> Array[Vector2]:
 	return [start.lerp(finish, _random.randf()), Vector2(-direction.y, direction.x)]
 
 
+func _stone_route_sample() -> Array[Vector2]:
+	var road_index := STONE_ROAD_INDICES[_random.randi_range(0, STONE_ROAD_INDICES.size() - 1)]
+	var road: Array = ROAD_NETWORK[road_index]
+	var segment_index := _random.randi_range(0, road.size() - 2)
+	var start: Vector2 = road[segment_index]
+	var finish: Vector2 = road[segment_index + 1]
+	var direction := (finish - start).normalized()
+	return [start.lerp(finish, _random.randf()), Vector2(-direction.y, direction.x)]
+
+
 func _height_at(point: Vector2) -> float:
 	return terrain.data.get_height(Vector3(point.x, 0.0, point.y))
 
@@ -496,6 +590,9 @@ func _inside_clearing(point: Vector2, start_radius: float, lookout_radius: float
 
 func _inside_village_clearing(point: Vector2, padding: float = 0.0) -> bool:
 	for clearing in VILLAGE_CLEARINGS:
+		if point.distance_to(Vector2(clearing.x, clearing.y)) < clearing.z + padding:
+			return true
+	for clearing in RURAL_CLEARINGS:
 		if point.distance_to(Vector2(clearing.x, clearing.y)) < clearing.z + padding:
 			return true
 	return false
