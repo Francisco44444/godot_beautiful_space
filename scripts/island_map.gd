@@ -60,7 +60,7 @@ func _draw() -> void:
 	var font := ThemeDB.fallback_font
 	if full_map:
 		draw_string(font, Vector2(24, 34), "ISLA DE LOS SENDEROS · 100 km²", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color(1.0, 0.9, 0.68))
-		draw_string(font, Vector2(24, size.y - 18), "M · cerrar mapa", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.88, 0.92, 0.94))
+		draw_string(font, Vector2(24, size.y - 18), "1 Dunas · 2 Nieve · 3 Villa · 4 Bosque · M cerrar", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.88, 0.92, 0.94))
 	else:
 		draw_string(font, Vector2(12, 21), "ISLA · M", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1.0, 0.9, 0.68))
 

@@ -35,6 +35,17 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+func snap_to_target() -> void:
+	## Evita que la cámara atraviese kilómetros de escenario después de un viaje rápido.
+	var player := target as Player
+	var riding := player != null and player.is_mounted()
+	var active_target := player.get_camera_target() if player != null else target
+	_current_height = mounted_target_height if riding else target_height
+	spring_arm.spring_length = mounted_distance if riding else _foot_distance
+	camera.fov = mounted_fov if riding else _foot_fov
+	global_position = active_target.global_position + Vector3.UP * _current_height
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * mouse_sensitivity

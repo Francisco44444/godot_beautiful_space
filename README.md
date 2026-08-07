@@ -4,7 +4,7 @@ Aventura medieval en tercera persona construida con Godot 4.7, GDScript y Terrai
 
 ## Estado actual
 
-- Protagonista `Knight_Golden_Male` de Quaternius con animaciones de reposo, caminar, correr, saltar y atacar.
+- Protagonista `Cowboy_Male` de Quaternius con sombrero y bigote, piel recoloreada a un naranja humano y animaciones de reposo, caminar, correr, saltar y atacar.
 - Biblioteca local completa de 50 personajes glTF del *Ultimate Animated Character Pack*.
 - Cuchillo del *Survival Pack* visible, ataque cuerpo a cuerpo, ventana de impacto y objetos rompibles.
 - Caballo animado de Quaternius con reposo, paso y galope; jinete sentado sobre la silla y montaje reversible.
@@ -52,6 +52,7 @@ Dentro del editor, `F5` ejecuta el proyecto completo.
 | Orbitar cámara | Mover ratón | — |
 | Liberar ratón | `Esc` | — |
 | Abrir / cerrar mapa de la isla | `M` | — |
+| Viajar a Dunas / Nieve / Villa / Bosque | `1` / `2` / `3` / `4` | — |
 
 El objetivo es seguir el sendero hasta el mirador. Si el personaje cae fuera del escenario, reaparece en el inicio.
 
@@ -59,15 +60,15 @@ El objetivo es seguir el sendero hasta el mirador. Si el personaje cae fuera del
 
 `VegetationScatter` carga los modelos glTF del *Stylized Nature Mega Kit* en tiempo de ejecución y extrae sus mallas conservando los materiales originales. Los árboles adultos forman bandas densas a ambos lados de los ocho caminos y cuatro reservas forestales; los árboles retorcidos rojos no superan el 1% del total. La hierba usa un shader de deformación con movimiento base muy leve y ráfagas periódicas. Los elementos cercanos a las rutas y una muestra del bosque profundo reciben colisiones simplificadas, mientras la geometría distante permanece en `MultiMesh` para conservar rendimiento.
 
-`MedievalSetDressing` monta seis villas, ocho caseríos, 54 casas y tres castillos. Cada vivienda parte de un módulo Quaternius 8×14 ampliado a unos 11×19 m, con dos o tres pisos visuales, suelo interior, paredes físicas independientes, dos hastiales completos y un hueco de puerta de 2,7 m realmente atravesable. La cota de cada suelo se calcula en la puerta para que el umbral quede a ras del terreno. `EpicLandmark` reutiliza rocas y módulos arquitectónicos Quaternius para formar un risco coronado por una fortaleza.
+`MedievalSetDressing` monta seis villas, ocho caseríos, 54 casas y tres castillos. Cada vivienda parte de un módulo Quaternius 8×14 ampliado a unos 11×19 m, con dos o tres pisos visuales, suelo interior, paredes físicas independientes, dos hastiales completos y un hueco de puerta de 2,7 m realmente atravesable. La cota de cada suelo se calcula en la puerta para que el umbral quede a ras del terreno. El antiguo hito de la cascada —incluidos sus tejados flotantes y su muro de rocas— se eliminó por completo.
 
-Los personajes se encuentran en `assets/quaternius/ultimate_animated_characters/glTF`; el juego usa el caballero dorado, pero quedan disponibles aldeanos, trabajadores, vikingos, elfos, goblins, magos, piratas, ninjas y otras variantes para NPC futuros. Los animales viven en `assets/quaternius/ultimate_animated_animals`.
+Los personajes se encuentran en `assets/quaternius/ultimate_animated_characters/glTF`; el juego usa `Cowboy_Male` y sustituye en ejecución únicamente su material `Skin`, preservando ojos, bigote, cabello y ropa. Quedan disponibles aldeanos, trabajadores, vikingos, elfos, goblins, magos, piratas, ninjas y otras variantes para NPC futuros. Los animales viven en `assets/quaternius/ultimate_animated_animals`.
 
 El *Survival Pack - Sept 2020* está disponible en `assets/quaternius/Survival Pack - Sept 2020`; el cuchillo activo se construye directamente desde su OBJ y no depende de cachés locales de importación. La *Universal Animation Library 2* está en `assets/animations` para acciones futuras; la locomoción actual usa las animaciones del propio caballero, aceleradas para sincronizar pies y velocidad.
 
 ## Terreno y atmósfera
 
-Terrain3D utiliza cinco tiles de albedo originales en `assets/textures/stylized_terrain`: pradera, sendero ocre, roca con musgo, arena dorada y nieve alpina. Están diseñados a 1024², preparados para repetición exacta y deliberadamente prescinden de normal/height fotográficos. Las 16 regiones usan una separación de vértices de 9,765625 m para representar exactamente 100 km² con geometría low-poly y LOD. Los senderos se estrechan a una banda nominal de 5–13 m; algunos permanecen de tierra y otros reciben una capa discontinua de piedra. El escenario añade mar facetado animado, cielo procedural sin disco negro, luna texturizada luminosa, ciclo nocturno, estrellas, tonemapping ACES, niebla global y bancos locales en bosques.
+Terrain3D utiliza cinco tiles de albedo originales en `assets/textures/stylized_terrain`: pradera, sendero ocre, roca con musgo, arena dorada y nieve alpina. Están diseñados a 1024², preparados para repetición exacta y deliberadamente prescinden de normal/height fotográficos. Las 16 regiones usan una separación de vértices de 9,765625 m para representar exactamente 100 km² con geometría low-poly y LOD. Los senderos se estrechan a una banda nominal de 5–13 m; algunos permanecen de tierra y otros reciben una capa discontinua de piedra. El escenario añade mar facetado animado, sol diurno geométrico y opaco, cielo procedural sin disco negro, luna texturizada luminosa, ciclo nocturno, estrellas, tonemapping ACES, niebla global y bancos locales en bosques.
 
 La textura lunar original está en `assets/textures/moon/moon_craters_lowpoly.png` y se generó como albedo estilizado para envolver la esfera 3D, no como una imagen plana de la luna sobre el cielo.
 
@@ -91,7 +92,7 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/island_world_test.gd
 ```
 
-La prueba de vegetación valida los 50 personajes, la fauna reactiva, el caballo, las 188.200 instancias principales, las calzadas, el viento de la hierba, los bosques densos, las celdas `MultiMesh`, las colisiones y el reparto de color. `island_world_test.gd` comprueba los 100 km², ocho rutas, mapa con `M`, 54 casas transitables, umbrales, pisos y hastiales; `atmosphere_test.gd` valida la textura, visibilidad y sombras de la luna.
+La prueba de vegetación valida los 50 personajes, la fauna reactiva, el caballo, las 188.200 instancias principales, las calzadas, el viento de la hierba, los bosques densos, las celdas `MultiMesh`, las colisiones y el reparto de color. `island_world_test.gd` comprueba los 100 km², ocho rutas, mapa con `M`, viaje rápido 1–4, 54 casas transitables, umbrales, pisos y hastiales; `atmosphere_test.gd` valida la visibilidad independiente del sol y la luna.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada y no afecta al juego.
 

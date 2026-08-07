@@ -91,7 +91,6 @@ const ROUTE: Array[Vector2] = [Vector2(0, 190), Vector2(80, -240), Vector2(320, 
 const LOOKOUT := Vector2(98.0, -110.0)
 const PLAYER_START := Vector2(0.0, 190.0)
 const HORSE_START := Vector2(4.0, 180.0)
-const EPIC_LANDMARK := Vector2(16.0, -155.0)
 const VILLAGE_CLEARINGS: Array[Vector3] = [
 	Vector3(0.0, 190.0, 95.0), Vector3(-1450.0, 650.0, 125.0),
 	Vector3(-2200.0, -900.0, 105.0), Vector3(2260.0, -980.0, 125.0),
@@ -208,7 +207,6 @@ func _scatter_forest() -> void:
 			or _inside_clearing(point, 13.5, 23.0)
 			or _inside_village_clearing(point, 5.0)
 			or _inside_desert(point)
-			or point.distance_to(EPIC_LANDMARK) < 37.0
 			or _slope_at(point) > 0.80
 		):
 			continue

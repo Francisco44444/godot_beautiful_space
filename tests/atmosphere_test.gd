@@ -89,6 +89,11 @@ func _run_test() -> void:
 	elif island_environment.get("stars") == null or int(island_environment.get("star_count")) < 200:
 		failures.append("La noche necesita un campo de estrellas")
 	else:
+		var day_sun := island_environment.get("sun_visual") as MeshInstance3D
+		if day_sun == null or not bool(day_sun.get_meta("low_poly_sun", false)) or float(island_environment.get("sun_radius")) < 40.0:
+			failures.append("Falta el sol diurno low-poly visible y opaco")
+		elif not bool(day_sun.get_meta("opaque_sun", false)):
+			failures.append("El sol diurno no está protegido contra el punto negro de la niebla")
 		var moon := island_environment.get("moon_visual") as MeshInstance3D
 		var moon_light := island_environment.get("moon_light") as DirectionalLight3D
 		if moon == null or not bool(moon.get_meta("low_poly_moon", false)) or float(island_environment.get("moon_radius")) < 80.0:
@@ -101,11 +106,15 @@ func _run_test() -> void:
 			world.sun_cycle_radians = 0.86
 			world.call("_update_sun_cycle", 0.0)
 			await process_frame
+			if day_sun == null or not day_sun.visible:
+				failures.append("El sol low-poly no aparece durante el día")
 			if moon.visible:
 				failures.append("La luna transparente sigue dejando un punto negro durante el día")
 			world.sun_cycle_radians = 4.72
 			world.call("_update_sun_cycle", 0.0)
 			await process_frame
+			if day_sun != null and day_sun.visible:
+				failures.append("El sol diurno permanece visible durante la noche")
 			if not moon.visible or moon_light.light_energy < 0.55 or not moon_light.shadow_enabled:
 				failures.append("La luna no alumbra ni proyecta sombras durante la noche")
 

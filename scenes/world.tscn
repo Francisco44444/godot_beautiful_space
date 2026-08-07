@@ -1,4 +1,4 @@
-[gd_scene load_steps=45 format=3]
+[gd_scene load_steps=44 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
@@ -9,7 +9,6 @@
 [ext_resource type="PackedScene" path="res://scenes/horse.tscn" id="7_horse"]
 [ext_resource type="PackedScene" path="res://scenes/vegetation_scatter.tscn" id="8_vegetation"]
 [ext_resource type="PackedScene" path="res://scenes/audio_environment.tscn" id="9_audio"]
-[ext_resource type="PackedScene" path="res://scenes/epic_landmark.tscn" id="10_epic"]
 [ext_resource type="Script" path="res://scripts/animated_clouds.gd" id="12_clouds"]
 [ext_resource type="Script" path="res://scripts/quaternius_wildlife.gd" id="13_wildlife"]
 [ext_resource type="PackedScene" path="res://scenes/medieval_set_dressing.tscn" id="14_medieval"]
@@ -231,9 +230,6 @@ script = ExtResource("15_island_environment")
 script = ExtResource("13_wildlife")
 
 [node name="MedievalSetDressing" parent="." instance=ExtResource("14_medieval")]
-
-[node name="EpicLandmark" parent="." instance=ExtResource("10_epic")]
-position = Vector3(-48, 0, 0)
 
 [node name="AmbientAudio" parent="." instance=ExtResource("9_audio")]
 

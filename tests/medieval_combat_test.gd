@@ -30,6 +30,12 @@ func _run_test() -> void:
 	if not _has_visible_mesh(model_root):
 		_fail("El protagonista Quaternius no contiene una malla visible.")
 		return
+	if not player.quaternius_hero_path.ends_with("/Cowboy_Male.gltf"):
+		_fail("El protagonista no usa el Cowboy_Male elegido.")
+		return
+	if player.skin_surface_count < 1 or not _has_human_skin_override(model_root, player.hero_skin_color):
+		_fail("La piel negra original del Cowboy_Male no se cambió a un tono humano naranja.")
+		return
 	for required_animation in ["Idle", "Walk", "Run", "SwordSlash"]:
 		if not animator.has_animation(required_animation):
 			_fail("Falta la animación Quaternius: %s" % required_animation)
@@ -114,4 +120,19 @@ func _has_visible_mesh(parent: Node) -> bool:
 			and mesh_instance.is_visible_in_tree()
 		):
 			return true
+	return false
+
+
+func _has_human_skin_override(parent: Node, expected_color: Color) -> bool:
+	for node in parent.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+		for surface in mesh_instance.mesh.get_surface_count():
+			var source := mesh_instance.mesh.surface_get_material(surface) as BaseMaterial3D
+			if source == null or source.resource_name != "Skin":
+				continue
+			var override := mesh_instance.get_surface_override_material(surface) as BaseMaterial3D
+			if override != null and override.albedo_color.is_equal_approx(expected_color) and bool(override.get_meta("human_skin_recolor", false)):
+				return true
 	return false

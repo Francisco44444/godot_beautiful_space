@@ -1,7 +1,7 @@
 class_name IslandEnvironment
 extends Node3D
 
-## Mar facetado, bancos de niebla y una luna low-poly que ilumina la noche.
+## Mar facetado, bancos de niebla y astros low-poly sin discos procedimentales.
 
 const WORLD_SIZE := 10000.0
 const MOON_DIRECTION := Vector3(-0.58, 0.69, -0.43)
@@ -53,6 +53,23 @@ void fragment() {
 }
 """
 
+const SUN_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_back;
+
+uniform vec3 warm_color : source_color = vec3(1.0, 0.53, 0.12);
+uniform vec3 core_color : source_color = vec3(1.0, 0.91, 0.42);
+
+void fragment() {
+	float light_facing = clamp(NORMAL.z * 0.18 + NORMAL.y * 0.22 + 0.62, 0.0, 1.0);
+	float facet = floor(light_facing * 6.0) / 5.0;
+	vec3 color = mix(warm_color, core_color, facet);
+	ALBEDO = color;
+	EMISSION = color * 2.8;
+	ROUGHNESS = 1.0;
+}
+"""
+
 const FOG_ZONES: Array = [
 	{"name": "BosqueUmbrio", "center": Vector3(-2180, 26, 1650), "size": Vector3(1050, 64, 920), "color": Color(0.25, 0.34, 0.31, 1), "density": 0.032},
 	{"name": "AldeaBruma", "center": Vector3(-2200, 24, -900), "size": Vector3(980, 58, 860), "color": Color(0.42, 0.48, 0.56, 1), "density": 0.026},
@@ -66,25 +83,40 @@ var star_count := 260
 var moon_visual: MeshInstance3D
 var moon_light: DirectionalLight3D
 var moon_radius := 88.0
+var sun_visual: MeshInstance3D
+var sun_radius := 46.0
 var _star_material: StandardMaterial3D
 var _moon_material: ShaderMaterial
+var _sun_material: ShaderMaterial
 
 
 func _ready() -> void:
 	_build_ocean()
 	_build_fog_zones()
 	_build_stars()
+	_build_sun()
 	_build_moon()
 
 
 func _process(_delta: float) -> void:
 	var camera := get_viewport().get_camera_3d()
+	var daylight := float(get_parent().get("daylight_factor"))
+	var directional_sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
+	var sun_source_direction := Vector3.UP
+	if directional_sun != null:
+		# DirectionalLight emite por -Z; la fuente visible está en +Z.
+		sun_source_direction = directional_sun.global_basis.z.normalized()
 	if camera != null:
 		if stars != null:
 			stars.global_position = Vector3(camera.global_position.x, 0.0, camera.global_position.z)
 		if moon_visual != null:
 			moon_visual.global_position = camera.global_position + MOON_DIRECTION.normalized() * 760.0
-	var daylight := float(get_parent().get("daylight_factor"))
+		if sun_visual != null:
+			sun_visual.global_position = camera.global_position + sun_source_direction * 760.0
+	if sun_visual != null:
+		# Es una geometría opaca que desaparece completamente de noche: no deja
+		# el punto negro que provocaba el disco procedural dentro de la niebla.
+		sun_visual.visible = camera != null and daylight > 0.12 and sun_source_direction.y > -0.02
 	var night := 1.0 - smoothstep(0.08, 0.34, daylight)
 	if _star_material != null:
 		_star_material.albedo_color = Color(0.88, 0.94, 1.0, night)
@@ -96,6 +128,29 @@ func _process(_delta: float) -> void:
 	if moon_light != null:
 		moon_light.light_energy = night * 0.72
 		moon_light.shadow_enabled = night > 0.08
+
+
+func _build_sun() -> void:
+	var sun_mesh := SphereMesh.new()
+	sun_mesh.radius = sun_radius
+	sun_mesh.height = sun_radius * 2.0
+	sun_mesh.radial_segments = 12
+	sun_mesh.rings = 6
+	var shader := Shader.new()
+	shader.code = SUN_SHADER
+	_sun_material = ShaderMaterial.new()
+	_sun_material.shader = shader
+	sun_mesh.material = _sun_material
+	sun_visual = MeshInstance3D.new()
+	sun_visual.name = "LowPolySun"
+	sun_visual.mesh = sun_mesh
+	sun_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sun_visual.visibility_range_end = 2400.0
+	sun_visual.visible = false
+	sun_visual.set_meta("low_poly_sun", true)
+	sun_visual.set_meta("opaque_sun", true)
+	sun_visual.set_meta("radius_metres", sun_radius)
+	add_child(sun_visual)
 
 
 func _build_ocean() -> void:

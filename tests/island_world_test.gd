@@ -38,6 +38,27 @@ func _run_test() -> void:
 		_fail("La tecla M no devuelve al minimapa.")
 		return
 
+	if int(world.call("get_fast_travel_count")) != 4:
+		_fail("El mapa no expone los cuatro destinos de viaje rápido.")
+		return
+	var travel_event := InputEventKey.new()
+	travel_event.physical_keycode = KEY_1
+	travel_event.pressed = true
+	world.call("_unhandled_input", travel_event)
+	var player := world.get_node("Player") as Player
+	var first_destination: Vector2 = world.call("get_fast_travel_position", 1)
+	if Vector2(player.global_position.x, player.global_position.z).distance_to(first_destination) > 0.05 or int(world.get("last_fast_travel_slot")) != 1:
+		_fail("La tecla 1 no transporta al jugador a las Dunas Doradas.")
+		return
+	for slot in range(2, 5):
+		if not bool(world.call("fast_travel_to", slot)):
+			_fail("No se pudo viajar al destino %d." % slot)
+			return
+		var destination: Vector2 = world.call("get_fast_travel_position", slot)
+		if Vector2(player.global_position.x, player.global_position.z).distance_to(destination) > 0.05:
+			_fail("El destino de viaje rápido %d no coincide con su marcador del mapa." % slot)
+			return
+
 	var medieval := world.get_node("MedievalSetDressing") as MedievalSetDressing
 	var building_count := 0
 	var doorway_checked := false
@@ -99,7 +120,7 @@ func _run_test() -> void:
 		_fail("Deben existir diez edificios de tres pisos y 108 hastiales cerrados.")
 		return
 
-	print("ISLAND WORLD TEST OK: 54 casas transitables, 8 caseríos, 10 edificios de tres pisos y hastiales cerrados.")
+	print("ISLAND WORLD TEST OK: viaje rápido 1–4, 54 casas transitables, 8 caseríos y hastiales cerrados.")
 	quit(0)
 
 

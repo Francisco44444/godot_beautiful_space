@@ -1,8 +1,8 @@
 class_name Player
 extends CharacterBody3D
 
-## Aventurero medieval Quaternius en tercera persona. Mantiene la máquina de
-## estados a pie/montado y añade combate cuerpo a cuerpo con cuchillo.
+## Aventurero Quaternius en tercera persona. Mantiene la máquina de estados
+## a pie/montado y añade combate cuerpo a cuerpo con cuchillo.
 
 signal mount_state_changed(mounted: bool, horse: Horse)
 signal attack_started(combo_index: int)
@@ -44,7 +44,8 @@ const REALISTIC_IDLE := ANIM_IDLE
 @export var respawn_height: float = -12.0
 
 @export_category("Quaternius")
-@export_file("*.gltf") var quaternius_hero_path := "res://assets/quaternius/ultimate_animated_characters/glTF/Knight_Golden_Male.gltf"
+@export_file("*.gltf") var quaternius_hero_path := "res://assets/quaternius/ultimate_animated_characters/glTF/Cowboy_Male.gltf"
+@export var hero_skin_color := Color("d87842")
 
 @export_category("Montura")
 @export var mount_distance: float = 3.6
@@ -74,6 +75,7 @@ var _attack_hits: Dictionary = {}
 var _realistic_stride := 0.0
 var _weapon_grip: Node3D
 var _weapon_base_rotation := Vector3.ZERO
+var skin_surface_count := 0
 
 
 func _ready() -> void:
@@ -371,6 +373,8 @@ func _load_quaternius_hero() -> void:
 	if loaded_scene != null:
 		model_root.add_child(loaded_scene)
 		loaded_scene.rotation_degrees.y = 180.0
+		_recolor_hero_skin(loaded_scene)
+		loaded_scene.set_meta("character_source", quaternius_hero_path)
 	realistic_pose = model_root
 	realistic_model = model_root
 	skeleton = _find_skeleton(model_root)
@@ -378,6 +382,31 @@ func _load_quaternius_hero() -> void:
 	animation_player = model_root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	realistic_skeleton = skeleton
 	realistic_animation = animation_player
+
+
+func _recolor_hero_skin(loaded_scene: Node3D) -> void:
+	# Cowboy_Male trae la cabeza casi negra en el material Skin. Ojos, cejas y
+	# bigote usan Face/Hair, por lo que se conservan al aplicar un tono humano.
+	skin_surface_count = 0
+	var mesh_nodes: Array[Node] = loaded_scene.find_children("*", "MeshInstance3D", true, false)
+	if loaded_scene is MeshInstance3D:
+		mesh_nodes.push_front(loaded_scene)
+	for node in mesh_nodes:
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+		for surface in mesh_instance.mesh.get_surface_count():
+			var source := mesh_instance.mesh.surface_get_material(surface) as BaseMaterial3D
+			if source == null or source.resource_name != "Skin":
+				continue
+			var material := source.duplicate() as BaseMaterial3D
+			material.albedo_color = hero_skin_color
+			material.metallic = 0.0
+			material.roughness = 0.86
+			material.set_meta("human_skin_recolor", true)
+			mesh_instance.set_surface_override_material(surface, material)
+			mesh_instance.set_meta("human_skin_recolored", true)
+			skin_surface_count += 1
 
 
 func _load_gltf_scene(path: String) -> Node3D:

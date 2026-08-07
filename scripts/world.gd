@@ -4,6 +4,12 @@ extends Node3D
 ## atardecer y noche real, incluida la iluminación ambiental.
 
 const LOOKOUT_POSITION := Vector3(98.0, 0.0, -110.0)
+const FAST_TRAVEL_POINTS: Array[Dictionary] = [
+	{"name": "Dunas Doradas", "position": Vector2(2350.0, 2050.0)},
+	{"name": "Cumbres Blancas", "position": Vector2(520.0, -3000.0)},
+	{"name": "Villa Robledal", "position": Vector2(-1450.0, 650.0)},
+	{"name": "Bosque Umbrío", "position": Vector2(-2180.0, 1650.0)},
+]
 
 @export_category("Ciclo de luz")
 @export var sun_cycle_enabled := true
@@ -17,11 +23,15 @@ const LOOKOUT_POSITION := Vector3(98.0, 0.0, -110.0)
 @onready var sun: DirectionalLight3D = $Sun
 @onready var sky_fill: DirectionalLight3D = $SkyFill
 @onready var world_environment: WorldEnvironment = $WorldEnvironment
+@onready var camera_rig: ThirdPersonCamera = $CameraRig
 
 var lookout_reached := false
 var sun_cycle_radians := 0.86
 var daylight_factor := 1.0
 var time_of_day := "Día"
+var last_fast_travel_slot := 0
+var _fast_travel_notice := ""
+var _fast_travel_notice_time := 0.0
 
 
 func _ready() -> void:
@@ -34,6 +44,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_sun_cycle(delta)
+	_fast_travel_notice_time = maxf(_fast_travel_notice_time - delta, 0.0)
 	var flat_player := Vector2(player.global_position.x, player.global_position.z)
 	var flat_lookout := Vector2(LOOKOUT_POSITION.x, LOOKOUT_POSITION.z)
 	var distance := flat_player.distance_to(flat_lookout)
@@ -41,10 +52,64 @@ func _process(delta: float) -> void:
 	if distance < 18.0:
 		lookout_reached = true
 
-	if lookout_reached:
+	if _fast_travel_notice_time > 0.0:
+		objective.text = _fast_travel_notice
+	elif lookout_reached:
 		objective.text = "✦ Mirador alcanzado · %s · M abre el mapa de la isla" % time_of_day
 	else:
 		objective.text = "✦ %s · sigue el sendero al mirador · %d m · M mapa" % [time_of_day, roundi(distance)]
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+	var key_event := event as InputEventKey
+	var pressed_key := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+	var slot := 0
+	match pressed_key:
+		KEY_1:
+			slot = 1
+		KEY_2:
+			slot = 2
+		KEY_3:
+			slot = 3
+		KEY_4:
+			slot = 4
+	if slot > 0 and fast_travel_to(slot):
+		get_viewport().set_input_as_handled()
+
+
+func fast_travel_to(slot: int) -> bool:
+	if slot < 1 or slot > FAST_TRAVEL_POINTS.size() or terrain.data == null:
+		return false
+	var destination: Dictionary = FAST_TRAVEL_POINTS[slot - 1]
+	var point: Vector2 = destination.position
+	var height := terrain.data.get_height(Vector3(point.x, 0.0, point.y))
+	if is_nan(height):
+		push_warning("No se pudo encontrar terreno para el viaje rápido %d." % slot)
+		return false
+	var was_mounted := player.is_mounted()
+	if was_mounted:
+		player.dismount()
+	player.global_position = Vector3(point.x, height + 0.18, point.y)
+	player.velocity = Vector3.ZERO
+	player.spawn_position = player.global_position
+	last_fast_travel_slot = slot
+	_fast_travel_notice = "✦ Viaje rápido %d · %s%s" % [slot, destination.name, " · has desmontado" if was_mounted else ""]
+	_fast_travel_notice_time = 3.5
+	if camera_rig != null:
+		camera_rig.snap_to_target()
+	return true
+
+
+func get_fast_travel_count() -> int:
+	return FAST_TRAVEL_POINTS.size()
+
+
+func get_fast_travel_position(slot: int) -> Vector2:
+	if slot < 1 or slot > FAST_TRAVEL_POINTS.size():
+		return Vector2(INF, INF)
+	return FAST_TRAVEL_POINTS[slot - 1].position
 
 
 func _place_on_terrain(node: Node3D, vertical_offset: float) -> void:

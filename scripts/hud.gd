@@ -26,11 +26,11 @@ func _process(_delta: float) -> void:
 		hint.text = "Clic para volver a controlar la cámara"
 
 	if player.is_mounted():
-		controls.text = "WASD / flechas · guiar   Mayús · galopar\nE · desmontar   M · mapa   Ratón · mirar"
+		controls.text = "WASD / flechas · guiar   Mayús · galopar\nE · desmontar   M · mapa   1–4 · viaje rápido"
 		mount_hint.text = "E · Desmontar de %s" % player.current_mount.horse_name
 		mount_hint.visible = true
 	else:
-		controls.text = "WASD / flechas · caminar   Espacio · saltar\nClic izq. · cuchillo   Mayús · correr   E · montar   M · mapa"
+		controls.text = "WASD / flechas · caminar   Espacio · saltar\nClic izq. · cuchillo   Mayús · correr   E · montar   M · mapa   1–4 · viaje rápido"
 		var nearby_horse := player.get_nearby_mount()
 		mount_hint.visible = nearby_horse != null
 		if nearby_horse != null:

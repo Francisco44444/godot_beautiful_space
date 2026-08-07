@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Valida el hito terrestre Quaternius y que la cascada retirada no reaparezca.
+## Verifica que el antiguo hito de la cascada se haya eliminado por completo.
 
 
 func _init() -> void:
@@ -18,35 +18,12 @@ func _run_test() -> void:
 	for _frame in 4:
 		await process_frame
 
-	var landmark := world.get_node_or_null("EpicLandmark") as EpicLandmark
-	if landmark == null:
-		_fail("Falta EpicLandmark en el mundo.")
-		return
-	if landmark.cliff_piece_count != 16 or landmark.fortress_piece_count != 8:
-		_fail("El hito debe conservar 16 rocas y 8 módulos de fortaleza Quaternius.")
-		return
-	if is_nan(landmark.landmark_ground_height):
-		_fail("EpicLandmark no pudo leer la altura del terreno.")
-		return
-	if landmark.has_node("Waterfall") or landmark.has_node("Pool"):
-		_fail("La cascada, la poza y el río deben permanecer eliminados.")
-		return
-
-	for root_name in ["EpicCliffs", "Fortress"]:
-		var category := landmark.get_node_or_null(root_name) as Node3D
-		if category == null or category.get_child_count() == 0:
-			_fail("La sección terrestre %s del hito está vacía." % root_name)
-			return
-
-	for collision_path in [
-		"EpicCliffs/CliffCollisionCenter",
-		"EpicCliffs/CliffCollisionWest",
-		"EpicCliffs/CliffCollisionEast",
-		"Fortress/FortressCollision",
+	for forbidden_name in [
+		"EpicLandmark", "Waterfall", "Pool", "WestTowerRoof", "EastTowerRoof",
+		"CliffCollisionCenter", "CliffCollisionWest", "CliffCollisionEast",
 	]:
-		var body := landmark.get_node_or_null(collision_path) as StaticBody3D
-		if body == null or body.get_child_count() != 1:
-			_fail("Falta la colisión sólida %s." % collision_path)
+		if world.find_child(forbidden_name, true, false) != null:
+			_fail("Todavía existe un resto del antiguo hito: %s." % forbidden_name)
 			return
 
 	var ambient_audio := world.get_node("AmbientAudio") as AmbientAudio
@@ -56,7 +33,7 @@ func _run_test() -> void:
 	world.queue_free()
 	for _frame in 8:
 		await process_frame
-	print("EPIC LANDMARK TEST OK: riscos y fortaleza Quaternius operativos, sin cascada ni agua.")
+	print("EPIC LANDMARK TEST OK: cascada, tejados flotantes y rocas antiguas eliminados.")
 	quit(0)
 
 
