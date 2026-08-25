@@ -32,10 +32,11 @@ func _run_test() -> void:
 		return
 	var ids := {}
 	var biome_counts := {}
+	var requirement_counts := {}
 	var event_count := 0
 	for raw_zone in zones:
 		var zone := raw_zone as Dictionary
-		for required_key in ["id", "name", "position", "description", "type", "biome", "radius", "requires_event"]:
+		for required_key in ["id", "name", "position", "description", "type", "biome", "radius", "requires_event", "requirement", "objective_hint", "target_id"]:
 			if not zone.has(required_key):
 				_fail("Una zona no contiene el campo obligatorio %s." % required_key)
 				return
@@ -50,6 +51,7 @@ func _run_test() -> void:
 			_fail("La zona %s quedó fuera de la isla navegable." % zone_id)
 			return
 		biome_counts[String(zone.biome)] = int(biome_counts.get(String(zone.biome), 0)) + 1
+		requirement_counts[String(zone.requirement)] = int(requirement_counts.get(String(zone.requirement), 0)) + 1
 		if String(zone.type) == "evento":
 			event_count += 1
 	if event_count != 2 or not ids.has("zone_199_amanecer") or not ids.has("zone_200_atardecer"):
@@ -58,6 +60,10 @@ func _run_test() -> void:
 	for required_biome in ["pradera", "bosque", "nieve", "desierto", "costa", "montaña", "tenebroso", "poblado"]:
 		if int(biome_counts.get(required_biome, 0)) <= 0:
 			_fail("El catálogo no reparte zonas por el bioma %s." % required_biome)
+			return
+	for required_action in ["visit", "discover_animal", "open_chest", "chop_tree", "mine_rock", "recover_relic", "event"]:
+		if int(requirement_counts.get(required_action, 0)) <= 0:
+			_fail("El catálogo no contiene retos del tipo %s." % required_action)
 			return
 
 	# La generación debe ser idéntica entre instancias, sin depender de RNG global.
@@ -74,7 +80,15 @@ func _run_test() -> void:
 			return
 
 	# Acercarse no completa nada: hace falta confirmar, como lo hará la tecla E.
-	var first_zone := zones[0] as Dictionary
+	var visit_zones: Array[Dictionary] = []
+	var action_zone: Dictionary = {}
+	for zone_value in zones:
+		var candidate := zone_value as Dictionary
+		if String(candidate.requirement) == "visit" and visit_zones.size() < 2:
+			visit_zones.append(candidate)
+		elif action_zone.is_empty() and String(candidate.requirement) == "chop_tree":
+			action_zone = candidate
+	var first_zone := visit_zones[0]
 	manager.call("update_player_position", Vector3(5900.0, 0.0, 5900.0))
 	if not (manager.call("get_nearby_zone") as Dictionary).is_empty() or not (manager.call("confirm_current_zone") as Dictionary).is_empty():
 		_fail("Se pudo completar una zona sin estar dentro de su radio.")
@@ -92,7 +106,7 @@ func _run_test() -> void:
 		return
 
 	# El camino real de entrada también exige la acción interact (E por defecto).
-	var second_zone := zones[1] as Dictionary
+	var second_zone := visit_zones[1]
 	manager.call("update_player_position", second_zone.position)
 	var interact_event := InputEventAction.new()
 	interact_event.action = &"interact"
@@ -100,6 +114,19 @@ func _run_test() -> void:
 	manager.call("_unhandled_input", interact_event)
 	if manager.call("is_discovered", second_zone.id) != true or int(manager.call("get_completed_count")) != 2:
 		_fail("La acción interact no confirmó la zona cercana.")
+		return
+
+	# Los retos físicos no se pueden falsear con E: exigen la acción exacta del
+	# objeto de mundo que porta su zone_id.
+	manager.call("update_player_position", action_zone.position)
+	if manager.call("can_confirm_current_zone") == true or not (manager.call("confirm_current_zone") as Dictionary).is_empty():
+		_fail("Una tala se pudo completar pulsando E sin usar el hacha.")
+		return
+	if not (manager.call("register_world_action", action_zone.id, "open_chest") as Dictionary).is_empty():
+		_fail("Una acción de tipo incorrecto completó la tala.")
+		return
+	if (manager.call("register_world_action", action_zone.id, "chop_tree") as Dictionary).is_empty() or int(manager.call("get_completed_count")) != 3:
+		_fail("La acción física correcta no completó su reto.")
 		return
 
 	# Un evento exige simultáneamente su mirador, la franja horaria y E.
@@ -115,7 +142,7 @@ func _run_test() -> void:
 		_fail("El evento de amanecer no se activó en su mirador.")
 		return
 	manager.call("confirm_current_zone")
-	if int(manager.call("get_completed_count")) != 3:
+	if int(manager.call("get_completed_count")) != 4:
 		_fail("El amanecer no cuenta dentro del progreso de 200 zonas.")
 		return
 
@@ -134,7 +161,7 @@ func _run_test() -> void:
 	loaded_manager.auto_track_local_player = false
 	root.add_child(loaded_manager)
 	loaded_manager.call("initialize", true)
-	if int(loaded_manager.call("get_completed_count")) != 3 or String((loaded_manager.call("get_selected_zone") as Dictionary).id) != "zone_200_atardecer":
+	if int(loaded_manager.call("get_completed_count")) != 4 or String((loaded_manager.call("get_selected_zone") as Dictionary).id) != "zone_200_atardecer":
 		_fail("La carga versionada no restauró progreso y selección.")
 		return
 

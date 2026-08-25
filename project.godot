@@ -22,6 +22,7 @@ GameSettings="*res://scripts/game_settings.gd"
 NetworkSession="*res://scripts/network_session.gd"
 LobbyDirectory="*res://scripts/lobby_directory.gd"
 ExplorationManager="*res://scripts/exploration_manager.gd"
+InventoryManager="*res://scripts/inventory_manager.gd"
 
 [audio]
 

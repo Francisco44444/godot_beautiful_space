@@ -43,6 +43,18 @@ var exploration_journal_summary: Label
 var exploration_journal_open := false
 var exploration_nearby_zone: Dictionary = {}
 var exploration_notice_seconds := 0.0
+var inventory_overlay: ColorRect
+var inventory_list: ItemList
+var inventory_summary: Label
+var inventory_open := false
+var quickbar_panel: PanelContainer
+var quickbar_labels: Array[Label] = []
+var arrow_counter: Label
+var bow_power_bar: ProgressBar
+var adventure_action_hint: Label
+var action_feedback_label: Label
+var action_feedback_seconds := 0.0
+var inventory_manager: Node
 
 
 func _ready() -> void:
@@ -55,6 +67,9 @@ func _ready() -> void:
 	_build_lobby_overlay()
 	_build_exploration_hud()
 	_build_exploration_journal()
+	_build_inventory_overlay()
+	_build_quickbar()
+	inventory_manager = get_node_or_null("/root/InventoryManager")
 	GameSettings.resolution_changed.connect(_sync_resolution_selector)
 	GameSettings.lod_distance_changed.connect(_sync_lod_slider)
 	GameSettings.identity_changed.connect(_sync_identity_controls)
@@ -63,6 +78,14 @@ func _ready() -> void:
 	NetworkSession.roster_changed.connect(_on_network_roster_changed)
 	LobbyDirectory.rooms_changed.connect(_on_directory_rooms_changed)
 	LobbyDirectory.directory_status_changed.connect(_on_directory_status_changed)
+	if inventory_manager != null:
+		inventory_manager.connect("inventory_changed", Callable(self, "_on_inventory_changed"))
+		inventory_manager.connect("equipment_changed", Callable(self, "_on_inventory_equipment_changed"))
+	player.action_feedback.connect(_on_player_action_feedback)
+	player.bow_draw_changed.connect(_on_bow_draw_changed)
+	player.arrow_fired.connect(_on_arrow_fired)
+	player.equipment_changed.connect(_on_player_quickslot_changed)
+	_on_inventory_changed(inventory_manager.call("get_inventory_entries") as Array if inventory_manager != null else [])
 	var exploration := get_node_or_null("/root/ExplorationManager")
 	if exploration != null:
 		exploration.connect("progress_changed", Callable(self, "_on_exploration_progress_changed"))
@@ -91,11 +114,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var journal_key := event as InputEventKey
 		var journal_code := journal_key.physical_keycode if journal_key.physical_keycode != 0 else journal_key.keycode
+		if journal_key.pressed and not journal_key.echo and journal_code == KEY_I:
+			_set_inventory_open(not inventory_open)
+			get_viewport().set_input_as_handled()
+			return
 		if journal_key.pressed and not journal_key.echo and journal_code == KEY_L:
 			_set_exploration_journal_open(not exploration_journal_open)
 			get_viewport().set_input_as_handled()
 			return
 	if exploration_journal_open:
+		return
+	if inventory_open:
 		return
 	if event.is_action_pressed("map"):
 		if credits_open:
@@ -185,18 +214,28 @@ func _process(delta: float) -> void:
 		exploration_notice_seconds = maxf(exploration_notice_seconds - delta, 0.0)
 		if exploration_notice_seconds <= 0.0:
 			_refresh_exploration_prompt()
+	if action_feedback_seconds > 0.0:
+		action_feedback_seconds = maxf(action_feedback_seconds - delta, 0.0)
+		if action_feedback_seconds <= 0.0 and action_feedback_label != null:
+			action_feedback_label.visible = false
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		hint.text = "Esc libera el ratón"
 	else:
 		hint.text = "Clic para volver a controlar la cámara"
 
 	var equipped := player.get_equipped_item_name()
+	var adventure_prompt := player.get_nearby_adventure_prompt()
+	if adventure_action_hint != null:
+		adventure_action_hint.text = adventure_prompt
+		adventure_action_hint.visible = not adventure_prompt.is_empty() and not inventory_open and not exploration_journal_open
+		if not adventure_prompt.is_empty() and exploration_notice_seconds <= 0.0 and exploration_prompt != null:
+			exploration_prompt.visible = false
 	if player.is_mounted():
-		controls.text = "WASD / flechas · guiar   Mayús · galopar   E · explorar / desmontar\n1 Cuchillo · 2 Hacha · 3 Antorcha · 4 Brújula\nEn mano: %s   M · mapa   B · minimapa   L · 200 zonas\n5–9 · viaje rápido   Z · configuración   0 · créditos" % equipped
+		controls.text = "WASD / flechas · guiar   Mayús · galopar   E · explorar / desmontar\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   I · inventario   M · mapa   L · 200 retos\n5–9 · viaje rápido   Z · configuración   0 · créditos" % equipped
 		mount_hint.text = "E · Desmontar de %s" % player.current_mount.horse_name
 		mount_hint.visible = true
 	else:
-		controls.text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Cuchillo · 2 Hacha · 3 Antorcha · 4 Brújula\nEn mano: %s   Clic izq. · atacar   E · explorar / montar\nM · mapa   B · minimapa   L · 200 zonas   5–9 · viaje rápido" % equipped
+		controls.text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   Clic · atacar / mantener para tensar arco\nE · interactuar   I · inventario   M · mapa   L · 200 retos" % equipped
 		var nearby_horse := player.get_nearby_mount()
 		mount_hint.visible = nearby_horse != null
 		if nearby_horse != null:
@@ -744,7 +783,7 @@ func _build_exploration_hud() -> void:
 	margin.add_child(content)
 	exploration_progress_label = Label.new()
 	exploration_progress_label.name = "ExplorationProgressLabel"
-	exploration_progress_label.text = "EXPLORACIÓN DE LA ISLA · 0 / 200 · L diario"
+	exploration_progress_label.text = "AVENTURA DE LA ISLA · 0 / 200 · L diario"
 	exploration_progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	exploration_progress_label.add_theme_font_size_override("font_size", 16)
 	exploration_progress_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.58))
@@ -814,7 +853,7 @@ func _build_exploration_journal() -> void:
 	content.add_theme_constant_override("separation", 10)
 	margin.add_child(content)
 	var title := Label.new()
-	title.text = "DIARIO DE EXPLORACIÓN · 200 LUGARES"
+	title.text = "DIARIO DE AVENTURA · 200 RETOS"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 27)
 	title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.48))
@@ -894,7 +933,7 @@ func _rebuild_exploration_journal() -> void:
 		var prefix := "✓" if completed else "○"
 		if selected:
 			prefix = "➤ " + prefix
-		exploration_journal_list.add_item("%s  %s  ·  %s" % [prefix, String(zone.name), String(zone.biome).capitalize()])
+		exploration_journal_list.add_item("%s  %s  ·  %s  ·  %s" % [prefix, String(zone.name), String(zone.type).capitalize(), String(zone.biome).capitalize()])
 		var index := exploration_journal_list.item_count - 1
 		exploration_journal_list.set_item_metadata(index, String(zone.id))
 		exploration_journal_list.set_item_tooltip(index, String(zone.description))
@@ -904,7 +943,7 @@ func _rebuild_exploration_journal() -> void:
 		)
 	var completed_count := int(exploration.call("get_completed_count"))
 	var total := int(exploration.call("get_zone_count"))
-	exploration_journal_summary.text = "%d de %d zonas exploradas · %.1f%%" % [
+	exploration_journal_summary.text = "%d de %d retos completados · %.1f%%" % [
 		completed_count,
 		total,
 		100.0 * float(exploration.call("get_progress_ratio")),
@@ -937,7 +976,7 @@ func _on_exploration_progress_changed(completed: int, total: int, ratio: float) 
 		exploration_progress_bar.max_value = float(total)
 		exploration_progress_bar.value = float(completed)
 	if exploration_progress_label != null:
-		exploration_progress_label.text = "EXPLORACIÓN DE LA ISLA · %d / %d · %.1f%% · L diario" % [
+		exploration_progress_label.text = "AVENTURA DE LA ISLA · %d / %d · %.1f%% · L diario" % [
 			completed,
 			total,
 			ratio * 100.0,
@@ -974,8 +1013,283 @@ func _refresh_exploration_prompt() -> void:
 	if exploration_nearby_zone.is_empty():
 		exploration_prompt.visible = false
 		return
-	exploration_prompt.text = "E · EXPLORAR · %s" % String(exploration_nearby_zone.name)
+	var objective_hint := String(exploration_nearby_zone.get("objective_hint", "E · registrar el lugar"))
+	exploration_prompt.text = "%s · %s" % [objective_hint, String(exploration_nearby_zone.name)]
 	exploration_prompt.visible = true
+
+
+func _build_quickbar() -> void:
+	quickbar_panel = PanelContainer.new()
+	quickbar_panel.name = "AdventureQuickbar"
+	quickbar_panel.z_index = 72
+	quickbar_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	quickbar_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	quickbar_panel.position = Vector2(-294.0, -86.0)
+	quickbar_panel.size = Vector2(588.0, 62.0)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.045, 0.035, 0.90)
+	style.border_color = Color(0.80, 0.61, 0.29, 0.94)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(11)
+	quickbar_panel.add_theme_stylebox_override("panel", style)
+	add_child(quickbar_panel)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 7)
+	quickbar_panel.add_child(row)
+	for slot in range(1, 5):
+		var label := Label.new()
+		label.custom_minimum_size = Vector2(116.0, 48.0)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", 15)
+		label.add_theme_color_override("font_color", Color(0.96, 0.89, 0.70))
+		var slot_style := StyleBoxFlat.new()
+		slot_style.bg_color = Color(0.10, 0.12, 0.09, 0.88)
+		slot_style.set_corner_radius_all(7)
+		label.add_theme_stylebox_override("normal", slot_style)
+		row.add_child(label)
+		quickbar_labels.append(label)
+	arrow_counter = Label.new()
+	arrow_counter.custom_minimum_size = Vector2(72.0, 48.0)
+	arrow_counter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	arrow_counter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	arrow_counter.add_theme_font_size_override("font_size", 15)
+	arrow_counter.add_theme_color_override("font_color", Color(0.55, 0.88, 1.0))
+	row.add_child(arrow_counter)
+
+	bow_power_bar = ProgressBar.new()
+	bow_power_bar.name = "BowPower"
+	bow_power_bar.z_index = 76
+	bow_power_bar.visible = false
+	bow_power_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bow_power_bar.set_anchors_preset(Control.PRESET_CENTER)
+	bow_power_bar.position = Vector2(34.0, 27.0)
+	bow_power_bar.size = Vector2(180.0, 12.0)
+	bow_power_bar.max_value = 1.0
+	bow_power_bar.show_percentage = false
+	var power_background := StyleBoxFlat.new()
+	power_background.bg_color = Color(0.05, 0.06, 0.05, 0.82)
+	power_background.set_corner_radius_all(6)
+	var power_fill := StyleBoxFlat.new()
+	power_fill.bg_color = Color(0.92, 0.68, 0.24, 0.96)
+	power_fill.set_corner_radius_all(6)
+	bow_power_bar.add_theme_stylebox_override("background", power_background)
+	bow_power_bar.add_theme_stylebox_override("fill", power_fill)
+	add_child(bow_power_bar)
+
+	adventure_action_hint = Label.new()
+	adventure_action_hint.name = "AdventureActionHint"
+	adventure_action_hint.z_index = 76
+	adventure_action_hint.visible = false
+	adventure_action_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	adventure_action_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	adventure_action_hint.position = Vector2(-350.0, -128.0)
+	adventure_action_hint.size = Vector2(700.0, 34.0)
+	adventure_action_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	adventure_action_hint.add_theme_font_size_override("font_size", 20)
+	adventure_action_hint.add_theme_color_override("font_color", Color(1.0, 0.82, 0.40))
+	adventure_action_hint.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.95))
+	adventure_action_hint.add_theme_constant_override("shadow_offset_x", 2)
+	adventure_action_hint.add_theme_constant_override("shadow_offset_y", 2)
+	add_child(adventure_action_hint)
+
+	action_feedback_label = Label.new()
+	action_feedback_label.name = "ActionFeedback"
+	action_feedback_label.z_index = 78
+	action_feedback_label.visible = false
+	action_feedback_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	action_feedback_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	action_feedback_label.position = Vector2(-360.0, 90.0)
+	action_feedback_label.size = Vector2(720.0, 42.0)
+	action_feedback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	action_feedback_label.add_theme_font_size_override("font_size", 22)
+	action_feedback_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.42))
+	action_feedback_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.98))
+	action_feedback_label.add_theme_constant_override("shadow_offset_x", 2)
+	action_feedback_label.add_theme_constant_override("shadow_offset_y", 2)
+	add_child(action_feedback_label)
+	_refresh_quickbar()
+
+
+func _build_inventory_overlay() -> void:
+	inventory_overlay = ColorRect.new()
+	inventory_overlay.name = "InventoryOverlay"
+	inventory_overlay.z_index = 285
+	inventory_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	inventory_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	inventory_overlay.color = Color(0.018, 0.024, 0.019, 0.95)
+	inventory_overlay.visible = false
+	add_child(inventory_overlay)
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.position = Vector2(-450.0, -330.0)
+	panel.size = Vector2(900.0, 660.0)
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.095, 0.078, 0.045, 0.99)
+	panel_style.border_color = Color(0.88, 0.66, 0.28, 0.98)
+	panel_style.set_border_width_all(3)
+	panel_style.set_corner_radius_all(16)
+	panel.add_theme_stylebox_override("panel", panel_style)
+	inventory_overlay.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 28)
+	margin.add_theme_constant_override("margin_top", 22)
+	margin.add_theme_constant_override("margin_right", 28)
+	margin.add_theme_constant_override("margin_bottom", 22)
+	panel.add_child(margin)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
+	margin.add_child(content)
+	var title := Label.new()
+	title.text = "INVENTARIO DE AVENTURA"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.46))
+	content.add_child(title)
+	inventory_summary = Label.new()
+	inventory_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	inventory_summary.add_theme_font_size_override("font_size", 16)
+	inventory_summary.add_theme_color_override("font_color", Color(0.88, 0.84, 0.67))
+	content.add_child(inventory_summary)
+	var help := Label.new()
+	help.text = "Doble clic en una espada, hacha, arco o escudo para equiparlo · I cerrar"
+	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help.add_theme_font_size_override("font_size", 14)
+	help.add_theme_color_override("font_color", Color(0.68, 0.72, 0.60))
+	content.add_child(help)
+	inventory_list = ItemList.new()
+	inventory_list.name = "InventoryList"
+	inventory_list.custom_minimum_size = Vector2(840.0, 505.0)
+	inventory_list.fixed_icon_size = Vector2i(42, 42)
+	inventory_list.icon_mode = ItemList.ICON_MODE_LEFT
+	inventory_list.add_theme_font_size_override("font_size", 17)
+	inventory_list.item_activated.connect(_on_inventory_item_activated)
+	content.add_child(inventory_list)
+	var close_button := Button.new()
+	close_button.text = "Cerrar inventario · I"
+	close_button.pressed.connect(func() -> void: _set_inventory_open(false))
+	content.add_child(close_button)
+
+
+func _set_inventory_open(open: bool) -> void:
+	inventory_open = open
+	inventory_overlay.visible = open
+	if open:
+		map_open = false
+		credits_open = false
+		controls_open = false
+		exploration_journal_open = false
+		full_map.visible = false
+		credits_overlay.visible = false
+		controls_panel.visible = false
+		exploration_journal_overlay.visible = false
+		mini_map.visible = false
+		_rebuild_inventory()
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		get_tree().paused = true
+	else:
+		get_tree().paused = false
+		mini_map.visible = mini_map_open and not map_open
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if map_open else Input.MOUSE_MODE_CAPTURED
+
+
+func is_inventory_open() -> bool:
+	return inventory_open
+
+
+func _rebuild_inventory() -> void:
+	if inventory_list == null:
+		return
+	inventory_list.clear()
+	var entries: Array = inventory_manager.call("get_inventory_entries") if inventory_manager != null else []
+	var total_objects := 0
+	for entry_value in entries:
+		var entry := entry_value as Dictionary
+		var amount := int(entry.get("amount", 0))
+		total_objects += amount
+		var equipped := bool(entry.get("equipped", false))
+		var prefix := "◆ EQUIPADO · " if equipped else ""
+		var text := "%s%s  ×%d   [%s]" % [prefix, String(entry.get("display_name", entry.id)), amount, String(entry.get("category", "objeto")).capitalize()]
+		var icon: Texture2D
+		var icon_path := String(entry.get("icon_path", ""))
+		if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
+			icon = load(icon_path) as Texture2D
+		inventory_list.add_item(text, icon)
+		var index := inventory_list.item_count - 1
+		inventory_list.set_item_metadata(index, String(entry.id))
+		inventory_list.set_item_custom_fg_color(index, Color(1.0, 0.82, 0.38) if equipped else Color(0.91, 0.88, 0.76))
+	inventory_summary.text = "%d tipos · %d objetos · %d flechas" % [entries.size(), total_objects, _inventory_arrow_count()]
+
+
+func _on_inventory_item_activated(index: int) -> void:
+	if inventory_list == null:
+		return
+	var item_id := String(inventory_list.get_item_metadata(index))
+	if inventory_manager != null and bool(inventory_manager.call("equip_item", item_id)):
+		var definition := inventory_manager.call("get_item_definition", item_id) as Dictionary
+		_on_player_action_feedback("Equipado: %s" % String(definition.get("display_name", item_id)))
+		_rebuild_inventory()
+
+
+func _on_inventory_changed(_entries: Array) -> void:
+	_refresh_quickbar()
+	if inventory_open:
+		_rebuild_inventory()
+
+
+func _on_inventory_equipment_changed(_category: String, _item_id: String) -> void:
+	_refresh_quickbar()
+
+
+func _on_player_quickslot_changed(_slot: int, _item_name: String) -> void:
+	_refresh_quickbar()
+
+
+func _refresh_quickbar() -> void:
+	if quickbar_labels.is_empty():
+		return
+	var fallback_names := PackedStringArray(["Espada", "Hacha", "Arco", "Antorcha"])
+	for index in 4:
+		var item_id := String(inventory_manager.call("get_quick_slot_item", index + 1)) if inventory_manager != null else ""
+		var display_name: String = fallback_names[index]
+		if not item_id.is_empty():
+			var definition := inventory_manager.call("get_item_definition", item_id) as Dictionary
+			display_name = String(definition.get("display_name", item_id))
+		quickbar_labels[index].text = "%d\n%s" % [index + 1, display_name]
+		quickbar_labels[index].modulate = Color(1.0, 0.86, 0.42) if player != null and player.equipped_slot == index + 1 else Color.WHITE
+	if arrow_counter != null:
+		arrow_counter.text = "FLECHAS\n%d" % _inventory_arrow_count()
+
+
+func _inventory_arrow_count() -> int:
+	return int(inventory_manager.call("get_arrow_count")) if inventory_manager != null else 0
+
+
+func _on_player_action_feedback(message: String) -> void:
+	action_feedback_seconds = 3.2
+	if action_feedback_label != null:
+		action_feedback_label.text = message
+		action_feedback_label.visible = true
+	_refresh_quickbar()
+
+
+func _on_bow_draw_changed(strength: float, arrows: int) -> void:
+	if bow_power_bar != null:
+		bow_power_bar.value = strength
+		bow_power_bar.visible = player.is_drawing_bow
+	var crosshair := get_node_or_null("Crosshair") as Label
+	if crosshair != null:
+		crosshair.text = "◎" if player.is_drawing_bow else "·"
+		crosshair.add_theme_font_size_override("font_size", 34 if player.is_drawing_bow else 18)
+	if arrow_counter != null:
+		arrow_counter.text = "FLECHAS\n%d" % arrows
+
+
+func _on_arrow_fired(remaining_arrows: int, _strength: float) -> void:
+	if arrow_counter != null:
+		arrow_counter.text = "FLECHAS\n%d" % remaining_arrows
+	_refresh_quickbar()
 
 
 func _controls_summary() -> String:
@@ -986,7 +1300,8 @@ func _controls_summary() -> String:
 		+ "Saltar: %s     Correr / galopar: %s\n" % [GameSettings.action_keys("jump"), GameSettings.action_keys("sprint")]
 		+ "Interactuar / montar: %s     Atacar: %s\n\n" % [GameSettings.action_keys("interact"), GameSettings.action_keys("attack")]
 		+ "[b]EQUIPO Y NAVEGACIÓN[/b]\n"
-		+ "1 Cuchillo · 2 Hacha · 3 Antorcha · 4 Brújula\n"
+		+ "1 Espada · 2 Hacha · 3 Arco · 4 Antorcha · I Inventario\n"
+		+ "Con el arco: mantén clic para tensar y apuntar; suelta para disparar\n"
 		+ "5 Dunas · 6 Nieve · 7 Villa · 8 Bosque Umbrío · 9 Bosque Tenebroso\n"
 		+ "Mapa: %s · B Minimapa · L Diario de 200 zonas · N Ayuda · 0 Créditos\n" % GameSettings.action_keys("map")
 		+ "Configuración / identidad / multijugador: %s · Esc Liberar ratón" % GameSettings.action_keys("settings")

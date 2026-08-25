@@ -39,7 +39,17 @@ func _run_test() -> void:
 		if is_nan(terrain_position.y) or terrain_position.y < 1.0 or slope > 0.73:
 			_fail("Una zona de exploración no quedó anclada a terreno transitable: %s (y=%.2f, pendiente=%.3f)." % [terrain_zone.id, terrain_position.y, slope])
 			return
-	var first := zones[0] as Dictionary
+	# Los retos de acción (fauna, cofres, tala...) no pueden completarse sólo
+	# llegando y pulsando E. La integración del aviso se prueba con una visita.
+	var first: Dictionary = {}
+	for zone_variant in zones:
+		var candidate := zone_variant as Dictionary
+		if String(candidate.get("requirement", "")) == "visit":
+			first = candidate
+			break
+	if first.is_empty():
+		_fail("El catálogo no contiene ninguna visita confirmable con E.")
+		return
 	var player := world.get_node("Player") as Player
 	player.global_position = first.position
 	exploration.call("update_player_position", player.global_position)

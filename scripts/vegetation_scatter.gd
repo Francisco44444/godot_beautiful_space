@@ -369,7 +369,9 @@ func _scatter_forest() -> void:
 		else:
 			variant = local_tree_variant
 			generated_green_tree_count += 1
-		var scale_value := _random.randf_range(1.12, 2.04)
+		# Siluetas más monumentales sin aumentar instancias ni draw calls: el mismo
+		# MultiMesh/LOD conserva el rendimiento, pero el bosque gana dosel y escala.
+		var scale_value := _random.randf_range(1.48, 2.68)
 		if local_tree_variant >= 5:
 			scale_value *= _random.randf_range(1.05, 1.30)
 		var position := Vector3(point.x, height + 0.10, point.y)

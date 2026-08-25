@@ -8,6 +8,9 @@ signal mount_state_changed(mounted: bool, horse: Horse)
 signal attack_started(combo_index: int)
 signal melee_hit(target: Node)
 signal equipment_changed(slot: int, item_name: String)
+signal action_feedback(message: String)
+signal bow_draw_changed(strength: float, arrows: int)
+signal arrow_fired(remaining_arrows: int, strength: float)
 
 enum ControlState {
 	ON_FOOT,
@@ -15,6 +18,7 @@ enum ControlState {
 }
 
 const OBJ_LOADER: Script = preload("res://scripts/quaternius_obj_loader.gd")
+const ARROW_SCRIPT: Script = preload("res://scripts/adventure_arrow.gd")
 const SURVIVAL_OBJ_ROOT := "res://assets/quaternius/Survival Pack - Sept 2020/OBJ/"
 const CHARACTER_PATHS: Array[String] = [
 	"res://assets/quaternius/ultimate_animated_characters/glTF/Cowboy_Male.gltf",
@@ -28,32 +32,24 @@ const CHARACTER_PATHS: Array[String] = [
 ]
 const EQUIPMENT_SPECS: Dictionary = {
 	1: {
-		"name": "Cuchillo", "node_name": "EquippedKnife", "path": SURVIVAL_OBJ_ROOT + "Knife.obj",
-		# El OBJ crece por +Y desde la empuñadura. Lo inclinamos hacia el frente
-		# del personaje para que la hoja salga del puño y no cuelgue de la muñeca.
-		"scale": 0.74, "position": Vector3(0.055, 0.01, -0.10),
-		"rotation": Vector3(PI * 0.20, 0.0, -0.10), "reach": 1.85,
+		"category": "sword", "node_name": "EquippedSword",
+		"scale": 0.72, "position": Vector3(0.07, 0.01, -0.10),
+		"rotation": Vector3(PI * 0.16, 0.0, -0.08), "reach": 2.35,
 	},
 	2: {
-		"name": "Hacha", "node_name": "EquippedAxe", "path": SURVIVAL_OBJ_ROOT + "Axe_Small.obj",
-		# El mango sale del puño en diagonal: hacia delante y ligeramente hacia
-		# fuera. Así deja de copiar la línea vertical del antebrazo.
-		"scale": 0.50, "position": Vector3(0.12, 0.015, -0.12),
-		"rotation": Vector3(-0.55, 0.0, PI + 0.65), "reach": 2.10,
+		"category": "axe", "node_name": "EquippedAxe",
+		"scale": 0.66, "position": Vector3(0.11, 0.015, -0.12),
+		"rotation": Vector3(-0.52, 0.0, PI + 0.62), "reach": 2.25,
 	},
 	3: {
-		"name": "Antorcha", "node_name": "EquippedTorch", "path": SURVIVAL_OBJ_ROOT + "WoodenTorch_Fire.obj",
-		# Mantiene el mango dentro de la mano, pero su parte alta se proyecta hacia
-		# delante y fuera para separarse visualmente del brazo.
-		"scale": 0.38, "position": Vector3(0.10, 0.015, -0.10),
-		"rotation": Vector3(-0.46, 0.0, PI + 0.58), "reach": 2.20,
+		"category": "bow", "node_name": "EquippedBow",
+		"scale": 0.68, "position": Vector3(0.10, 0.04, -0.12),
+		"rotation": Vector3(PI * 0.48, -0.12, PI * 0.48), "reach": 0.0,
 	},
 	4: {
-		"name": "Brújula", "node_name": "EquippedCompass", "path": SURVIVAL_OBJ_ROOT + "Compass_Open.obj",
-		# El dial del OBJ mira por +Z. Con +90º queda mirando hacia arriba, como
-		# una brújula sostenida en la palma, visible desde la cámara elevada.
-		"scale": 0.72, "position": Vector3(0.12, 0.18, -0.08),
-		"rotation": Vector3(PI * 0.5, 0.0, -0.10), "reach": 1.35,
+		"category": "torch", "node_name": "EquippedTorch",
+		"scale": 0.38, "position": Vector3(0.10, 0.015, -0.10),
+		"rotation": Vector3(-0.46, 0.0, PI + 0.58), "reach": 0.0,
 	},
 }
 
@@ -120,11 +116,19 @@ var _weapon_grip: Node3D
 var _weapon_base_rotation := Vector3.ZERO
 var _weapon_socket: BoneAttachment3D
 var _equipped_mesh: MeshInstance3D
+var _shield_socket: BoneAttachment3D
+var _shield_grip: Node3D
+var _shield_mesh: MeshInstance3D
 var _equipment_mesh_cache: Dictionary = {}
 var _attack_reach := 1.25
 var skin_surface_count := 0
 var equipped_slot := 0
 var equipped_item_name := "Manos vacías"
+var equipped_item_id := ""
+var equipped_category := ""
+var is_drawing_bow := false
+var _bow_draw_time := 0.0
+var _bow_draw_strength := 0.0
 var player_display_name := "Aventurero"
 var character_index := 0
 var _network_target_position := Vector3.ZERO
@@ -158,6 +162,12 @@ func _ready() -> void:
 	model_root.visible = true
 	_configure_realistic_hero()
 	_build_right_hand_socket()
+	_build_left_hand_socket()
+	_refresh_equipped_shield()
+	if not network_remote:
+		var inventory := _inventory_manager()
+		if inventory != null:
+			inventory.connect("equipment_changed", Callable(self, "_on_inventory_equipment_changed"))
 	_configure_animation_loops()
 	_play_animation(ANIM_IDLE, 0.0)
 	_build_nameplate()
@@ -194,6 +204,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_attack_cooldown = maxf(_attack_cooldown - delta, 0.0)
 	if control_state == ControlState.MOUNTED:
+		_cancel_bow_draw()
 		_sync_with_mount()
 		if Input.is_action_just_pressed("interact"):
 			if _confirm_nearby_exploration():
@@ -201,9 +212,13 @@ func _physics_process(delta: float) -> void:
 			dismount()
 		return
 
-	if Input.is_action_just_pressed("attack"):
+	if equipped_category == "bow":
+		_update_bow_input(delta)
+	elif Input.is_action_just_pressed("attack"):
 		start_attack()
 	if Input.is_action_just_pressed("interact") and not is_attacking:
+		if _interact_with_adventure_object():
+			return
 		if _confirm_nearby_exploration():
 			return
 		var nearby_horse := get_nearby_mount()
@@ -233,8 +248,40 @@ func _confirm_nearby_exploration() -> bool:
 	return not discovered.is_empty()
 
 
+func _interact_with_adventure_object() -> bool:
+	var nearest: AdventureResource
+	var nearest_distance := 4.2
+	for node in get_tree().get_nodes_in_group("adventure_interactable"):
+		var candidate := node as AdventureResource
+		if candidate == null:
+			continue
+		var distance := global_position.distance_to(candidate.global_position)
+		if distance <= nearest_distance and not candidate.get_interaction_prompt().is_empty():
+			nearest = candidate
+			nearest_distance = distance
+	return nearest != null and nearest.interact(self)
+
+
+func get_nearby_adventure_prompt() -> String:
+	var best_prompt := ""
+	var nearest_distance := 5.0
+	for node in get_tree().get_nodes_in_group("adventure_interactable"):
+		var candidate := node as AdventureResource
+		if candidate == null:
+			continue
+		var distance := global_position.distance_to(candidate.global_position)
+		if distance <= nearest_distance:
+			var prompt := candidate.get_interaction_prompt()
+			if not prompt.is_empty():
+				best_prompt = prompt
+				nearest_distance = distance
+	return best_prompt
+
+
 func start_attack() -> bool:
 	if equipped_slot == 0 or _equipped_mesh == null:
+		return false
+	if equipped_category in ["bow", "torch"]:
 		return false
 	if is_mounted() or is_attacking or _attack_cooldown > 0.0:
 		return false
@@ -242,7 +289,7 @@ func start_attack() -> bool:
 	_attack_time = 0.0
 	_attack_hits.clear()
 	attacks_performed += 1
-	var equipped_animation := ANIM_STAB if equipped_slot in [1, 4] else ANIM_ATTACK
+	var equipped_animation := ANIM_ATTACK
 	_play_animation(equipped_animation, 0.06, 1.45)
 	attack_started.emit(attacks_performed)
 	return true
@@ -413,7 +460,9 @@ func _apply_hit_to_body(body: Node) -> void:
 		return
 	_attack_hits[body.get_instance_id()] = true
 	var hit_position := _equipped_mesh.global_position if _equipped_mesh != null else attack_area.global_position
-	if body.has_method("receive_melee_hit"):
+	if body.has_method("receive_tool_hit"):
+		body.call("receive_tool_hit", equipped_category, equipped_item_id, hit_position, self)
+	elif body.has_method("receive_melee_hit"):
 		body.call("receive_melee_hit", hit_position)
 	melee_hit.emit(body)
 
@@ -452,11 +501,21 @@ func _apply_movement(delta: float) -> void:
 	var target_speed := sprint_speed if _is_sprint_pressed() else walk_speed
 	if is_attacking:
 		target_speed *= 0.28
+	if is_drawing_bow:
+		target_speed *= 0.30
 	var target_velocity := direction * target_speed
 	var current_acceleration := acceleration if is_on_floor() else air_acceleration
 	velocity.x = move_toward(velocity.x, target_velocity.x, current_acceleration * delta)
 	velocity.z = move_toward(velocity.z, target_velocity.z, current_acceleration * delta)
-	if direction.length_squared() > 0.0:
+	if is_drawing_bow:
+		var aim_camera := get_viewport().get_camera_3d()
+		if aim_camera != null:
+			var aim_forward := -aim_camera.global_basis.z
+			aim_forward.y = 0.0
+			if aim_forward.length_squared() > 0.001:
+				var aim_yaw := atan2(-aim_forward.x, -aim_forward.z)
+				visual.rotation.y = lerp_angle(visual.rotation.y, aim_yaw, turn_speed * delta)
+	elif direction.length_squared() > 0.0:
 		var desired_yaw := atan2(-direction.x, -direction.z)
 		visual.rotation.y = lerp_angle(visual.rotation.y, desired_yaw, turn_speed * delta)
 
@@ -517,6 +576,11 @@ func _update_realistic_visual(delta: float) -> void:
 	if is_mounted():
 		desired_position.y = sin(_realistic_stride * 2.0) * 0.018
 		desired_rotation.x = deg_to_rad(-4.0)
+	elif is_drawing_bow:
+		desired_position.z = -0.07 * _bow_draw_strength
+		desired_rotation.y = deg_to_rad(-8.0 * _bow_draw_strength)
+		desired_weapon_rotation.y += deg_to_rad(-12.0 * _bow_draw_strength)
+		desired_weapon_rotation.z += deg_to_rad(9.0 * _bow_draw_strength)
 	elif is_attacking:
 		var phase := clampf(_attack_time / attack_duration, 0.0, 1.0)
 		var strike := sin(phase * PI)
@@ -525,13 +589,8 @@ func _update_realistic_visual(delta: float) -> void:
 		desired_position.z = -0.18 * strike
 		desired_rotation.y = deg_to_rad(16.0 * strike - 6.0 * follow_through)
 		desired_rotation.z = deg_to_rad(-4.0 * strike)
-		# Cuchillo/brújula usan una estocada de puño; hacha/antorcha un arco ancho.
-		if equipped_slot in [1, 4]:
-			desired_weapon_rotation.x += deg_to_rad(-24.0 * strike)
-			desired_weapon_rotation.z += deg_to_rad(12.0 * follow_through)
-		else:
-			desired_weapon_rotation.y += deg_to_rad(7.0 * strike)
-			desired_weapon_rotation.z += deg_to_rad(lerpf(92.0, -110.0, slash_progress))
+		desired_weapon_rotation.y += deg_to_rad(7.0 * strike)
+		desired_weapon_rotation.z += deg_to_rad(lerpf(92.0, -110.0, slash_progress))
 	else:
 		desired_position.y = absf(sin(_realistic_stride)) * 0.035 * motion_amount
 		desired_rotation.x = deg_to_rad(-5.5 * motion_amount)
@@ -565,9 +624,64 @@ func _build_right_hand_socket() -> void:
 	_weapon_base_rotation = Vector3.ZERO
 
 
+func _build_left_hand_socket() -> void:
+	if skeleton == null:
+		return
+	var fist_index := skeleton.find_bone("Fist.L")
+	if fist_index < 0:
+		return
+	_shield_socket = BoneAttachment3D.new()
+	_shield_socket.name = "LeftHandShieldSocket"
+	skeleton.add_child(_shield_socket)
+	_shield_socket.bone_name = "Fist.L"
+	_shield_grip = Node3D.new()
+	_shield_grip.name = "ShieldGrip"
+	_shield_grip.position = Vector3(-0.08, 0.02, -0.08)
+	_shield_grip.rotation = Vector3(PI * 0.5, 0.0, -PI * 0.5)
+	_shield_socket.add_child(_shield_grip)
+
+
+func _refresh_equipped_shield() -> void:
+	if _shield_grip == null:
+		return
+	for child in _shield_grip.get_children():
+		_shield_grip.remove_child(child)
+		child.queue_free()
+	_shield_mesh = null
+	var inventory := _inventory_manager()
+	if inventory == null:
+		return
+	var shield_id := String(inventory.call("get_equipped_item", "shield"))
+	if shield_id.is_empty() or not bool(inventory.call("has_item", shield_id)):
+		return
+	var definition := inventory.call("get_item_definition", shield_id) as Dictionary
+	var path := String(definition.get("obj_path", ""))
+	var mesh := _equipment_mesh_cache.get(path) as ArrayMesh
+	if mesh == null:
+		mesh = OBJ_LOADER.load_mesh(path)
+		if mesh == null:
+			return
+		_equipment_mesh_cache[path] = mesh
+	_shield_mesh = MeshInstance3D.new()
+	_shield_mesh.name = "Equipped%s" % shield_id
+	_shield_mesh.mesh = mesh.duplicate() as ArrayMesh
+	_shield_mesh.scale = Vector3.ONE * 0.68
+	_shield_mesh.set_meta("medieval_shield_only", true)
+	_shield_grip.add_child(_shield_mesh)
+	_configure_equipment_materials(_shield_mesh)
+
+
 func equip_item(slot: int) -> bool:
 	if not EQUIPMENT_SPECS.has(slot) or _weapon_grip == null:
 		return false
+	var inventory := _inventory_manager()
+	if inventory == null:
+		return false
+	var item_id := String(inventory.call("get_quick_slot_item", slot))
+	if item_id.is_empty():
+		action_feedback.emit("Todavía no posees ese objeto")
+		return false
+	_cancel_bow_draw()
 	if _equipped_mesh != null:
 		_weapon_grip.remove_child(_equipped_mesh)
 		_equipped_mesh.queue_free()
@@ -577,7 +691,10 @@ func equip_item(slot: int) -> bool:
 		child.queue_free()
 
 	var spec: Dictionary = EQUIPMENT_SPECS[slot]
-	var path: String = spec.path
+	var definition := inventory.call("get_item_definition", item_id) as Dictionary
+	var path := String(definition.get("obj_path", ""))
+	if path.is_empty():
+		return false
 	var equipment_mesh := _equipment_mesh_cache.get(path) as ArrayMesh
 	if equipment_mesh == null:
 		equipment_mesh = OBJ_LOADER.load_mesh(path)
@@ -601,11 +718,15 @@ func equip_item(slot: int) -> bool:
 	_weapon_grip.add_child(_equipped_mesh)
 	_configure_equipment_materials(_equipped_mesh)
 	if slot == 3:
+		_equipped_mesh.set_meta("ranged_weapon", true)
+	if slot == 4:
 		_add_torch_light()
 
 	equipped_slot = slot
-	equipped_item_name = spec.name
-	_attack_reach = float(spec.reach)
+	equipped_item_id = item_id
+	equipped_item_name = String(definition.get("display_name", item_id.replace("_", " ")))
+	equipped_category = String(spec.category)
+	_attack_reach = maxf(float(spec.reach), 0.15)
 	var box := attack_shape.shape as BoxShape3D
 	if box != null:
 		box.size = Vector3(1.7, 2.2, _attack_reach)
@@ -622,7 +743,114 @@ func get_equipped_item_name() -> String:
 	return equipped_item_name
 
 
+func get_equipped_item_id() -> String:
+	return equipped_item_id
+
+
+func get_equipped_category() -> String:
+	return equipped_category
+
+
+func get_arrow_count() -> int:
+	var inventory := _inventory_manager()
+	return int(inventory.call("get_arrow_count")) if inventory != null else 0
+
+
+func get_bow_draw_strength() -> float:
+	return _bow_draw_strength
+
+
+func _update_bow_input(delta: float) -> void:
+	if Input.is_action_just_pressed("attack"):
+		_begin_bow_draw()
+	if not is_drawing_bow:
+		return
+	_bow_draw_time += delta
+	_bow_draw_strength = clampf(_bow_draw_time / 1.05, 0.0, 1.0)
+	bow_draw_changed.emit(_bow_draw_strength, get_arrow_count())
+	if Input.is_action_just_released("attack"):
+		_release_bow_arrow()
+
+
+func _begin_bow_draw() -> bool:
+	if is_mounted() or is_attacking or equipped_category != "bow":
+		return false
+	if get_arrow_count() <= 0:
+		action_feedback.emit("No tienes flechas: busca cofres o recógelas")
+		bow_draw_changed.emit(0.0, 0)
+		return false
+	is_drawing_bow = true
+	_bow_draw_time = 0.0
+	_bow_draw_strength = 0.0
+	_set_camera_aiming(true)
+	bow_draw_changed.emit(0.0, get_arrow_count())
+	return true
+
+
+func _release_bow_arrow() -> bool:
+	if not is_drawing_bow:
+		return false
+	var strength := _bow_draw_strength
+	if _bow_draw_time < 0.12:
+		_cancel_bow_draw()
+		action_feedback.emit("Mantén el clic para tensar el arco")
+		return false
+	var inventory := _inventory_manager()
+	if inventory == null:
+		_cancel_bow_draw()
+		return false
+	var arrow_item := String(inventory.call("consume_arrow"))
+	if arrow_item.is_empty():
+		_cancel_bow_draw()
+		return false
+	var camera := get_viewport().get_camera_3d()
+	var direction := -visual.global_basis.z.normalized()
+	if camera != null:
+		direction = -camera.global_basis.z.normalized()
+	var arrow := AdventureArrow.new()
+	arrow.name = "ArrowProjectile"
+	var definition := inventory.call("get_item_definition", arrow_item) as Dictionary
+	var path := String(definition.get("obj_path", ""))
+	var mesh := _equipment_mesh_cache.get(path) as ArrayMesh
+	if mesh == null:
+		mesh = OBJ_LOADER.load_mesh(path)
+		if mesh != null:
+			_equipment_mesh_cache[path] = mesh
+	if mesh != null:
+		var visual_arrow := MeshInstance3D.new()
+		visual_arrow.name = "ArrowVisual"
+		visual_arrow.mesh = mesh.duplicate() as ArrayMesh
+		visual_arrow.scale = Vector3.ONE * 0.78
+		arrow.add_child(visual_arrow)
+	var projectile_parent := get_tree().current_scene
+	if projectile_parent == null:
+		projectile_parent = get_parent()
+	projectile_parent.add_child(arrow)
+	arrow.global_position = _weapon_grip.global_position + direction * 0.55
+	arrow.launch(direction, lerpf(27.0, 78.0, strength), self)
+	_cancel_bow_draw()
+	arrow_fired.emit(get_arrow_count(), strength)
+	return true
+
+
+func _cancel_bow_draw() -> void:
+	if not is_drawing_bow and _bow_draw_strength <= 0.0:
+		return
+	is_drawing_bow = false
+	_bow_draw_time = 0.0
+	_bow_draw_strength = 0.0
+	_set_camera_aiming(false)
+	bow_draw_changed.emit(0.0, get_arrow_count())
+
+
+func _set_camera_aiming(active: bool) -> void:
+	var camera_rig := get_node_or_null("../CameraRig")
+	if camera_rig != null and camera_rig.has_method("set_aiming"):
+		camera_rig.call("set_aiming", active)
+
+
 func _clear_equipped_item() -> void:
+	_cancel_bow_draw()
 	if _weapon_grip != null:
 		for child in _weapon_grip.get_children():
 			_weapon_grip.remove_child(child)
@@ -630,6 +858,8 @@ func _clear_equipped_item() -> void:
 	_equipped_mesh = null
 	equipped_slot = 0
 	equipped_item_name = "Manos vacías"
+	equipped_item_id = ""
+	equipped_category = ""
 	_attack_reach = 1.25
 
 
@@ -646,9 +876,14 @@ func _reload_quaternius_hero() -> void:
 	realistic_animation = null
 	_weapon_socket = null
 	_weapon_grip = null
+	_shield_socket = null
+	_shield_grip = null
+	_shield_mesh = null
 	_load_quaternius_hero()
 	_configure_realistic_hero()
 	_build_right_hand_socket()
+	_build_left_hand_socket()
+	_refresh_equipped_shield()
 	_configure_animation_loops()
 	_play_animation(ANIM_IDLE, 0.0)
 	if previous_slot > 0:
@@ -722,27 +957,24 @@ func _configure_equipment_materials(equipment: MeshInstance3D) -> void:
 			continue
 		var material := source.duplicate() as StandardMaterial3D
 		var material_name := source.resource_name.to_lower()
-		var is_metal := "grey" in material_name or "yellow" in material_name
-		# Los Kd originales del MTL son extremadamente oscuros (el acero llega a
-		# 0.11), así que con el sol del mundo el hacha parecía negra y la brújula
-		# desaparecía. Conservamos la paleta Quaternius, pero en rango legible.
-		match material_name:
-			"darkwood":
-				material.albedo_color = Color("6b351d")
-			"grey":
-				material.albedo_color = Color("687887")
-			"lightgrey":
-				material.albedo_color = Color("b5c0c8")
-			"yellow":
-				material.albedo_color = Color("b98228")
-			"darkyellow":
-				material.albedo_color = Color("84551d")
-			"black":
-				material.albedo_color = Color("252a31")
-			"red":
-				material.albedo_color = Color("c43f32")
-			"white":
-				material.albedo_color = Color("e1e1d8")
+		var is_steel := "steel" in material_name or "grey" in material_name or "silver" in material_name
+		var is_gold := "gold" in material_name or "yellow" in material_name
+		var is_metal := is_steel or is_gold
+		# Los MTL de los distintos packs usan nombres diferentes (Steel,
+		# DarkSteel, Grey, Gold...). Normalizamos la familia completa para evitar
+		# que las recompensas RPG recién equipadas aparezcan casi negras.
+		if is_steel:
+			material.albedo_color = Color("9aa9b5") if "light" in material_name else Color("687887")
+		elif is_gold:
+			material.albedo_color = Color("d29a32") if "dark" not in material_name else Color("986326")
+		elif "wood" in material_name:
+			material.albedo_color = Color("7a4228") if "light" in material_name else Color("5e321f")
+		elif "red" in material_name:
+			material.albedo_color = Color("c94a3b")
+		elif "white" in material_name:
+			material.albedo_color = Color("e1e1d8")
+		elif "black" in material_name:
+			material.albedo_color = Color("353b45")
 		material.roughness = 0.36 if is_metal else 0.76
 		material.metallic = 0.42 if is_metal else 0.03
 		if material_name == "fire":
@@ -812,6 +1044,17 @@ func _update_network_replica(delta: float) -> void:
 func _on_local_identity_changed(name_value: String, index_value: int) -> void:
 	if not network_remote:
 		apply_identity(name_value, index_value)
+
+
+func _on_inventory_equipment_changed(category: String, _item_id: String) -> void:
+	if category == "shield":
+		_refresh_equipped_shield()
+	elif category == equipped_category and equipped_slot > 0:
+		equip_item(equipped_slot)
+
+
+func _inventory_manager() -> Node:
+	return get_node_or_null("/root/InventoryManager")
 
 
 func _character_path(index_value: int) -> String:

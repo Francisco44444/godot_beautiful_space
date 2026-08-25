@@ -1,4 +1,4 @@
-[gd_scene load_steps=44 format=3]
+[gd_scene load_steps=45 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
@@ -14,6 +14,7 @@
 [ext_resource type="PackedScene" path="res://scenes/medieval_set_dressing.tscn" id="14_medieval"]
 [ext_resource type="Script" path="res://scripts/island_environment.gd" id="15_island_environment"]
 [ext_resource type="Script" path="res://scripts/island_map.gd" id="16_island_map"]
+[ext_resource type="Script" path="res://scripts/adventure_system.gd" id="17_adventure"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSky_quaternius"]
 sky_top_color = Color(0.18, 0.55, 0.92, 1)
@@ -232,6 +233,9 @@ script = ExtResource("13_wildlife")
 
 [node name="MedievalSetDressing" parent="." instance=ExtResource("14_medieval")]
 
+[node name="AdventureSystem" type="Node3D" parent="."]
+script = ExtResource("17_adventure")
+
 [node name="AmbientAudio" parent="." instance=ExtResource("9_audio")]
 
 [node name="Player" parent="." instance=ExtResource("1_player")]
@@ -361,7 +365,7 @@ label_settings = SubResource("Label_title")
 
 [node name="Controls" type="Label" parent="HUD/Margin/Panel/Padding/Content"]
 layout_mode = 2
-text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Cuchillo · 2 Hacha · 3 Antorcha · 4 Brújula\nClic izq. · atacar   M · mapa   5–8 · viaje rápido"
+text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nClic · atacar/tensar arco   I · inventario   M · mapa"
 label_settings = SubResource("Label_body")
 
 [node name="MouseHint" type="Label" parent="HUD/Margin/Panel/Padding/Content"]

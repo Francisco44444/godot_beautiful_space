@@ -1,9 +1,9 @@
 extends Node
 
 ## Catálogo y progreso de exploración independiente de la escena. Genera siempre
-## los mismos 200 objetivos: 198 lugares repartidos por la isla y dos observaciones
-## temporales (amanecer y atardecer). Una zona sólo se completa cuando el jugador
-## está dentro de su radio, se cumple su evento si lo tiene y se confirma con E.
+## los mismos 200 retos: visitas, fauna, cofres, tala, minería, reliquias y dos
+## observaciones temporales. Las visitas se confirman con E; las tareas físicas
+## sólo cuentan cuando se realiza la acción sobre su objeto concreto.
 
 signal catalog_ready(total: int)
 signal nearby_zone_changed(zone: Dictionary)
@@ -13,8 +13,9 @@ signal selected_zone_changed(zone: Dictionary)
 signal progress_loaded(completed: int, total: int)
 signal save_completed(path: String)
 signal save_failed(path: String, error: String)
+signal objective_action_completed(zone: Dictionary, action_key: String)
 
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 const TOTAL_ZONES := 200
 const GEOGRAPHIC_ZONE_COUNT := 198
 const DEFAULT_SAVE_PATH := "user://exploration_progress_v1.json"
@@ -28,12 +29,16 @@ const ACCESSIBLE_SEARCH_DIRECTIONS := 16
 
 const GOLDEN_RATIO_FRACTION := 0.618033988749895
 const SECOND_LOW_DISCREPANCY_STEP := 0.754877666246693
+const ANIMAL_NAMES: PackedStringArray = [
+	"alpaca", "toro", "vaca", "ciervo", "burro", "zorro",
+	"caballo salvaje", "caballo blanco", "husky", "shiba inu", "venado", "lobo",
+]
 
 const REGION_LAYOUT: Array[Dictionary] = [
 	{
 		"biome": "pradera",
 		"type": "paraje",
-		"count": 38,
+		"count": 36,
 		"center": Vector2(0.0, 550.0),
 		"radii": Vector2(3000.0, 2050.0),
 		"phase": 0.07,
@@ -101,20 +106,28 @@ const REGION_LAYOUT: Array[Dictionary] = [
 	{
 		"biome": "poblado",
 		"type": "historia",
-		"count": 12,
+		"count": 14,
 		"phase": 0.83,
 		"title": "Historia de los Poblados",
 		"description": "Un detalle humano escondido entre villas, fortalezas y caseríos.",
 	},
 ]
 
-const SETTLEMENT_ANCHORS: Array[Vector2] = [
-	Vector2(-1450.0, 650.0),
-	Vector2(-2260.0, -260.0),
-	Vector2(-720.0, 210.0),
-	Vector2(640.0, -1230.0),
-	Vector2(2650.0, 1530.0),
-	Vector2(3740.0, -620.0),
+const SETTLEMENT_LANDMARKS: Array[Dictionary] = [
+	{"name": "Puerto Alba", "kind": "aldea", "point": Vector2(0.0, 190.0)},
+	{"name": "Castillo de Villa Robledal", "kind": "castillo", "point": Vector2(-1333.0, 696.0)},
+	{"name": "Aldea de la Bruma", "kind": "aldea", "point": Vector2(-2200.0, -900.0)},
+	{"name": "Castillo del Bastión del Este", "kind": "castillo", "point": Vector2(2350.0, -894.0)},
+	{"name": "Oasis Dorado", "kind": "aldea", "point": Vector2(2180.0, 1880.0)},
+	{"name": "Castillo Boreal", "kind": "castillo", "point": Vector2(-295.0, -2147.0)},
+	{"name": "Casa del Caserío del Molino", "kind": "casa", "point": Vector2(-720.0, 740.0)},
+	{"name": "Casa de las Granjas de Robledal", "kind": "casa", "point": Vector2(-1680.0, 310.0)},
+	{"name": "Casa de las Tres Encinas", "kind": "casa", "point": Vector2(-940.0, -1110.0)},
+	{"name": "Casa del Caserío del Puente", "kind": "casa", "point": Vector2(970.0, -170.0)},
+	{"name": "Casa de los Viñedos del Sol", "kind": "casa", "point": Vector2(1510.0, 830.0)},
+	{"name": "Casa de las Fincas del Este", "kind": "casa", "point": Vector2(1720.0, -1030.0)},
+	{"name": "Refugio Umbrío", "kind": "casa", "point": Vector2(-1040.0, -1900.0)},
+	{"name": "Puesto Boreal", "kind": "casa", "point": Vector2(910.0, -2360.0)},
 ]
 
 @export_file("*.json") var save_path := DEFAULT_SAVE_PATH
@@ -279,7 +292,8 @@ func can_confirm_current_zone() -> bool:
 	if _nearby_zone_id.is_empty() or _discovered.has(_nearby_zone_id):
 		return false
 	var zone: Dictionary = _zones_by_id.get(_nearby_zone_id, {})
-	return not zone.is_empty() and _event_requirement_is_met(zone)
+	var requirement := String(zone.get("requirement", "visit"))
+	return not zone.is_empty() and requirement in ["visit", "event"] and _event_requirement_is_met(zone)
 
 
 func confirm_current_zone() -> Dictionary:
@@ -288,9 +302,28 @@ func confirm_current_zone() -> Dictionary:
 	var zone: Dictionary = _zones_by_id.get(_nearby_zone_id, {})
 	if zone.is_empty() or not _event_requirement_is_met(zone):
 		return {}
-	var zone_id := _nearby_zone_id
+	return _complete_zone(String(zone.id))
+
+
+func register_world_action(zone_id: String, action_key: String) -> Dictionary:
+	if zone_id.is_empty() or _discovered.has(zone_id):
+		return {}
+	var zone: Dictionary = _zones_by_id.get(zone_id, {})
+	if zone.is_empty() or String(zone.get("requirement", "visit")) != action_key:
+		return {}
+	var completed := _complete_zone(zone_id)
+	if not completed.is_empty():
+		objective_action_completed.emit(completed, action_key)
+	return completed
+
+
+func _complete_zone(zone_id: String) -> Dictionary:
+	var zone: Dictionary = _zones_by_id.get(zone_id, {})
+	if zone.is_empty() or _discovered.has(zone_id):
+		return {}
 	_discovered[zone_id] = true
-	_nearby_zone_id = ""
+	if _nearby_zone_id == zone_id:
+		_nearby_zone_id = ""
 	if autosave_enabled:
 		save_progress()
 	var completed_zone := _zone_with_status(zone)
@@ -425,15 +458,20 @@ func _build_catalog() -> void:
 		for local_index in count:
 			global_index += 1
 			var point := _point_for_layout(layout, local_index, global_index)
+			var objective := _objective_for_zone(layout, local_index, global_index)
 			var zone := {
 				"id": "zone_%03d" % global_index,
-				"name": "%s %02d" % [String(layout.title), local_index + 1],
+				"name": String(objective.name),
 				"position": Vector3(point.x, 0.0, point.y),
-				"description": String(layout.description),
-				"type": String(layout.type),
+				"description": String(objective.description),
+				"type": String(objective.type),
 				"biome": String(layout.biome),
 				"radius": DEFAULT_DISCOVERY_RADIUS + float((global_index * 7) % 4) * 4.0,
 				"requires_event": "",
+				"requirement": String(objective.requirement),
+				"objective_hint": String(objective.hint),
+				"target_id": "zone_%03d" % global_index,
+				"variant": int(objective.variant),
 			}
 			_add_zone(zone)
 	_add_zone({
@@ -445,6 +483,10 @@ func _build_catalog() -> void:
 		"biome": "costa",
 		"radius": 90.0,
 		"requires_event": "amanecer",
+		"requirement": "event",
+		"objective_hint": "E · contemplar el amanecer",
+		"target_id": "zone_199_amanecer",
+		"variant": 0,
 	})
 	_add_zone({
 		"id": "zone_200_atardecer",
@@ -455,8 +497,88 @@ func _build_catalog() -> void:
 		"biome": "costa",
 		"radius": 90.0,
 		"requires_event": "atardecer",
+		"requirement": "event",
+		"objective_hint": "E · contemplar el atardecer",
+		"target_id": "zone_200_atardecer",
+		"variant": 0,
 	})
 	assert(_zones.size() == TOTAL_ZONES)
+
+
+func _objective_for_zone(layout: Dictionary, local_index: int, global_index: int) -> Dictionary:
+	var biome := String(layout.biome)
+	var rank := posmod(global_index * 73, GEOGRAPHIC_ZONE_COUNT)
+	var requirement := "visit"
+	if rank >= 70 and rank < 94:
+		requirement = "discover_animal"
+	elif rank >= 94 and rank < 130:
+		requirement = "open_chest"
+	elif rank >= 130 and rank < 158:
+		requirement = "chop_tree"
+	elif rank >= 158 and rank < 182:
+		requirement = "mine_rock"
+	elif rank >= 182:
+		requirement = "recover_relic"
+	# Las casas y castillos se exploran de verdad; en dunas y costa sustituimos
+	# árboles fuera de lugar por minería o tesoros enterrados.
+	if biome == "poblado":
+		requirement = "visit"
+	elif requirement == "chop_tree" and biome == "desierto":
+		requirement = "mine_rock"
+	elif requirement == "chop_tree" and biome == "costa":
+		requirement = "open_chest"
+
+	var suffix := "%02d" % (local_index + 1)
+	match requirement:
+		"discover_animal":
+			var animal_name := ANIMAL_NAMES[(global_index + local_index) % ANIMAL_NAMES.size()]
+			return {
+				"name": "Rastro de %s %s" % [animal_name.capitalize(), suffix],
+				"description": "Acércate con calma, observa al %s y pulsa E para registrarlo en el bestiario." % animal_name,
+				"type": "fauna", "requirement": requirement,
+				"hint": "E · descubrir %s" % animal_name, "variant": (global_index + local_index) % ANIMAL_NAMES.size(),
+			}
+		"open_chest":
+			return {
+				"name": "Cofre perdido %s" % suffix,
+				"description": "Encuentra y abre el cofre. Puede contener cualquiera de los tesoros y armas RPG de Quaternius.",
+				"type": "tesoro", "requirement": requirement,
+				"hint": "E · abrir el cofre", "variant": global_index % 4,
+			}
+		"chop_tree":
+			return {
+				"name": "El árbol marcado %s" % suffix,
+				"description": "Equipa el hacha con 2, tala el árbol marcado y recoge el tronco al pasar sobre él.",
+				"type": "tala", "requirement": requirement,
+				"hint": "2 Hacha · corta el árbol", "variant": global_index % 5,
+			}
+		"mine_rock":
+			return {
+				"name": "Veta de rubí %s" % suffix,
+				"description": "Rompe la roca mineral con el hacha y recoge los cristales que desprenda.",
+				"type": "minería", "requirement": requirement,
+				"hint": "2 Hacha · rompe la veta", "variant": global_index % 3,
+			}
+		"recover_relic":
+			return {
+				"name": "Reliquia olvidada %s" % suffix,
+				"description": "Localiza la reliquia de Quaternius y recógela para incorporarla al inventario.",
+				"type": "reliquia", "requirement": requirement,
+				"hint": "E · recuperar la reliquia", "variant": global_index,
+			}
+		_:
+			var visit_name := "%s %s" % [String(layout.title), suffix]
+			var visit_description := String(layout.description)
+			if biome == "poblado":
+				var landmark: Dictionary = SETTLEMENT_LANDMARKS[local_index % SETTLEMENT_LANDMARKS.size()]
+				visit_name = String(landmark.name)
+				var landmark_kind := String(landmark.kind)
+				visit_description = "Llega a este %s real del mapa, explora su entorno y pulsa E para registrarlo en el diario." % landmark_kind
+			return {
+				"name": visit_name, "description": visit_description,
+				"type": String(layout.type), "requirement": "visit",
+				"hint": "E · registrar el lugar", "variant": global_index,
+			}
 
 
 func _add_zone(zone: Dictionary) -> void:
@@ -473,10 +595,8 @@ func _point_for_layout(layout: Dictionary, local_index: int, global_index: int) 
 		var coast_radius := _coast_radius_at_angle(angle) - 330.0 - float(local_index % 3) * 38.0
 		return Vector2(cos(angle), sin(angle)) * coast_radius
 	if biome == "poblado":
-		var anchor := SETTLEMENT_ANCHORS[local_index % SETTLEMENT_ANCHORS.size()]
-		var ring := 72.0 + float(local_index / SETTLEMENT_ANCHORS.size()) * 86.0
-		var angle := float(local_index) * 2.399963229728653
-		return _fit_inside_island(anchor + Vector2(cos(angle), sin(angle)) * ring, 280.0)
+		var landmark: Dictionary = SETTLEMENT_LANDMARKS[local_index % SETTLEMENT_LANDMARKS.size()]
+		return _fit_inside_island(landmark.point, 280.0)
 	var center: Vector2 = layout.center
 	var radii: Vector2 = layout.radii
 	var phase := float(layout.phase)
@@ -591,7 +711,10 @@ func _emit_progress() -> void:
 func _catalog_signature() -> String:
 	var identifiers := PackedStringArray()
 	for zone in _zones:
-		identifiers.append(String(zone.id))
+		var position: Vector3 = zone.position
+		identifiers.append("%s:%s:%s:%.1f:%.1f" % [
+			String(zone.id), String(zone.get("requirement", "visit")), String(zone.name), position.x, position.z,
+		])
 	return "%d:%d:%s" % [SAVE_VERSION, _zones.size(), String.num_int64("|".join(identifiers).hash())]
 
 

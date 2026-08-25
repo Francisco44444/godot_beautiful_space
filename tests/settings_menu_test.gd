@@ -80,7 +80,9 @@ func _run_test() -> void:
 		_fail("Z no abre el panel, pausa el juego y oculta los overlays incompatibles.")
 		return
 	if (
-		"1 Cuchillo" not in controls.text
+		"1 Espada" not in controls.text
+		or "3 Arco" not in controls.text
+		or "I Inventario" not in controls.text
 		or "Correr / galopar" not in controls.text
 		or "Configuración" not in controls.text
 		or resolution_selector.item_count != 4
