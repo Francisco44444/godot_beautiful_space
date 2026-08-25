@@ -9,6 +9,7 @@ signal session_ended()
 signal session_status_changed(message: String)
 signal roster_changed(roster: Dictionary)
 signal remote_state_received(peer_id: int, position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int)
+signal world_state_received(state: Dictionary)
 
 enum SessionMode {
 	OFFLINE,
@@ -21,13 +22,19 @@ const PORT := 24567
 const MAX_PLAYERS := 8
 const CHARACTER_COUNT := 8
 const STATE_SEND_RATE := 15.0
+const WORLD_STATE_SEND_RATE := 5.0
+const SAVE_SNAPSHOT_SECONDS := 4.0
 const WORLD_LIMIT := 6200.0
 
 var session_mode := SessionMode.OFFLINE
 var players: Dictionary = {}
 var _peer: ENetMultiplayerPeer
 var _state_accumulator := 0.0
+var _world_state_accumulator := 0.0
+var _save_snapshot_accumulator := 0.0
 var _active_port := PORT
+var _party_save_states: Dictionary = {}
+var _loaded_party_states: Dictionary = {}
 
 
 func _ready() -> void:
@@ -46,23 +53,36 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if session_mode not in [SessionMode.HOST, SessionMode.CLIENT]:
 		return
+	_world_state_accumulator += delta
+	_save_snapshot_accumulator += delta
 	_state_accumulator += delta
-	if _state_accumulator < 1.0 / STATE_SEND_RATE:
-		return
-	_state_accumulator = 0.0
 	var local_players := get_tree().get_nodes_in_group("local_player")
 	if local_players.is_empty():
 		return
 	var player := local_players[0] as CharacterBody3D
 	if player == null:
 		return
-	var peer_id := multiplayer.get_unique_id()
-	var yaw := float(player.call("get_network_facing_yaw"))
-	var equipped_slot := int(player.get("equipped_slot"))
-	if session_mode == SessionMode.HOST:
-		_broadcast_state(peer_id, player.global_position, yaw, player.velocity, equipped_slot)
-	else:
-		_server_receive_state.rpc_id(1, player.global_position, yaw, player.velocity, equipped_slot)
+	if _state_accumulator >= 1.0 / STATE_SEND_RATE:
+		_state_accumulator = 0.0
+		var peer_id := multiplayer.get_unique_id()
+		var yaw := float(player.call("get_network_facing_yaw"))
+		var equipped_slot := int(player.get("equipped_slot"))
+		if session_mode == SessionMode.HOST:
+			_broadcast_state(peer_id, player.global_position, yaw, player.velocity, equipped_slot)
+		else:
+			_server_receive_state.rpc_id(1, player.global_position, yaw, player.velocity, equipped_slot)
+	if _save_snapshot_accumulator >= SAVE_SNAPSHOT_SECONDS:
+		_save_snapshot_accumulator = 0.0
+		var snapshot := _local_save_snapshot(player)
+		if session_mode == SessionMode.HOST:
+			_party_save_states[_local_name()] = snapshot
+		else:
+			_server_receive_save_snapshot.rpc_id(1, snapshot)
+	if session_mode == SessionMode.HOST and _world_state_accumulator >= 1.0 / WORLD_STATE_SEND_RATE:
+		_world_state_accumulator = 0.0
+		var world := get_tree().current_scene
+		if world != null and world.has_method("get_network_world_state"):
+			_broadcast_world_state(world.call("get_network_world_state") as Dictionary)
 
 
 func play_offline() -> void:
@@ -123,6 +143,10 @@ func leave_session() -> void:
 	session_mode = SessionMode.OFFLINE
 	_active_port = PORT
 	_state_accumulator = 0.0
+	_world_state_accumulator = 0.0
+	_save_snapshot_accumulator = 0.0
+	_party_save_states.clear()
+	_loaded_party_states.clear()
 	_set_offline_roster()
 	if was_networked:
 		session_ended.emit()
@@ -161,6 +185,39 @@ func is_networked() -> bool:
 	return session_mode in [SessionMode.HOST, SessionMode.CLIENT]
 
 
+func is_world_authority() -> bool:
+	return session_mode != SessionMode.CLIENT
+
+
+func get_party_save_states() -> Dictionary:
+	if session_mode == SessionMode.HOST:
+		var local := get_tree().get_first_node_in_group("local_player") as CharacterBody3D
+		if local != null:
+			_party_save_states[_local_name()] = _local_save_snapshot(local)
+	return _party_save_states.duplicate(true)
+
+
+func set_loaded_party_states(states_by_name: Dictionary) -> void:
+	## El anfitrión conserva el estado por nombre. Quien ya está conectado lo
+	## recibe ahora; quien se una después lo recibirá al registrar su identidad.
+	if session_mode == SessionMode.CLIENT:
+		return
+	_loaded_party_states = states_by_name.duplicate(true)
+	var local_state: Dictionary = _loaded_party_states.get(_local_name(), {})
+	if not local_state.is_empty():
+		_apply_save_state_to_local(local_state)
+	if session_mode != SessionMode.HOST:
+		return
+	for raw_peer_id in players:
+		var peer_id := int(raw_peer_id)
+		if peer_id == 1 or not _is_peer_ready(peer_id):
+			continue
+		var identity := players[peer_id] as Dictionary
+		var state: Dictionary = _loaded_party_states.get(String(identity.name), {})
+		if not state.is_empty():
+			_client_apply_loaded_state.rpc_id(peer_id, state)
+
+
 func get_lan_addresses() -> PackedStringArray:
 	var result := PackedStringArray()
 	for address in IP.get_local_addresses():
@@ -174,6 +231,9 @@ func _on_connected_to_server() -> void:
 	session_mode = SessionMode.CLIENT
 	var identity := _local_identity()
 	_server_register_identity.rpc_id(1, String(identity.name), int(identity.character_index))
+	var local := get_tree().get_first_node_in_group("local_player") as CharacterBody3D
+	if local != null:
+		_server_receive_save_snapshot.rpc_id(1, _local_save_snapshot(local))
 	session_started.emit("invitado")
 	session_status_changed.emit("Conectado al anfitrión")
 
@@ -228,6 +288,9 @@ func _server_register_identity(name_value: String, index_value: int) -> void:
 	}
 	_emit_roster()
 	_broadcast_roster()
+	var saved_state: Dictionary = _loaded_party_states.get(String(players[sender].name), {})
+	if not saved_state.is_empty() and _is_peer_ready(sender):
+		_client_apply_loaded_state.rpc_id(sender, saved_state)
 	session_status_changed.emit("%s se unió · %d/%d jugadores" % [players[sender].name, players.size(), MAX_PLAYERS])
 
 
@@ -251,6 +314,13 @@ func _server_receive_state(position: Vector3, yaw: float, velocity: Vector3, equ
 	if sender <= 1 or not players.has(sender) or not _is_valid_state(position, yaw, velocity, equipped_slot):
 		return
 	remote_state_received.emit(sender, position, yaw, velocity, equipped_slot)
+	var identity := players[sender] as Dictionary
+	var cached: Dictionary = _party_save_states.get(String(identity.name), {})
+	if not cached.is_empty():
+		cached["position"] = [position.x, position.y, position.z]
+		cached["yaw"] = yaw
+		cached["equipped_slot"] = equipped_slot
+		_party_save_states[String(identity.name)] = cached
 	_broadcast_state(sender, position, yaw, velocity, equipped_slot)
 
 
@@ -259,6 +329,31 @@ func _client_receive_state(peer_id: int, position: Vector3, yaw: float, velocity
 	if peer_id == multiplayer.get_unique_id() or not _is_valid_state(position, yaw, velocity, equipped_slot):
 		return
 	remote_state_received.emit(peer_id, position, yaw, velocity, equipped_slot)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _server_receive_save_snapshot(snapshot: Dictionary) -> void:
+	if not multiplayer.is_server() or session_mode != SessionMode.HOST:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender <= 1 or not players.has(sender) or not _is_valid_save_snapshot(snapshot):
+		return
+	var identity := players[sender] as Dictionary
+	_party_save_states[String(identity.name)] = snapshot.duplicate(true)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _client_apply_loaded_state(state: Dictionary) -> void:
+	if session_mode != SessionMode.CLIENT or not _is_valid_save_snapshot(state):
+		return
+	_apply_save_state_to_local(state)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 2)
+func _client_receive_world_state(state: Dictionary) -> void:
+	if session_mode != SessionMode.CLIENT:
+		return
+	world_state_received.emit(state)
 
 
 func _is_valid_state(position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int) -> bool:
@@ -273,6 +368,18 @@ func _is_valid_state(position: Vector3, yaw: float, velocity: Vector3, equipped_
 	if velocity.length() > 90.0:
 		return false
 	return equipped_slot >= 0 and equipped_slot <= 4
+
+
+func _is_valid_save_snapshot(snapshot: Dictionary) -> bool:
+	var position = snapshot.get("position", [])
+	var inventory = snapshot.get("inventory", {})
+	if not position is Array or (position as Array).size() != 3 or not inventory is Dictionary:
+		return false
+	var vector := Vector3(float(position[0]), float(position[1]), float(position[2]))
+	if absf(vector.x) > WORLD_LIMIT or absf(vector.z) > WORLD_LIMIT or absf(vector.y) > 1800.0:
+		return false
+	var items = (inventory as Dictionary).get("items", {})
+	return items is Dictionary and (items as Dictionary).size() <= 512
 
 
 func _is_valid_port(port_value: int) -> bool:
@@ -312,6 +419,15 @@ func _broadcast_state(
 			)
 
 
+func _broadcast_world_state(state: Dictionary) -> void:
+	if session_mode != SessionMode.HOST or not multiplayer.is_server():
+		return
+	for raw_peer_id in players:
+		var peer_id := int(raw_peer_id)
+		if peer_id != 1 and _is_peer_ready(peer_id):
+			_client_receive_world_state.rpc_id(peer_id, state)
+
+
 func _is_peer_ready(peer_id: int) -> bool:
 	if _peer == null or peer_id not in multiplayer.get_peers():
 		return false
@@ -324,6 +440,32 @@ func _local_identity() -> Dictionary:
 	if settings == null:
 		return {"name": "Aventurero", "character_index": 0}
 	return {"name": String(settings.get("player_name")), "character_index": int(settings.get("character_index"))}
+
+
+func _local_save_snapshot(player: CharacterBody3D) -> Dictionary:
+	var inventory := get_node_or_null("/root/InventoryManager")
+	var identity := _local_identity()
+	return {
+		"name": String(identity.name),
+		"character_index": int(identity.character_index),
+		"position": [player.global_position.x, player.global_position.y, player.global_position.z],
+		"yaw": float(player.call("get_network_facing_yaw")),
+		"equipped_slot": int(player.get("equipped_slot")),
+		"inventory": inventory.call("get_save_state") if inventory != null else {},
+	}
+
+
+func _local_name() -> String:
+	return String(_local_identity().name)
+
+
+func _apply_save_state_to_local(state: Dictionary) -> void:
+	var inventory := get_node_or_null("/root/InventoryManager")
+	if inventory != null:
+		inventory.call("apply_save_state", state.get("inventory", {}), true)
+	var world := get_tree().current_scene
+	if world != null and world.has_method("apply_local_player_save_state"):
+		world.call_deferred("apply_local_player_save_state", state)
 
 
 func _set_offline_roster() -> void:

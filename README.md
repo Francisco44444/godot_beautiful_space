@@ -23,9 +23,12 @@ Aventura medieval en tercera persona construida con Godot 4.7, GDScript y Terrai
 - Risco y fortaleza estilizados con módulos Quaternius; la cascada, poza y río han sido retirados.
 - Ciclo completo de día, atardecer y noche con una luna low-poly de 176 m, textura original de cráteres, iluminación y sombras; durante el día se retira por completo del render para evitar artefactos negros.
 - Mar low-poly animado rodeando la isla, playas facetadas y seis bancos de niebla regional en bosques y zonas tenebrosas; solo se procesan los dos más cercanos que correspondan a la posición y altura de la cámara. Al subir la marea, jugador y caballo son empujados de forma progresiva hacia la cota seca más próxima para que una ría no pueda dejarlos atrapados.
-- HUD despejado por defecto: `N` alterna la leyenda de controles, `B` el minimapa, `M` el mapa completo, `0` los créditos y `Z` abre la configuración. El panel Z pausa la partida, muestra todas las asignaciones, ofrece cuatro resoluciones y permite elegir entre 180 y 900 m antes del LOD.
+- HUD despejado con el minimapa activo al comenzar: `N` alterna la leyenda de controles, `B` el minimapa, `M` el mapa completo, `0` los créditos y `Z` abre la configuración. El panel Z pausa la partida, muestra todas las asignaciones, ofrece cuatro resoluciones y permite elegir entre 180 y 900 m antes del LOD.
+- Menú de pausa completo con `Esc`: continuar, guardar, cargar partidas, controles, gráficos, sonido, multijugador y salir. `Esc` cierra primero la ventana actual y retrocede por los submenús antes de reanudar el juego.
+- Guardado automático de posición, orientación, inventario, equipo, flechas, retos explorados, hora, marea y caballo. En solitario se restaura automáticamente el último punto; en cooperativo el anfitrión guarda cada dos minutos una ranura identificada por los nombres de los jugadores y conserva por separado los objetos de cada héroe.
+- Inventario visual en cuadrícula con iconos, cantidades y equipo resaltado. La barra de aventura es compacta y la barra rápida usa botones con los iconos reales del arma; `H` llama al caballo.
 - Diario de 200 desafíos de aventura: visitas a casas, aldeas y castillos reales, descubrimiento de animales, cofres, tala, minería de rubíes, reliquias, amanecer y atardecer. `L` abre la lista, `E` interactúa y cada logro autoguarda; al elegir una entrada, el mapa señala su destino.
-- Cooperativo ENet para un anfitrión y hasta siete invitados. El Synology mantiene un tablón HTTPS de partidas activas con nombre, anfitrión, versión y ocupación; crear una expedición la anuncia con latidos y los invitados se unen con un clic, sin escribir la IP. La sala replica identidades, personaje elegido, posición, orientación, velocidad y objeto equipado; `9` permite saltar directamente al Bosque Tenebroso durante las pruebas.
+- Cooperativo ENet para un anfitrión y hasta siete invitados. El Synology mantiene un tablón HTTPS de partidas activas con nombre, anfitrión, versión y ocupación; crear una expedición la anuncia con latidos y los invitados se unen con un clic, sin escribir la IP. La sala replica identidades, personaje elegido, posición, orientación, velocidad y objeto equipado. El anfitrión es autoridad de fauna, sol, luna y mareas, y distribuye ese estado a los invitados; `9` permite saltar directamente al Bosque Tenebroso durante las pruebas.
 - Exportación Windows x86-64 con instalador ligero y lanzador de actualizaciones: consulta el manifiesto estable de GitHub Releases, verifica tamaño y SHA-256, cambia de versión de forma transaccional y conserva la última instalación válida si no hay conexión.
 - Música adaptativa de FiftySounds: `The Hill that Knows your Voice` en el valle, `Promise` dentro de la zona nevada y `Ashes` en el desierto, con transiciones suaves y reproducción en bucle. Viento, pájaros y cuatro sonidos de cascos completan la mezcla; la atribución se consulta con `0`.
 
@@ -82,7 +85,8 @@ sin utilizar este Mac para compilar. Consulta
 | Abrir inventario | `I` | — |
 | Galopar | `Mayús` + dirección | Stick + pulsación |
 | Orbitar cámara | Mover ratón | — |
-| Liberar ratón | `Esc` | — |
+| Cerrar ventana / menú de pausa | `Esc` | — |
+| Llamar al caballo | `H` | — |
 | Mostrar / ocultar controles | `N` | — |
 | Mostrar / ocultar minimapa | `B` | — |
 | Abrir / cerrar mapa de la isla | `M` | — |
@@ -133,16 +137,19 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/exploration_manager_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/exploration_integration_test.gd
 tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/multiplayer_test.gd
+tools/runtime/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/save_game_ui_test.gd
 python3 tests/test_lobby_directory.py -v
+python3 tests/test_network_handshake.py
 ```
 
-`network_handshake_test.gd` se ejecuta en dos terminales —`--host` y
-`--client` con el mismo `--port`—; su modo de aforo levanta un anfitrión y siete
-clientes reales. Consulta el encabezado del propio test para los comandos.
+`test_network_handshake.py` levanta anfitrión e invitado en el mismo contexto y
+comprueba automáticamente el roster y la réplica UDP; el modo de aforo de
+`network_handshake_test.gd` permite además levantar un anfitrión y siete clientes
+reales. Consulta el encabezado de ese test para los comandos manuales.
 `lobby_directory_test.gd` levanta una sala contra el servidor Python local y
 comprueba publicar, listar, compatibilidad de versión y retirada automática.
 
-La prueba de vegetación valida los 50 personajes, la fauna, el caballo, las 207.200 instancias principales, los 52.000 proxies arbóreos, las 110.000 hierbas dispersas con proxy exclusivo, la distribución lejos de caminos, las calles `quaternius_rock`, el gradiente nevado, los LOD importados, los AABB por celda y las colisiones. `adventure_system_test.gd` recorre catálogo, cofres, bestiario, tala, troncos, minería, rubíes, sustitución de armas, escudos, arco y flechas; `exploration_integration_test.gd` valida los 200 desafíos, el mapa y el autoguardado. `runtime_stability_test.gd` viaja entre biomas y demuestra que no se crean celdas ni coinciden modelos completos y proxies. `settings_menu_test.gd` comprueba Z, las cuatro resoluciones y el corte LOD 180–900 m. `audio_test.gd` comprueba las tres canciones, sus loops, los límites de nieve y desierto, la mezcla ambiental y los cascos; `medieval_combat_test.gd` comprueba el inventario `1–4`, el socket de mano, las poses y los impactos; `island_world_test.gd` comprueba los 144 km², `N`/`B`/`M`/`0`, la atribución de FiftySounds, viaje rápido `5–8`, 54 casas, 64 plantas superiores, tres fortalezas completas y sus miradores abiertos al cielo. `stair_traversal_test.gd` mueve una cápsula idéntica al héroe, sin salto, por una escalera doméstica, una de la ciudadela y el portón exterior hasta alcanzar el patio.
+La prueba de vegetación valida los 50 personajes, la fauna, el caballo, las 207.200 instancias principales, los 52.000 proxies arbóreos, las 110.000 hierbas dispersas con proxy exclusivo, la distribución lejos de caminos, las calles `quaternius_rock`, el gradiente nevado, los LOD importados, los AABB por celda y las colisiones. `adventure_system_test.gd` recorre catálogo, cofres, bestiario, tala, troncos, minería, rubíes, sustitución de armas, escudos, arco, proyectil legible y estela; `exploration_integration_test.gd` valida los 200 desafíos, el mapa y el autoguardado. `save_game_ui_test.gd` cubre la restauración completa de posición, inventario, retos y mundo, además de Esc, pausa, minimapa, inventario en cuadrícula y llamada del caballo. `runtime_stability_test.gd` viaja entre biomas y demuestra que no se crean celdas ni coinciden modelos completos y proxies. `settings_menu_test.gd` comprueba Z, las cuatro resoluciones y el corte LOD 180–900 m. `audio_test.gd` comprueba las tres canciones, sus loops, los límites de nieve y desierto, la mezcla ambiental y los cascos; `medieval_combat_test.gd` comprueba el inventario `1–4`, el socket de mano, las poses y los impactos; `island_world_test.gd` comprueba los 144 km², `N`/`B`/`M`/`0`, la atribución de FiftySounds, viaje rápido `5–8`, 54 casas, 64 plantas superiores, tres fortalezas completas y sus miradores abiertos al cielo. `stair_traversal_test.gd` mueve una cápsula idéntica al héroe, sin salto, por una escalera doméstica, una de la ciudadela y el portón exterior hasta alcanzar el patio.
 
 Terrain3D 1.0.2 emite en Godot 4.7 un aviso de compatibilidad sobre `instance_reset_physics_interpolation()`. Es una llamada interna aún soportada y no afecta al juego.
 

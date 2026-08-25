@@ -92,10 +92,14 @@ jobs:
           python3 tests/test_lobby_directory.py -v
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/multiplayer_test.gd
+          python3 tests/test_network_handshake.py \
+            --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/exploration_manager_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/adventure_system_test.gd
+          timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/save_game_ui_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/exploration_integration_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \

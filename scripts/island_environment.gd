@@ -177,7 +177,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	_update_tide(delta)
+	if NetworkSession.is_world_authority():
+		_update_tide(delta)
 	var camera := get_viewport().get_camera_3d()
 	var daylight := float(get_parent().get("daylight_factor"))
 	var directional_sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
@@ -227,6 +228,17 @@ func _update_tide(delta: float) -> void:
 	tide_height = lerpf(-2.30, 2.45, smoothstep(0.06, 0.94, tide_normalized))
 	tide_rising = cos(tide_phase) > 0.0001
 	tide_velocity = (tide_height - previous_height) / delta if delta > 0.0001 else 0.0
+	if ocean != null:
+		ocean.position.y = tide_height
+
+
+func apply_network_tide_state(authoritative_phase: float) -> void:
+	var previous_height := tide_height
+	tide_phase = fposmod(authoritative_phase, TAU)
+	tide_normalized = sin(tide_phase) * 0.5 + 0.5
+	tide_height = lerpf(-2.30, 2.45, smoothstep(0.06, 0.94, tide_normalized))
+	tide_rising = cos(tide_phase) > 0.0001
+	tide_velocity = tide_height - previous_height
 	if ocean != null:
 		ocean.position.y = tide_height
 

@@ -11,7 +11,7 @@ extends CanvasLayer
 
 var map_open := false
 var controls_open := false
-var mini_map_open := false
+var mini_map_open := true
 var credits_open := false
 var settings_open := false
 var settings_overlay: ColorRect
@@ -44,17 +44,20 @@ var exploration_journal_open := false
 var exploration_nearby_zone: Dictionary = {}
 var exploration_notice_seconds := 0.0
 var inventory_overlay: ColorRect
-var inventory_list: ItemList
+var inventory_grid: GridContainer
+var inventory_scroll: ScrollContainer
 var inventory_summary: Label
 var inventory_open := false
 var quickbar_panel: PanelContainer
-var quickbar_labels: Array[Label] = []
+var quickbar_buttons: Array[Button] = []
 var arrow_counter: Label
+var horse_call_button: Button
 var bow_power_bar: ProgressBar
 var adventure_action_hint: Label
 var action_feedback_label: Label
 var action_feedback_seconds := 0.0
 var inventory_manager: Node
+var pause_menu: PauseMenu
 
 
 func _ready() -> void:
@@ -69,6 +72,15 @@ func _ready() -> void:
 	_build_exploration_journal()
 	_build_inventory_overlay()
 	_build_quickbar()
+	pause_menu = PauseMenu.new()
+	add_child(pause_menu)
+	pause_menu.closed.connect(func() -> void:
+		mini_map.visible = mini_map_open and not map_open
+	)
+	pause_menu.multiplayer_requested.connect(func() -> void:
+		pause_menu.set_open(false)
+		_set_lobby_open(true)
+	)
 	inventory_manager = get_node_or_null("/root/InventoryManager")
 	GameSettings.resolution_changed.connect(_sync_resolution_selector)
 	GameSettings.lod_distance_changed.connect(_sync_lod_slider)
@@ -100,10 +112,18 @@ func _ready() -> void:
 		_on_exploration_nearby_changed(exploration.call("get_nearby_zone") as Dictionary)
 	if DisplayServer.get_name().to_lower() != "headless":
 		_set_lobby_open(true)
+	else:
+		mini_map.visible = mini_map_open
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		_handle_cancel()
+		get_viewport().set_input_as_handled()
+		return
 	if lobby_open:
+		return
+	if pause_menu != null and pause_menu.visible:
 		return
 	if event.is_action_pressed("settings"):
 		_set_settings_open(not settings_open)
@@ -120,6 +140,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if journal_key.pressed and not journal_key.echo and journal_code == KEY_L:
 			_set_exploration_journal_open(not exploration_journal_open)
+			get_viewport().set_input_as_handled()
+			return
+		if journal_key.pressed and not journal_key.echo and journal_code == KEY_H:
+			_call_horse()
 			get_viewport().set_input_as_handled()
 			return
 	if exploration_journal_open:
@@ -152,6 +176,42 @@ func _unhandled_input(event: InputEvent) -> void:
 		mini_map_open = not mini_map_open
 		mini_map.visible = mini_map_open
 		get_viewport().set_input_as_handled()
+
+
+func _handle_cancel() -> void:
+	# Cierra primero el nivel visual actual. Solo cuando no queda ninguna ventana
+	# abre el menú de pausa, como esperan los juegos convencionales.
+	if lobby_open:
+		_set_lobby_open(false)
+	elif settings_open:
+		_set_settings_open(false)
+	elif inventory_open:
+		_set_inventory_open(false)
+	elif exploration_journal_open:
+		_set_exploration_journal_open(false)
+	elif map_open:
+		map_open = false
+		full_map.visible = false
+		mini_map.visible = mini_map_open
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif credits_open:
+		_set_credits_open(false)
+	elif controls_open:
+		controls_open = false
+		controls_panel.visible = false
+	elif pause_menu != null and pause_menu.visible:
+		pause_menu.close_one_level()
+	elif pause_menu != null:
+		pause_menu.set_open(true)
+		mini_map.visible = false
+
+
+func _call_horse() -> void:
+	var world := get_parent()
+	if world != null and world.has_method("call_horse_to_player") and bool(world.call("call_horse_to_player")):
+		_on_player_action_feedback("🐎 Brisa viene hacia ti")
+	else:
+		_on_player_action_feedback("No puedes llamar al caballo ahora")
 
 
 func _set_credits_open(open: bool) -> void:
@@ -201,7 +261,7 @@ func is_settings_open() -> bool:
 
 
 func _exit_tree() -> void:
-	if (settings_open or lobby_open or exploration_journal_open) and get_tree() != null:
+	if (settings_open or lobby_open or exploration_journal_open or inventory_open or (pause_menu != null and pause_menu.visible)) and get_tree() != null:
 		get_tree().paused = false
 
 
@@ -219,7 +279,7 @@ func _process(delta: float) -> void:
 		if action_feedback_seconds <= 0.0 and action_feedback_label != null:
 			action_feedback_label.visible = false
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		hint.text = "Esc libera el ratón"
+		hint.text = "Esc abre el menú"
 	else:
 		hint.text = "Clic para volver a controlar la cámara"
 
@@ -231,11 +291,11 @@ func _process(delta: float) -> void:
 		if not adventure_prompt.is_empty() and exploration_notice_seconds <= 0.0 and exploration_prompt != null:
 			exploration_prompt.visible = false
 	if player.is_mounted():
-		controls.text = "WASD / flechas · guiar   Mayús · galopar   E · explorar / desmontar\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   I · inventario   M · mapa   L · 200 retos\n5–9 · viaje rápido   Z · configuración   0 · créditos" % equipped
+		controls.text = "WASD / flechas · guiar   Mayús · galopar   E · explorar / desmontar\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   H · llamar caballo   I · inventario\nM · mapa   L · 200 retos   Esc · menú" % equipped
 		mount_hint.text = "E · Desmontar de %s" % player.current_mount.horse_name
 		mount_hint.visible = true
 	else:
-		controls.text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   Clic · atacar / mantener para tensar arco\nE · interactuar   I · inventario   M · mapa   L · 200 retos" % equipped
+		controls.text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   Clic · atacar / tensar   H · llamar caballo\nE · interactuar   I · inventario   M · mapa   Esc · menú" % equipped
 		var nearby_horse := player.get_nearby_mount()
 		mount_hint.visible = nearby_horse != null
 		if nearby_horse != null:
@@ -762,8 +822,8 @@ func _build_exploration_hud() -> void:
 	exploration_progress_panel.z_index = 70
 	exploration_progress_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	exploration_progress_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	exploration_progress_panel.position = Vector2(-260.0, 14.0)
-	exploration_progress_panel.size = Vector2(520.0, 66.0)
+	exploration_progress_panel.position = Vector2(-190.0, 10.0)
+	exploration_progress_panel.size = Vector2(380.0, 48.0)
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.035, 0.052, 0.045, 0.88)
 	panel_style.border_color = Color(0.82, 0.64, 0.32, 0.92)
@@ -773,19 +833,19 @@ func _build_exploration_hud() -> void:
 	add_child(exploration_progress_panel)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 14)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_right", 14)
-	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.add_theme_constant_override("margin_left", 11)
+	margin.add_theme_constant_override("margin_top", 5)
+	margin.add_theme_constant_override("margin_right", 11)
+	margin.add_theme_constant_override("margin_bottom", 5)
 	exploration_progress_panel.add_child(margin)
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 5)
+	content.add_theme_constant_override("separation", 3)
 	margin.add_child(content)
 	exploration_progress_label = Label.new()
 	exploration_progress_label.name = "ExplorationProgressLabel"
 	exploration_progress_label.text = "AVENTURA DE LA ISLA · 0 / 200 · L diario"
 	exploration_progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	exploration_progress_label.add_theme_font_size_override("font_size", 16)
+	exploration_progress_label.add_theme_font_size_override("font_size", 12)
 	exploration_progress_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.58))
 	content.add_child(exploration_progress_label)
 	exploration_progress_bar = ProgressBar.new()
@@ -793,7 +853,7 @@ func _build_exploration_hud() -> void:
 	exploration_progress_bar.max_value = 200.0
 	exploration_progress_bar.value = 0.0
 	exploration_progress_bar.show_percentage = false
-	exploration_progress_bar.custom_minimum_size = Vector2(490.0, 14.0)
+	exploration_progress_bar.custom_minimum_size = Vector2(350.0, 8.0)
 	var background := StyleBoxFlat.new()
 	background.bg_color = Color(0.10, 0.14, 0.11, 0.96)
 	background.set_corner_radius_all(7)
@@ -1022,41 +1082,59 @@ func _build_quickbar() -> void:
 	quickbar_panel = PanelContainer.new()
 	quickbar_panel.name = "AdventureQuickbar"
 	quickbar_panel.z_index = 72
-	quickbar_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	quickbar_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	quickbar_panel.position = Vector2(-294.0, -86.0)
-	quickbar_panel.size = Vector2(588.0, 62.0)
+	quickbar_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	quickbar_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	quickbar_panel.position = Vector2(-498.0, -104.0)
+	quickbar_panel.size = Vector2(478.0, 84.0)
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.035, 0.045, 0.035, 0.90)
+	style.bg_color = Color(0.025, 0.035, 0.028, 0.84)
 	style.border_color = Color(0.80, 0.61, 0.29, 0.94)
 	style.set_border_width_all(2)
-	style.set_corner_radius_all(11)
+	style.set_corner_radius_all(20)
 	quickbar_panel.add_theme_stylebox_override("panel", style)
 	add_child(quickbar_panel)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 7)
+	row.add_theme_constant_override("separation", 8)
 	quickbar_panel.add_child(row)
 	for slot in range(1, 5):
-		var label := Label.new()
-		label.custom_minimum_size = Vector2(116.0, 48.0)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 15)
-		label.add_theme_color_override("font_color", Color(0.96, 0.89, 0.70))
+		var button := Button.new()
+		button.name = "QuickSlot%d" % slot
+		button.custom_minimum_size = Vector2(66.0, 66.0)
+		button.expand_icon = true
+		button.add_theme_constant_override("icon_max_width", 44)
+		button.add_theme_font_size_override("font_size", 15)
+		button.add_theme_color_override("font_color", Color(1.0, 0.88, 0.55))
 		var slot_style := StyleBoxFlat.new()
-		slot_style.bg_color = Color(0.10, 0.12, 0.09, 0.88)
-		slot_style.set_corner_radius_all(7)
-		label.add_theme_stylebox_override("normal", slot_style)
-		row.add_child(label)
-		quickbar_labels.append(label)
+		slot_style.bg_color = Color(0.08, 0.11, 0.08, 0.92)
+		slot_style.border_color = Color(0.53, 0.47, 0.28, 0.92)
+		slot_style.set_border_width_all(2)
+		slot_style.set_corner_radius_all(22)
+		button.add_theme_stylebox_override("normal", slot_style)
+		button.pressed.connect(_on_quickslot_button_pressed.bind(slot))
+		row.add_child(button)
+		quickbar_buttons.append(button)
 	arrow_counter = Label.new()
-	arrow_counter.custom_minimum_size = Vector2(72.0, 48.0)
+	arrow_counter.custom_minimum_size = Vector2(62.0, 62.0)
 	arrow_counter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	arrow_counter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	arrow_counter.add_theme_font_size_override("font_size", 15)
+	arrow_counter.add_theme_font_size_override("font_size", 14)
 	arrow_counter.add_theme_color_override("font_color", Color(0.55, 0.88, 1.0))
 	row.add_child(arrow_counter)
+	horse_call_button = Button.new()
+	horse_call_button.name = "CallHorseButton"
+	horse_call_button.text = "H\n🐎"
+	horse_call_button.tooltip_text = "Llamar a Brisa"
+	horse_call_button.custom_minimum_size = Vector2(66.0, 66.0)
+	horse_call_button.add_theme_font_size_override("font_size", 17)
+	var horse_style := StyleBoxFlat.new()
+	horse_style.bg_color = Color(0.17, 0.12, 0.065, 0.94)
+	horse_style.border_color = Color(0.93, 0.69, 0.31, 0.96)
+	horse_style.set_border_width_all(2)
+	horse_style.set_corner_radius_all(22)
+	horse_call_button.add_theme_stylebox_override("normal", horse_style)
+	horse_call_button.pressed.connect(_call_horse)
+	row.add_child(horse_call_button)
 
 	bow_power_bar = ProgressBar.new()
 	bow_power_bar.name = "BowPower"
@@ -1153,19 +1231,22 @@ func _build_inventory_overlay() -> void:
 	inventory_summary.add_theme_color_override("font_color", Color(0.88, 0.84, 0.67))
 	content.add_child(inventory_summary)
 	var help := Label.new()
-	help.text = "Doble clic en una espada, hacha, arco o escudo para equiparlo · I cerrar"
+	help.text = "Pulsa una casilla de arma o escudo para equiparla · la cifra indica la cantidad · I cerrar"
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_color", Color(0.68, 0.72, 0.60))
 	content.add_child(help)
-	inventory_list = ItemList.new()
-	inventory_list.name = "InventoryList"
-	inventory_list.custom_minimum_size = Vector2(840.0, 505.0)
-	inventory_list.fixed_icon_size = Vector2i(42, 42)
-	inventory_list.icon_mode = ItemList.ICON_MODE_LEFT
-	inventory_list.add_theme_font_size_override("font_size", 17)
-	inventory_list.item_activated.connect(_on_inventory_item_activated)
-	content.add_child(inventory_list)
+	inventory_scroll = ScrollContainer.new()
+	inventory_scroll.name = "InventoryScroll"
+	inventory_scroll.custom_minimum_size = Vector2(840.0, 505.0)
+	inventory_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	content.add_child(inventory_scroll)
+	inventory_grid = GridContainer.new()
+	inventory_grid.name = "InventoryGrid"
+	inventory_grid.columns = 7
+	inventory_grid.add_theme_constant_override("h_separation", 9)
+	inventory_grid.add_theme_constant_override("v_separation", 9)
+	inventory_scroll.add_child(inventory_grid)
 	var close_button := Button.new()
 	close_button.text = "Cerrar inventario · I"
 	close_button.pressed.connect(func() -> void: _set_inventory_open(false))
@@ -1199,9 +1280,11 @@ func is_inventory_open() -> bool:
 
 
 func _rebuild_inventory() -> void:
-	if inventory_list == null:
+	if inventory_grid == null:
 		return
-	inventory_list.clear()
+	for child in inventory_grid.get_children():
+		inventory_grid.remove_child(child)
+		child.queue_free()
 	var entries: Array = inventory_manager.call("get_inventory_entries") if inventory_manager != null else []
 	var total_objects := 0
 	for entry_value in entries:
@@ -1209,23 +1292,52 @@ func _rebuild_inventory() -> void:
 		var amount := int(entry.get("amount", 0))
 		total_objects += amount
 		var equipped := bool(entry.get("equipped", false))
-		var prefix := "◆ EQUIPADO · " if equipped else ""
-		var text := "%s%s  ×%d   [%s]" % [prefix, String(entry.get("display_name", entry.id)), amount, String(entry.get("category", "objeto")).capitalize()]
+		var display_name := String(entry.get("display_name", entry.id))
 		var icon: Texture2D
 		var icon_path := String(entry.get("icon_path", ""))
 		if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
 			icon = load(icon_path) as Texture2D
-		inventory_list.add_item(text, icon)
-		var index := inventory_list.item_count - 1
-		inventory_list.set_item_metadata(index, String(entry.id))
-		inventory_list.set_item_custom_fg_color(index, Color(1.0, 0.82, 0.38) if equipped else Color(0.91, 0.88, 0.76))
+		var cell := Button.new()
+		cell.name = "Item_%s" % String(entry.id).validate_node_name()
+		cell.custom_minimum_size = Vector2(111.0, 108.0)
+		cell.text = display_name if icon == null else ""
+		cell.icon = icon
+		cell.expand_icon = true
+		cell.add_theme_constant_override("icon_max_width", 74)
+		cell.tooltip_text = "%s · %s · cantidad %d%s" % [
+			display_name,
+			String(entry.get("category", "objeto")).capitalize(),
+			amount,
+			" · EQUIPADO" if equipped else "",
+		]
+		cell.clip_text = true
+		cell.add_theme_font_size_override("font_size", 12)
+		var cell_style := StyleBoxFlat.new()
+		cell_style.bg_color = Color(0.19, 0.15, 0.075, 0.98) if equipped else Color(0.075, 0.085, 0.065, 0.96)
+		cell_style.border_color = Color(1.0, 0.76, 0.27, 1.0) if equipped else Color(0.45, 0.40, 0.25, 0.9)
+		cell_style.set_border_width_all(3 if equipped else 1)
+		cell_style.set_corner_radius_all(12)
+		cell.add_theme_stylebox_override("normal", cell_style)
+		cell.pressed.connect(_on_inventory_item_pressed.bind(String(entry.id)))
+		inventory_grid.add_child(cell)
+		var count_badge := Label.new()
+		count_badge.name = "Count"
+		count_badge.text = "×%d" % amount
+		count_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		count_badge.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		count_badge.position = Vector2(-42.0, -26.0)
+		count_badge.size = Vector2(38.0, 22.0)
+		count_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		count_badge.add_theme_font_size_override("font_size", 14)
+		count_badge.add_theme_color_override("font_color", Color(1.0, 0.91, 0.57))
+		count_badge.add_theme_color_override("font_shadow_color", Color.BLACK)
+		count_badge.add_theme_constant_override("shadow_offset_x", 2)
+		count_badge.add_theme_constant_override("shadow_offset_y", 2)
+		cell.add_child(count_badge)
 	inventory_summary.text = "%d tipos · %d objetos · %d flechas" % [entries.size(), total_objects, _inventory_arrow_count()]
 
 
-func _on_inventory_item_activated(index: int) -> void:
-	if inventory_list == null:
-		return
-	var item_id := String(inventory_list.get_item_metadata(index))
+func _on_inventory_item_pressed(item_id: String) -> void:
 	if inventory_manager != null and bool(inventory_manager.call("equip_item", item_id)):
 		var definition := inventory_manager.call("get_item_definition", item_id) as Dictionary
 		_on_player_action_feedback("Equipado: %s" % String(definition.get("display_name", item_id)))
@@ -1247,23 +1359,34 @@ func _on_player_quickslot_changed(_slot: int, _item_name: String) -> void:
 
 
 func _refresh_quickbar() -> void:
-	if quickbar_labels.is_empty():
+	if quickbar_buttons.is_empty():
 		return
-	var fallback_names := PackedStringArray(["Espada", "Hacha", "Arco", "Antorcha"])
+	var fallback_icons := PackedStringArray(["⚔", "🪓", "🏹", "🔥"])
 	for index in 4:
 		var item_id := String(inventory_manager.call("get_quick_slot_item", index + 1)) if inventory_manager != null else ""
-		var display_name: String = fallback_names[index]
+		var display_name: String = ["Espada", "Hacha", "Arco", "Antorcha"][index]
+		var icon: Texture2D
 		if not item_id.is_empty():
 			var definition := inventory_manager.call("get_item_definition", item_id) as Dictionary
 			display_name = String(definition.get("display_name", item_id))
-		quickbar_labels[index].text = "%d\n%s" % [index + 1, display_name]
-		quickbar_labels[index].modulate = Color(1.0, 0.86, 0.42) if player != null and player.equipped_slot == index + 1 else Color.WHITE
+			var icon_path := String(definition.get("icon_path", ""))
+			if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
+				icon = load(icon_path) as Texture2D
+		quickbar_buttons[index].icon = icon
+		quickbar_buttons[index].text = str(index + 1) if icon != null else "%d\n%s" % [index + 1, fallback_icons[index]]
+		quickbar_buttons[index].tooltip_text = "%d · %s" % [index + 1, display_name]
+		quickbar_buttons[index].modulate = Color(1.0, 0.78, 0.31) if player != null and player.equipped_slot == index + 1 else Color.WHITE
 	if arrow_counter != null:
-		arrow_counter.text = "FLECHAS\n%d" % _inventory_arrow_count()
+		arrow_counter.text = "🏹\n×%d" % _inventory_arrow_count()
 
 
 func _inventory_arrow_count() -> int:
 	return int(inventory_manager.call("get_arrow_count")) if inventory_manager != null else 0
+
+
+func _on_quickslot_button_pressed(slot: int) -> void:
+	player.equip_item(slot)
+	_refresh_quickbar()
 
 
 func _on_player_action_feedback(message: String) -> void:
@@ -1283,12 +1406,12 @@ func _on_bow_draw_changed(strength: float, arrows: int) -> void:
 		crosshair.text = "◎" if player.is_drawing_bow else "·"
 		crosshair.add_theme_font_size_override("font_size", 34 if player.is_drawing_bow else 18)
 	if arrow_counter != null:
-		arrow_counter.text = "FLECHAS\n%d" % arrows
+		arrow_counter.text = "🏹\n×%d" % arrows
 
 
 func _on_arrow_fired(remaining_arrows: int, _strength: float) -> void:
 	if arrow_counter != null:
-		arrow_counter.text = "FLECHAS\n%d" % remaining_arrows
+		arrow_counter.text = "🏹\n×%d" % remaining_arrows
 	_refresh_quickbar()
 
 
@@ -1298,13 +1421,13 @@ func _controls_summary() -> String:
 		+ "Avanzar: %s     Retroceder: %s\n" % [GameSettings.action_keys("move_forward"), GameSettings.action_keys("move_back")]
 		+ "Izquierda: %s     Derecha: %s\n" % [GameSettings.action_keys("move_left"), GameSettings.action_keys("move_right")]
 		+ "Saltar: %s     Correr / galopar: %s\n" % [GameSettings.action_keys("jump"), GameSettings.action_keys("sprint")]
-		+ "Interactuar / montar: %s     Atacar: %s\n\n" % [GameSettings.action_keys("interact"), GameSettings.action_keys("attack")]
+		+ "Interactuar / montar: %s     Atacar: %s     H: llamar caballo\n\n" % [GameSettings.action_keys("interact"), GameSettings.action_keys("attack")]
 		+ "[b]EQUIPO Y NAVEGACIÓN[/b]\n"
 		+ "1 Espada · 2 Hacha · 3 Arco · 4 Antorcha · I Inventario\n"
 		+ "Con el arco: mantén clic para tensar y apuntar; suelta para disparar\n"
 		+ "5 Dunas · 6 Nieve · 7 Villa · 8 Bosque Umbrío · 9 Bosque Tenebroso\n"
 		+ "Mapa: %s · B Minimapa · L Diario de 200 zonas · N Ayuda · 0 Créditos\n" % GameSettings.action_keys("map")
-		+ "Configuración / identidad / multijugador: %s · Esc Liberar ratón" % GameSettings.action_keys("settings")
+		+ "Configuración / identidad / multijugador: %s · Esc cerrar ventana / menú de pausa" % GameSettings.action_keys("settings")
 	)
 
 

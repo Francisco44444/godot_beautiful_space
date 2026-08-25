@@ -63,14 +63,21 @@ func _run_test() -> void:
 		_fail("La acción settings no está asignada físicamente a la tecla Z.")
 		return
 
-	# Conserva la preferencia del minimapa aunque el panel gráfico la tape.
+	# El minimapa comienza activo y conserva esa preferencia aunque el panel lo tape.
+	var minimap := hud.get_node("MiniMap") as Control
+	if not minimap.visible:
+		_fail("El minimapa debe comenzar activo.")
+		return
 	var minimap_event := InputEventKey.new()
 	minimap_event.physical_keycode = KEY_B
 	minimap_event.pressed = true
 	hud.call("_unhandled_input", minimap_event)
-	var minimap := hud.get_node("MiniMap") as Control
+	if minimap.visible:
+		_fail("B no desactivó el minimapa.")
+		return
+	hud.call("_unhandled_input", minimap_event)
 	if not minimap.visible:
-		_fail("No se pudo preparar el estado del minimapa para probar el panel Z.")
+		_fail("B no pudo reactivar el minimapa.")
 		return
 	var settings_event := InputEventAction.new()
 	settings_event.action = "settings"

@@ -214,6 +214,44 @@ func reset_inventory_for_tests(persist: bool = false) -> void:
 		save_inventory()
 
 
+func get_save_state() -> Dictionary:
+	## Copia autocontenida para las ranuras de partida y para el anfitrión.
+	_ensure_initialized()
+	return {
+		"items": _inventory.duplicate(true),
+		"equipped": _equipped.duplicate(true),
+	}
+
+
+func apply_save_state(state: Dictionary, persist: bool = true) -> bool:
+	## Restaura solo identificadores que siguen existiendo en el catálogo. Esto
+	## permite abrir partidas antiguas después de añadir o retirar un asset.
+	_ensure_initialized()
+	var stored_items = state.get("items", {})
+	var stored_equipment = state.get("equipped", {})
+	if not stored_items is Dictionary or not stored_equipment is Dictionary:
+		return false
+	_inventory.clear()
+	for raw_id in stored_items:
+		var item_id := String(raw_id)
+		var amount := int(stored_items[raw_id])
+		if _catalog.has(item_id) and amount > 0:
+			_inventory[item_id] = amount
+	_equipped = STARTING_EQUIPMENT.duplicate(true)
+	for category in ["sword", "axe", "bow", "shield"]:
+		var item_id := String(stored_equipment.get(category, _equipped[category]))
+		if item_id.is_empty() or has_item(item_id):
+			_equipped[category] = item_id
+	if _inventory.is_empty():
+		_inventory = STARTING_ITEMS.duplicate(true)
+	_emit_changed()
+	for category in ["sword", "axe", "bow", "shield"]:
+		equipment_changed.emit(category, String(_equipped.get(category, "")))
+	if persist and autosave_enabled:
+		save_inventory()
+	return true
+
+
 func save_inventory() -> bool:
 	_ensure_initialized()
 	var payload := {
@@ -258,21 +296,7 @@ func load_inventory() -> bool:
 	var stored_equipment = parsed.get("equipped", {})
 	if not stored_items is Dictionary or not stored_equipment is Dictionary:
 		return false
-	_inventory.clear()
-	for raw_id in stored_items:
-		var item_id := String(raw_id)
-		var amount := int(stored_items[raw_id])
-		if _catalog.has(item_id) and amount > 0:
-			_inventory[item_id] = amount
-	_equipped = STARTING_EQUIPMENT.duplicate(true)
-	for category in ["sword", "axe", "bow", "shield"]:
-		var item_id := String(stored_equipment.get(category, _equipped[category]))
-		if item_id.is_empty() or has_item(item_id):
-			_equipped[category] = item_id
-	if _inventory.is_empty():
-		_inventory = STARTING_ITEMS.duplicate(true)
-	_emit_changed()
-	return true
+	return apply_save_state({"items": stored_items, "equipped": stored_equipment}, false)
 
 
 func _build_catalog() -> void:
@@ -344,11 +368,21 @@ func _category_for(item_id: String) -> String:
 
 
 func _icon_file_for(item_id: String) -> String:
-	var direct := item_id + ".png"
-	if FileAccess.file_exists(RPG_ICON_ROOT + direct):
-		return direct
-	var title_case := item_id.replace("small", "Small").replace("big", "Big") + ".png"
-	return title_case if FileAccess.file_exists(RPG_ICON_ROOT + title_case) else ""
+	# macOS resuelve nombres sin distinguir mayúsculas, pero Windows/Linux no.
+	# Devuelve siempre la grafía exacta que existe en el pack.
+	var wanted := (item_id + ".png").to_lower()
+	var directory := DirAccess.open(RPG_ICON_ROOT)
+	if directory == null:
+		return ""
+	directory.list_dir_begin()
+	var file_name := directory.get_next()
+	while not file_name.is_empty():
+		if not directory.current_is_dir() and file_name.to_lower() == wanted:
+			directory.list_dir_end()
+			return file_name
+		file_name = directory.get_next()
+	directory.list_dir_end()
+	return ""
 
 
 func _display_name(item_id: String) -> String:

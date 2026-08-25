@@ -42,6 +42,8 @@ var _hoof_timer := 0.0
 var _hoof_index := 0
 var hoofbeat_count := 0
 var sprint_requested := false
+var _summon_target: Node3D
+var _is_being_called := false
 
 
 func _ready() -> void:
@@ -59,7 +61,10 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_apply_gravity(delta)
 	if mounted:
+		_is_being_called = false
 		_apply_riding_input(delta)
+	elif _is_being_called and is_instance_valid(_summon_target):
+		_follow_summon_target(delta)
 	else:
 		_slow_to_stop(delta)
 
@@ -83,6 +88,35 @@ func set_mounted(value: bool) -> void:
 
 func get_facing_yaw() -> float:
 	return visual.rotation.y
+
+
+func call_to(target: Node3D) -> void:
+	if mounted or target == null:
+		return
+	_summon_target = target
+	_is_being_called = true
+	name_label.text = "%s · EN CAMINO" % horse_name.to_upper()
+	name_label.visible = true
+
+
+func is_coming_when_called() -> bool:
+	return _is_being_called
+
+
+func _follow_summon_target(delta: float) -> void:
+	var offset := _summon_target.global_position - global_position
+	offset.y = 0.0
+	if offset.length() <= 3.0:
+		_is_being_called = false
+		name_label.visible = false
+		_slow_to_stop(delta)
+		return
+	var direction := offset.normalized()
+	var target_speed := canter_speed if offset.length() < 42.0 else gallop_speed * 0.82
+	velocity.x = move_toward(velocity.x, direction.x * target_speed, acceleration * delta)
+	velocity.z = move_toward(velocity.z, direction.z * target_speed, acceleration * delta)
+	var desired_yaw := atan2(-direction.x, -direction.z)
+	visual.rotation.y = lerp_angle(visual.rotation.y, desired_yaw, turn_speed * delta)
 
 
 func _apply_gravity(delta: float) -> void:

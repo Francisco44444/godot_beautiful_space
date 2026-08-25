@@ -75,6 +75,8 @@ func _ready() -> void:
 	GameSettings.lod_distance_changed.connect(_apply_lod_distance)
 	_apply_lod_distance(GameSettings.lod_distance_metres)
 	_setup_network_players()
+	NetworkSession.world_state_received.connect(_on_network_world_state_received)
+	SaveGameManager.bind_world(self)
 	var exploration := get_node_or_null("/root/ExplorationManager")
 	if exploration != null:
 		exploration.set("handle_interact_input", false)
@@ -86,7 +88,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	_update_sun_cycle(delta)
+	if NetworkSession.is_world_authority():
+		_update_sun_cycle(delta)
 	var exploration := get_node_or_null("/root/ExplorationManager")
 	if exploration != null and time_of_day != _last_exploration_time_of_day:
 		_sync_exploration_time(exploration)
@@ -238,6 +241,85 @@ func _clear_network_players() -> void:
 
 func get_tide_dry_clearance() -> float:
 	return TIDE_DRY_CLEARANCE
+
+
+func call_horse_to_player() -> bool:
+	if horse == null or player == null or player.is_mounted():
+		return false
+	horse.call_to(player)
+	return true
+
+
+func get_local_player_save_state() -> Dictionary:
+	var inventory := get_node_or_null("/root/InventoryManager")
+	return {
+		"name": GameSettings.player_name,
+		"character_index": GameSettings.character_index,
+		"position": [player.global_position.x, player.global_position.y, player.global_position.z],
+		"yaw": player.get_network_facing_yaw(),
+		"equipped_slot": player.equipped_slot,
+		"inventory": inventory.call("get_save_state") if inventory != null else {},
+	}
+
+
+func apply_local_player_save_state(state: Dictionary) -> bool:
+	var position = state.get("position", [])
+	if not position is Array or (position as Array).size() != 3:
+		return false
+	if player.is_mounted():
+		player.dismount()
+	var target := Vector3(float(position[0]), float(position[1]), float(position[2]))
+	if absf(target.x) > 6200.0 or absf(target.z) > 6200.0 or absf(target.y) > 1800.0:
+		return false
+	player.global_position = target
+	player.velocity = Vector3.ZERO
+	player.spawn_position = target
+	_last_dry_player_position = target
+	var slot := clampi(int(state.get("equipped_slot", 1)), 1, 4)
+	player.call_deferred("equip_item", slot)
+	if camera_rig != null:
+		camera_rig.call_deferred("snap_to_target")
+	return true
+
+
+func get_shared_world_save_state() -> Dictionary:
+	return {
+		"sun_cycle_radians": sun_cycle_radians,
+		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
+		"horse_position": [horse.global_position.x, horse.global_position.y, horse.global_position.z],
+	}
+
+
+func apply_shared_world_save_state(state: Dictionary) -> void:
+	sun_cycle_radians = fposmod(float(state.get("sun_cycle_radians", sun_cycle_radians)), TAU)
+	_update_sun_cycle(0.0)
+	if island_environment != null:
+		island_environment.apply_network_tide_state(float(state.get("tide_phase", island_environment.tide_phase)))
+	var horse_position = state.get("horse_position", [])
+	if horse_position is Array and (horse_position as Array).size() == 3 and not horse.mounted:
+		horse.global_position = Vector3(float(horse_position[0]), float(horse_position[1]), float(horse_position[2]))
+		horse.velocity = Vector3.ZERO
+
+
+func get_network_world_state() -> Dictionary:
+	var wildlife := get_node_or_null("QuaterniusWildlife")
+	return {
+		"sun_cycle_radians": sun_cycle_radians,
+		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
+		"wildlife": wildlife.call("get_network_state") if wildlife != null else [],
+	}
+
+
+func _on_network_world_state_received(state: Dictionary) -> void:
+	if NetworkSession.session_mode != NetworkSession.SessionMode.CLIENT:
+		return
+	sun_cycle_radians = fposmod(float(state.get("sun_cycle_radians", sun_cycle_radians)), TAU)
+	_update_sun_cycle(0.0)
+	if island_environment != null:
+		island_environment.apply_network_tide_state(float(state.get("tide_phase", island_environment.tide_phase)))
+	var wildlife := get_node_or_null("QuaterniusWildlife")
+	if wildlife != null:
+		wildlife.call("apply_network_state", state.get("wildlife", []))
 
 
 func _apply_lod_distance(distance_metres: float) -> void:

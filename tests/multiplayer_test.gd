@@ -12,8 +12,9 @@ func _run_test() -> void:
 	var settings := root.get_node_or_null("GameSettings")
 	var session := root.get_node_or_null("NetworkSession")
 	var directory := root.get_node_or_null("LobbyDirectory")
-	if settings == null or session == null or directory == null:
-		_fail("No se cargaron GameSettings, NetworkSession y LobbyDirectory.")
+	var save_manager := root.get_node_or_null("SaveGameManager")
+	if settings == null or session == null or directory == null or save_manager == null:
+		_fail("No se cargaron GameSettings, NetworkSession, LobbyDirectory y SaveGameManager.")
 		return
 	if NetworkSession.MAX_PLAYERS != 8 or NetworkSession.PORT != 24567:
 		_fail("La sesión no está limitada a ocho jugadores en el puerto previsto.")
@@ -59,6 +60,22 @@ func _run_test() -> void:
 	if host_error != OK or not bool(session.call("is_networked")) or int(session.call("get_player_count")) != 1:
 		_fail("No se pudo crear una partida ENet para el anfitrión.")
 		return
+	if not bool(session.call("is_world_authority")) or not is_equal_approx(float(save_manager.call("get_autosave_seconds")), 120.0):
+		_fail("El anfitrión no gobierna el mundo o el autoguardado cooperativo no dura dos minutos.")
+		return
+	var shared_state := world.call("get_network_world_state") as Dictionary
+	if (
+		not shared_state.has("sun_cycle_radians")
+		or not shared_state.has("tide_phase")
+		or not shared_state.has("wildlife")
+		or (shared_state.wildlife as Array).is_empty()
+	):
+		_fail("La autoridad no prepara sol, luna derivada, marea y fauna para los invitados.")
+		return
+	var host_save_states := session.call("get_party_save_states") as Dictionary
+	if not host_save_states.has("Lúa") or not (host_save_states["Lúa"] as Dictionary).has("inventory"):
+		_fail("La ranura cooperativa no conserva el inventario independiente del anfitrión.")
+		return
 
 	var fake_roster := {
 		1: {"name": "Lúa", "character_index": 6},
@@ -87,7 +104,7 @@ func _run_test() -> void:
 	world.queue_free()
 	for _frame in range(8):
 		await process_frame
-	print("MULTIPLAYER TEST OK: lobby, 8 personajes, ENet y réplica remota disponibles.")
+	print("MULTIPLAYER TEST OK: lobby, 8 personajes, autoridad del mundo, guardado cooperativo y réplica remota disponibles.")
 	quit(0)
 
 

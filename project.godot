@@ -23,6 +23,7 @@ NetworkSession="*res://scripts/network_session.gd"
 LobbyDirectory="*res://scripts/lobby_directory.gd"
 ExplorationManager="*res://scripts/exploration_manager.gd"
 InventoryManager="*res://scripts/inventory_manager.gd"
+SaveGameManager="*res://scripts/save_game_manager.gd"
 
 [audio]
 

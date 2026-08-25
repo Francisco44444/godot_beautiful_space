@@ -59,10 +59,40 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if _player == null:
+	if _player == null or not NetworkSession.is_world_authority():
 		return
 	for agent in _animals:
 		_update_animal(agent, delta)
+
+
+func get_network_state() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for agent in _animals:
+		var animal := agent.get("node") as Node3D
+		if animal == null:
+			continue
+		var animator := agent.get("animator") as AnimationPlayer
+		result.append({
+			"position": [animal.global_position.x, animal.global_position.y, animal.global_position.z],
+			"yaw": animal.global_rotation.y,
+			"animation": animator.current_animation if animator != null else "Idle",
+			"animation_speed": animator.speed_scale if animator != null else 1.0,
+		})
+	return result
+
+
+func apply_network_state(states: Array) -> void:
+	for index in mini(states.size(), _animals.size()):
+		var state := states[index] as Dictionary
+		var agent := _animals[index] as Dictionary
+		var animal := agent.get("node") as Node3D
+		var position = state.get("position", [])
+		if animal == null or not position is Array or (position as Array).size() != 3:
+			continue
+		var target := Vector3(float(position[0]), float(position[1]), float(position[2]))
+		animal.global_position = animal.global_position.lerp(target, 0.58)
+		animal.global_rotation.y = lerp_angle(animal.global_rotation.y, float(state.get("yaw", animal.global_rotation.y)), 0.58)
+		_play_animation(agent.get("animator") as AnimationPlayer, String(state.get("animation", "Idle")), float(state.get("animation_speed", 1.0)))
 
 
 func _update_animal(agent: Dictionary, delta: float) -> void:

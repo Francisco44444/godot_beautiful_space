@@ -140,13 +140,23 @@ func _run_test() -> void:
 	if not player.call("_release_bow_arrow") or int(_inventory.call("get_arrow_count")) != arrows_before - 1:
 		_fail("Soltar el arco no disparó ni consumió exactamente una flecha.")
 		return
-	if world.find_child("ArrowProjectile", true, false) == null:
+	var projectile := world.find_child("ArrowProjectile", true, false)
+	if projectile == null:
 		_fail("El disparo no creó el proyectil físico de flecha.")
+		return
+	if projectile.get_node_or_null("ReadableShaft") == null or projectile.get_node_or_null("FlightTrail") == null:
+		_fail("La flecha no tiene una silueta legible y una estela de vuelo visible.")
 		return
 
 	var hud := world.get_node("HUD")
-	if hud.get_node_or_null("InventoryOverlay") == null or hud.get_node_or_null("AdventureQuickbar") == null:
-		_fail("Faltan la interfaz de inventario o la barra rápida 1–4.")
+	var inventory_overlay := hud.get_node_or_null("InventoryOverlay")
+	if (
+		inventory_overlay == null
+		or inventory_overlay.find_child("InventoryGrid", true, false) == null
+		or hud.get_node_or_null("AdventureQuickbar") == null
+		or hud.find_child("CallHorseButton", true, false) == null
+	):
+		_fail("Faltan la cuadrícula de inventario, la botonera visual o la llamada del caballo.")
 		return
 	world.get_node("AmbientAudio").call("_exit_tree")
 	world.queue_free()

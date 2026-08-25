@@ -393,6 +393,38 @@ func clear_progress(persist: bool = true) -> void:
 	selected_zone_changed.emit({})
 
 
+func get_save_state() -> Dictionary:
+	if not _initialized:
+		initialize(false)
+	return {
+		"discovered_ids": Array(get_discovered_ids()),
+		"selected_zone_id": _selected_zone_id,
+	}
+
+
+func apply_save_state(state: Dictionary, persist: bool = true) -> bool:
+	if not _initialized:
+		initialize(false)
+	var ids = state.get("discovered_ids", [])
+	if not ids is Array:
+		return false
+	_discovered.clear()
+	for raw_id in ids:
+		var zone_id := String(raw_id)
+		if _zones_by_id.has(zone_id):
+			_discovered[zone_id] = true
+	var stored_selection := String(state.get("selected_zone_id", ""))
+	_selected_zone_id = stored_selection if _zones_by_id.has(stored_selection) else ""
+	_nearby_zone_id = ""
+	progress_loaded.emit(_discovered.size(), _zones.size())
+	_emit_progress()
+	nearby_zone_changed.emit({})
+	selected_zone_changed.emit(get_selected_zone())
+	if persist and autosave_enabled:
+		save_progress()
+	return true
+
+
 func save_progress() -> bool:
 	if not _initialized:
 		initialize(false)
