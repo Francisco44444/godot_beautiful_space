@@ -3,8 +3,11 @@ extends Node3D
 
 ## Mar facetado, bancos de niebla y astros low-poly sin discos procedimentales.
 
-const WORLD_SIZE := 10000.0
+const WORLD_SIZE := 12000.0
 const MOON_DIRECTION := Vector3(-0.58, 0.69, -0.43)
+const SUN_DISTANCE := 20000.0
+const FOG_STREAM_REFRESH_SECONDS := 0.40
+const FOG_VOLUME_BUDGET := 2
 const MOON_TEXTURE: Texture2D = preload("res://assets/textures/moon/moon_craters_lowpoly.png")
 const OCEAN_SHADER := """
 shader_type spatial;
@@ -13,23 +16,85 @@ render_mode blend_mix, depth_draw_always, cull_disabled;
 uniform vec4 shallow_color : source_color = vec4(0.08, 0.58, 0.72, 0.84);
 uniform vec4 deep_color : source_color = vec4(0.025, 0.20, 0.43, 0.94);
 uniform vec4 foam_color : source_color = vec4(0.82, 0.96, 1.0, 1.0);
+uniform vec4 horizon_color : source_color = vec4(0.34, 0.64, 0.76, 1.0);
 uniform float wave_speed = 0.34;
+uniform float horizon_radius = 1200000.0;
 
 varying float wave_height;
+varying float camera_distance;
+varying vec2 world_xz;
+
+float segment_distance(vec2 point, vec2 start, vec2 finish) {
+	vec2 segment = finish - start;
+	float progress = clamp(dot(point - start, segment) / dot(segment, segment), 0.0, 1.0);
+	return distance(point, start + segment * progress);
+}
+
+float ria_distance(vec2 point) {
+	float distance_value = 100000.0;
+	distance_value = min(distance_value, segment_distance(point, vec2(-4780.0, -2100.0), vec2(-4420.0, -1950.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-4420.0, -1950.0), vec2(-4090.0, -1640.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-4090.0, -1640.0), vec2(-3720.0, -1510.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-3720.0, -1510.0), vec2(-3360.0, -1740.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-4780.0, 2250.0), vec2(-4380.0, 2040.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-4380.0, 2040.0), vec2(-3990.0, 2200.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-3990.0, 2200.0), vec2(-3610.0, 1880.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-3610.0, 1880.0), vec2(-3220.0, 1960.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-2550.0, -4480.0), vec2(-2390.0, -4100.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-2390.0, -4100.0), vec2(-2070.0, -3820.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-2070.0, -3820.0), vec2(-1760.0, -3520.0)));
+	distance_value = min(distance_value, segment_distance(point, vec2(-1760.0, -3520.0), vec2(-1600.0, -3180.0)));
+	return distance_value;
+}
+
+float coast_ratio(vec2 point) {
+	float angle = atan(point.y, point.x);
+	float cosine = cos(angle);
+	float sine = sin(angle);
+	float ellipse_radius = 1.0 / sqrt(
+		(cosine * cosine) / (4740.0 * 4740.0)
+		+ (sine * sine) / (4540.0 * 4540.0)
+	);
+	float mystery_angle = atan(sin(angle + 0.27), cos(angle + 0.27));
+	float mystery_peninsula = 1200.0 * exp(-(mystery_angle * mystery_angle) / (2.0 * 0.27 * 0.27));
+	float desert_angle = atan(sin(angle - 0.50), cos(angle - 0.50));
+	float desert_shoulder = 420.0 * exp(-(desert_angle * desert_angle) / (2.0 * 0.32 * 0.32));
+	float north_neck_angle = atan(sin(angle + 0.82), cos(angle + 0.82));
+	float north_inlet = 350.0 * exp(-(north_neck_angle * north_neck_angle) / (2.0 * 0.20 * 0.20));
+	float south_neck_angle = atan(sin(angle - 0.04), cos(angle - 0.04));
+	float south_inlet = 430.0 * exp(-(south_neck_angle * south_neck_angle) / (2.0 * 0.18 * 0.18));
+	float wobble = sin(angle * 7.0) * 0.018 + sin(angle * 13.0 + 0.7) * 0.009;
+	return length(point) / (ellipse_radius + mystery_peninsula + desert_shoulder - north_inlet - south_inlet) + wobble;
+}
 
 void vertex() {
+	vec3 world_vertex = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	world_xz = world_vertex.xz;
+	camera_distance = distance(world_vertex.xz, CAMERA_POSITION_WORLD.xz);
 	float large_wave = sin(VERTEX.x * 0.012 + TIME * wave_speed) * 0.75;
 	large_wave += cos(VERTEX.z * 0.016 - TIME * wave_speed * 0.83) * 0.52;
 	float cross_wave = sin((VERTEX.x + VERTEX.z) * 0.021 + TIME * 0.41) * 0.22;
 	wave_height = large_wave + cross_wave;
 	VERTEX.y += wave_height;
+	// Curvatura deliberadamente exagerada: oculta el borde geométrico y crea
+	// una caída oceánica continua similar a un horizonte esférico.
+	VERTEX.y -= camera_distance * camera_distance / (2.0 * horizon_radius);
 }
 
 void fragment() {
+	float island_radius = coast_ratio(world_xz);
+	bool ria_water = ria_distance(world_xz) < 128.0;
+	bool dry_fossa = world_xz.x > 2500.0 && world_xz.y > 280.0 && world_xz.y < 3360.0 && island_radius < 0.90;
+	// Bajo el interior el océano se descarta: las rías conservan agua, mientras
+	// que la fosa desértica puede verse hasta el fondo en vez de quedar inundada.
+	if ((island_radius < 0.835 && !ria_water) || dry_fossa) {
+		discard;
+	}
 	float facet = floor(clamp(wave_height * 0.22 + 0.5, 0.0, 0.999) * 5.0) / 4.0;
 	float crest = smoothstep(0.78, 1.28, wave_height);
 	ALBEDO = mix(deep_color.rgb, shallow_color.rgb, facet);
 	ALBEDO = mix(ALBEDO, foam_color.rgb, crest * 0.38);
+	ALBEDO = mix(ALBEDO, horizon_color.rgb, smoothstep(7200.0, 21000.0, camera_distance));
 	ROUGHNESS = 0.28;
 	SPECULAR = 0.58;
 	ALPHA = mix(deep_color.a, shallow_color.a, facet);
@@ -71,9 +136,12 @@ void fragment() {
 """
 
 const FOG_ZONES: Array = [
-	{"name": "BosqueUmbrio", "center": Vector3(-2180, 26, 1650), "size": Vector3(1050, 64, 920), "color": Color(0.25, 0.34, 0.31, 1), "density": 0.032},
-	{"name": "AldeaBruma", "center": Vector3(-2200, 24, -900), "size": Vector3(980, 58, 860), "color": Color(0.42, 0.48, 0.56, 1), "density": 0.026},
-	{"name": "PinarNorte", "center": Vector3(520, 92, -2650), "size": Vector3(1180, 92, 820), "color": Color(0.52, 0.59, 0.68, 1), "density": 0.019},
+	{"name": "BosqueUmbrio", "center": Vector3(-2180, 26, 1650), "size": Vector3(1050, 64, 920), "color": Color(0.25, 0.34, 0.31, 1), "density": 0.024},
+	{"name": "AldeaBruma", "center": Vector3(-2200, 24, -900), "size": Vector3(980, 58, 860), "color": Color(0.42, 0.48, 0.56, 1), "density": 0.020},
+	{"name": "PinarNorte", "center": Vector3(520, 92, -2650), "size": Vector3(1180, 92, 820), "color": Color(0.52, 0.59, 0.68, 1), "density": 0.015},
+	{"name": "BosqueTenebroso", "center": Vector3(4380, 92, -1320), "size": Vector3(2200, 150, 1800), "color": Color(0.08, 0.18, 0.29, 1), "density": 0.033},
+	{"name": "NubeBajaTenebrosa", "center": Vector3(4250, 215, -1720), "size": Vector3(2250, 86, 1420), "color": Color(0.23, 0.34, 0.48, 1), "density": 0.014},
+	{"name": "BrumaCosteraOccidental", "center": Vector3(-3550, 38, 250), "size": Vector3(1250, 54, 2200), "color": Color(0.48, 0.58, 0.62, 1), "density": 0.013},
 ]
 
 var fog_zone_count := 0
@@ -84,10 +152,20 @@ var moon_visual: MeshInstance3D
 var moon_light: DirectionalLight3D
 var moon_radius := 88.0
 var sun_visual: MeshInstance3D
-var sun_radius := 46.0
+var sun_radius := 1210.0
+var tide_period_seconds := 210.0
+var tide_phase := 0.18
+var tide_height := -0.55
+var tide_normalized := 0.5
+var tide_rising := true
+var tide_velocity := 0.0
 var _star_material: StandardMaterial3D
 var _moon_material: ShaderMaterial
 var _sun_material: ShaderMaterial
+var _ocean_material: ShaderMaterial
+var _fog_volumes: Array[FogVolume] = []
+var _fog_stream_elapsed := FOG_STREAM_REFRESH_SECONDS
+var active_fog_volume_count := 0
 
 
 func _ready() -> void:
@@ -98,7 +176,8 @@ func _ready() -> void:
 	_build_moon()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_update_tide(delta)
 	var camera := get_viewport().get_camera_3d()
 	var daylight := float(get_parent().get("daylight_factor"))
 	var directional_sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
@@ -112,11 +191,15 @@ func _process(_delta: float) -> void:
 		if moon_visual != null:
 			moon_visual.global_position = camera.global_position + MOON_DIRECTION.normalized() * 760.0
 		if sun_visual != null:
-			sun_visual.global_position = camera.global_position + sun_source_direction * 760.0
+			# El astro queda detrás de toda la isla, no a 760 m entre montañas y
+			# edificios. El radio mantiene el mismo tamaño angular que antes.
+			sun_visual.global_position = camera.global_position + sun_source_direction * SUN_DISTANCE
+		_update_fog_streaming(camera, delta)
 	if sun_visual != null:
-		# Es una geometría opaca que desaparece completamente de noche: no deja
-		# el punto negro que provocaba el disco procedural dentro de la niebla.
-		sun_visual.visible = camera != null and daylight > 0.12 and sun_source_direction.y > -0.02
+		# El radio aparente del astro exige mantener su centro visible unos grados
+		# bajo el horizonte; así no desaparece antes de completar la puesta.
+		var horizon_margin := sun_radius / SUN_DISTANCE * 1.05
+		sun_visual.visible = camera != null and daylight > 0.004 and sun_source_direction.y > -horizon_margin
 	var night := 1.0 - smoothstep(0.08, 0.34, daylight)
 	if _star_material != null:
 		_star_material.albedo_color = Color(0.88, 0.94, 1.0, night)
@@ -128,6 +211,24 @@ func _process(_delta: float) -> void:
 	if moon_light != null:
 		moon_light.light_energy = night * 0.72
 		moon_light.shadow_enabled = night > 0.08
+	if _ocean_material != null:
+		var ocean_night := Color(0.035, 0.075, 0.16, 1.0)
+		var ocean_day := Color(0.34, 0.64, 0.76, 1.0)
+		_ocean_material.set_shader_parameter("horizon_color", ocean_night.lerp(ocean_day, daylight))
+
+
+func _update_tide(delta: float) -> void:
+	if tide_period_seconds <= 0.0:
+		return
+	var previous_height := tide_height
+	tide_phase = fmod(tide_phase + delta * TAU / tide_period_seconds, TAU)
+	tide_normalized = sin(tide_phase) * 0.5 + 0.5
+	# Bajamar deja visibles los últimos brazos; pleamar entra hasta las cabeceras.
+	tide_height = lerpf(-2.30, 2.45, smoothstep(0.06, 0.94, tide_normalized))
+	tide_rising = cos(tide_phase) > 0.0001
+	tide_velocity = (tide_height - previous_height) / delta if delta > 0.0001 else 0.0
+	if ocean != null:
+		ocean.position.y = tide_height
 
 
 func _build_sun() -> void:
@@ -145,11 +246,13 @@ func _build_sun() -> void:
 	sun_visual.name = "LowPolySun"
 	sun_visual.mesh = sun_mesh
 	sun_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	sun_visual.visibility_range_end = 2400.0
+	sun_visual.visibility_range_end = 0.0
 	sun_visual.visible = false
 	sun_visual.set_meta("low_poly_sun", true)
 	sun_visual.set_meta("opaque_sun", true)
 	sun_visual.set_meta("radius_metres", sun_radius)
+	sun_visual.set_meta("celestial_distance", SUN_DISTANCE)
+	sun_visual.set_meta("behind_world_geometry", true)
 	add_child(sun_visual)
 
 
@@ -157,19 +260,24 @@ func _build_ocean() -> void:
 	ocean = MeshInstance3D.new()
 	ocean.name = "LowPolyOcean"
 	var mesh := PlaneMesh.new()
-	mesh.size = Vector2(WORLD_SIZE * 1.34, WORLD_SIZE * 1.34)
-	mesh.subdivide_width = 144
-	mesh.subdivide_depth = 144
+	mesh.size = Vector2(WORLD_SIZE * 6.0, WORLD_SIZE * 6.0)
+	mesh.subdivide_width = 320
+	mesh.subdivide_depth = 320
 	ocean.mesh = mesh
-	ocean.position.y = -0.55
+	ocean.position.y = tide_height
 	ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	ocean.visibility_range_end = 16000.0
+	ocean.visibility_range_end = 28000.0
 	ocean.set_meta("low_poly_waves", true)
+	ocean.set_meta("spherical_horizon", true)
+	ocean.set_meta("horizon_radius", 1200000.0)
+	ocean.set_meta("animated_tides", true)
+	ocean.set_meta("rising_tide_pushes_actors", true)
+	ocean.set_meta("tide_range", Vector2(-2.30, 2.45))
 	var shader := Shader.new()
 	shader.code = OCEAN_SHADER
-	var material := ShaderMaterial.new()
-	material.shader = shader
-	ocean.material_override = material
+	_ocean_material = ShaderMaterial.new()
+	_ocean_material.shader = shader
+	ocean.material_override = _ocean_material
 	add_child(ocean)
 
 
@@ -186,8 +294,39 @@ func _build_fog_zones() -> void:
 		fog.edge_fade = 0.72
 		fog.height_falloff = 0.34
 		volume.material = fog
+		volume.set_meta("activation_radius", maxf(zone.size.x, zone.size.z) * 0.62 + 520.0)
+		volume.set_meta("high_altitude_only", String(zone.name) == "NubeBajaTenebrosa")
+		volume.set_meta("distance_streamed", true)
+		volume.visible = false
 		add_child(volume)
+		_fog_volumes.append(volume)
 		fog_zone_count += 1
+
+
+func _update_fog_streaming(camera: Camera3D, delta: float) -> void:
+	_fog_stream_elapsed += delta
+	if _fog_stream_elapsed < FOG_STREAM_REFRESH_SECONDS:
+		return
+	_fog_stream_elapsed = 0.0
+	active_fog_volume_count = 0
+	var camera_flat := Vector2(camera.global_position.x, camera.global_position.z)
+	var candidates: Array[Dictionary] = []
+	for volume in _fog_volumes:
+		var center_flat := Vector2(volume.global_position.x, volume.global_position.z)
+		var distance := camera_flat.distance_to(center_flat)
+		var active := distance <= float(volume.get_meta("activation_radius", 1200.0))
+		if bool(volume.get_meta("high_altitude_only", false)) and camera.global_position.y < 118.0:
+			active = false
+		volume.visible = false
+		if active:
+			candidates.append({"distance": distance, "volume": volume})
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["distance"]) < float(b["distance"]))
+	for index in mini(candidates.size(), FOG_VOLUME_BUDGET):
+		var active_volume := candidates[index]["volume"] as FogVolume
+		active_volume.visible = true
+		active_fog_volume_count += 1
+	set_meta("active_fog_volume_count", active_fog_volume_count)
+	set_meta("fog_volume_budget", FOG_VOLUME_BUDGET)
 
 
 func _build_stars() -> void:

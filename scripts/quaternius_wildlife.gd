@@ -14,8 +14,9 @@ const ANIMAL_SPECS: Array[Dictionary] = [
 @export_category("Reacción al jugador")
 @export var awareness_distance := 28.0
 @export var close_awareness_distance := 10.0
-@export var flee_speed := 4.2
-@export var reaction_seconds := 2.8
+@export var flee_speed := 8.4
+@export var flee_animation_speed := 0.92
+@export var reaction_seconds := 3.4
 @export var roaming_radius := 22.0
 
 var generated_animal_count := 0
@@ -36,6 +37,7 @@ func _ready() -> void:
 		animal.name = "%s_%02d" % [spec["path"].get_file().get_basename(), generated_animal_count + 1]
 		animal.scale = Vector3.ONE * float(spec["scale"])
 		animal.rotation_degrees.y = float(spec["yaw"])
+		animal.set_meta("visual_forward_axis", "+Z")
 		animal.position = spec["position"]
 		if _terrain != null:
 			var height := _terrain.data.get_height(animal.position)
@@ -89,7 +91,7 @@ func _update_animal(agent: Dictionary, delta: float) -> void:
 	if float(agent["alert_time"]) > 0.0:
 		move_direction = agent["flee_direction"] as Vector3
 		move_speed = flee_speed
-		_play_animation(agent["animator"] as AnimationPlayer, "Gallop", 1.12)
+		_play_animation(agent["animator"] as AnimationPlayer, "Gallop", flee_animation_speed)
 	else:
 		agent["alerted"] = false
 		var home := agent["home"] as Vector3
@@ -102,8 +104,19 @@ func _update_animal(agent: Dictionary, delta: float) -> void:
 			_play_animation(agent["animator"] as AnimationPlayer, "Idle", 1.0)
 
 	if move_speed <= 0.0 or move_direction.length_squared() <= 0.01:
+		animal.set_meta("current_move_speed", 0.0)
 		return
-	var candidate := animal.position + move_direction * move_speed * delta
+
+	# Las mallas de Ultimate Animated Animals miran hacia +Z. Antes se alineaba
+	# -Z con la huida, así que visualmente galopaban de espaldas. Primero giramos
+	# y después desplazamos sobre su propio eje delantero para evitar deslizamiento.
+	var desired_yaw := atan2(move_direction.x, move_direction.z)
+	animal.rotation.y = lerp_angle(animal.rotation.y, desired_yaw, 1.0 - exp(-18.0 * delta))
+	var visual_forward := animal.global_basis.z.normalized()
+	if visual_forward.dot(move_direction) < 0.35:
+		animal.rotation.y = desired_yaw
+		visual_forward = animal.global_basis.z.normalized()
+	var candidate := animal.position + visual_forward * move_speed * delta
 	candidate.x = clampf(candidate.x, -232.0, 232.0)
 	candidate.z = clampf(candidate.z, -232.0, 232.0)
 	if _terrain != null:
@@ -112,8 +125,8 @@ func _update_animal(agent: Dictionary, delta: float) -> void:
 			return
 		candidate.y = ground + 0.04
 	animal.position = candidate
-	var desired_yaw := atan2(-move_direction.x, -move_direction.z)
-	animal.rotation.y = lerp_angle(animal.rotation.y, desired_yaw, 1.0 - exp(-8.0 * delta))
+	animal.set_meta("current_move_speed", move_speed)
+	animal.set_meta("animation_motion_ratio", flee_animation_speed / flee_speed if bool(agent["alerted"]) else 0.88 / maxf(move_speed, 0.01))
 
 
 func _can_see_player(animal: Node3D, to_player: Vector3, distance: float) -> bool:
@@ -121,18 +134,27 @@ func _can_see_player(animal: Node3D, to_player: Vector3, distance: float) -> boo
 		return false
 	if distance <= close_awareness_distance:
 		return true
-	var look_direction := -animal.global_basis.z.normalized()
+	var look_direction := animal.global_basis.z.normalized()
 	return look_direction.dot(to_player.normalized()) > -0.15
 
 
 func _load_gltf_scene(path: String) -> Node3D:
+	var imported := ResourceLoader.load(path)
+	if imported is PackedScene:
+		var imported_node := (imported as PackedScene).instantiate() as Node3D
+		if imported_node != null:
+			imported_node.set_meta("loaded_via_project_importer", true)
+		return imported_node
 	var state := GLTFState.new()
 	var document := GLTFDocument.new()
 	var error := document.append_from_file(path, state)
 	if error != OK:
 		push_error("No se pudo cargar fauna Quaternius: %s" % path)
 		return null
-	return document.generate_scene(state) as Node3D
+	var node := document.generate_scene(state) as Node3D
+	if node != null:
+		node.set_meta("loaded_via_project_importer", false)
+	return node
 
 
 func _play_animation(animator: AnimationPlayer, requested: String, speed: float) -> void:

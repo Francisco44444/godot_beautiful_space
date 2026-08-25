@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Valida protagonista, cuchillo, animaciones y ataque con un blanco aislado.
+## Valida inventario 1–4, socket de mano y golpes físicos con objetos Survival.
 
 
 func _init() -> void:
@@ -36,7 +36,7 @@ func _run_test() -> void:
 	if player.skin_surface_count < 1 or not _has_human_skin_override(model_root, player.hero_skin_color):
 		_fail("La piel negra original del Cowboy_Male no se cambió a un tono humano naranja.")
 		return
-	for required_animation in ["Idle", "Walk", "Run", "SwordSlash"]:
+	for required_animation in ["Idle", "Walk", "Run", "Punch", "SwordSlash"]:
 		if not animator.has_animation(required_animation):
 			_fail("Falta la animación Quaternius: %s" % required_animation)
 			return
@@ -44,14 +44,72 @@ func _run_test() -> void:
 		_fail("El protagonista Quaternius no inicia con una animación de locomoción válida.")
 		return
 
-	var knife_grip := player.get_node_or_null("Visual/ModelRoot/KnifeGrip") as Node3D
-	var knife := player.get_node_or_null("Visual/ModelRoot/KnifeGrip/EquippedKnife") as MeshInstance3D
-	if knife_grip == null or knife == null or knife.mesh == null or not knife.is_visible_in_tree():
-		_fail("El cuchillo del Survival Pack no está visible en el protagonista Quaternius.")
+	var hand_socket := model_root.find_child("RightHandSocket", true, false) as BoneAttachment3D
+	var equipment_grip := model_root.find_child("EquipmentGrip", true, false) as Node3D
+	if hand_socket == null or hand_socket.bone_name != "Fist.R" or equipment_grip == null:
+		_fail("Los objetos no están unidos al hueso Fist.R de la mano.")
 		return
-	if knife.mesh.get_surface_count() < 3 or knife.mesh.get_aabb().size.length() <= 0.0:
-		_fail("El cuchillo runtime no conserva su geometría y materiales Quaternius.")
+	if player.equipped_slot != 0 or player.get_equipped_mesh() != null or equipment_grip.get_child_count() != 0:
+		_fail("El protagonista debe comenzar con las manos vacías y sin objetos enfundados.")
 		return
+	if player.start_attack():
+		_fail("No debe iniciarse un golpe de arma mientras las manos están vacías.")
+		return
+
+	var expected_nodes := ["EquippedKnife", "EquippedAxe", "EquippedTorch", "EquippedCompass"]
+	var equip_key := InputEventKey.new()
+	equip_key.physical_keycode = KEY_1
+	equip_key.pressed = true
+	player.call("_unhandled_input", equip_key)
+	if player.equipped_slot != 1 or player.get_equipped_mesh() == null:
+		_fail("La tecla 1 no equipa el cuchillo.")
+		return
+	for slot in range(1, 5):
+		if not player.equip_item(slot):
+			_fail("No se pudo equipar el objeto Survival del hueco %d." % slot)
+			return
+		var equipped := player.get_equipped_mesh()
+		if equipped == null or equipped.name != expected_nodes[slot - 1] or equipped.mesh == null:
+			_fail("El hueco %d no muestra el objeto correcto en la mano." % slot)
+			return
+		if equipped.mesh.get_surface_count() < 3 or equipped.mesh.get_aabb().size.length() <= 0.0:
+			_fail("El objeto %d no conserva su geometría y materiales Quaternius." % slot)
+			return
+		if not bool(equipped.get_meta("held_in_right_hand", false)) or equipment_grip.get_child_count() != 1:
+			_fail("El objeto %d no sustituyó limpiamente al anterior en la mano." % slot)
+			return
+		if equipped.get_parent() != equipment_grip or equipped.top_level:
+			_fail("El objeto %d no hereda directamente el movimiento de Fist.R." % slot)
+			return
+		if equipment_grip.position.length() > 0.27:
+			_fail("El agarre del objeto %d queda demasiado lejos del centro del puño." % slot)
+			return
+		if not equipment_grip.position.is_equal_approx(equipped.get_meta("grip_position", Vector3.INF)):
+			_fail("El objeto %d perdió su punto de empuñadura calibrado." % slot)
+			return
+		if _brightest_surface_luminance(equipped) < 0.32:
+			_fail("El objeto %d vuelve a quedar ilegible por materiales demasiado oscuros." % slot)
+			return
+		var authored_up := (equipment_grip.basis * Vector3.UP).normalized()
+		if slot in [2, 3]:
+			var arm_parallelism := authored_up.dot(Vector3.DOWN)
+			if (
+				arm_parallelism < 0.52 or arm_parallelism > 0.82
+				or absf(authored_up.x) < 0.38
+				or absf(authored_up.z) < 0.34
+			):
+				_fail("El hacha/antorcha %d vuelve a quedar paralela al antebrazo." % slot)
+				return
+		if slot == 4:
+			var dial_normal := (equipment_grip.basis * Vector3.BACK).normalized()
+			if dial_normal.dot(Vector3.DOWN) < 0.96:
+				_fail("El dial de la brújula no mira hacia arriba desde la palma.")
+				return
+		if slot == 3 and equipped.get_node_or_null("TorchLight") == null:
+			_fail("La antorcha equipada no emite luz.")
+			return
+	player.equip_item(1)
+	var knife := player.get_equipped_mesh()
 
 	var crate := BreakableProp.new()
 	crate.name = "CombatTestTarget"
@@ -64,17 +122,25 @@ func _run_test() -> void:
 	crate_collision.position.y = 0.53
 	crate.add_child(crate_collision)
 	world.add_child(crate)
-	crate.global_position = player.global_position + Vector3(0.0, 0.0, -0.95)
+	var attack_forward := -player.visual.global_basis.z.normalized()
+	crate.global_position = player.global_position + attack_forward * 1.30
 	crate.rotation = Vector3.ZERO
 	await physics_frame
-	var knife_rotation_before := knife_grip.rotation
+	var knife_position_before := knife.global_position
+	var mouse_attack_bound := false
+	for input_event in InputMap.action_get_events("attack"):
+		if input_event is InputEventMouseButton and input_event.button_index == MOUSE_BUTTON_LEFT:
+			mouse_attack_bound = true
+	if not mouse_attack_bound:
+		_fail("El clic izquierdo no está asociado a la acción de ataque.")
+		return
 	if not player.start_attack():
-		_fail("No se pudo iniciar el primer ataque.")
+		_fail("La acción de ataque no inició el golpe con el cuchillo equipado.")
 		return
 	for _frame in 18:
 		await physics_frame
-	if knife_grip.rotation.distance_to(knife_rotation_before) < 0.05:
-		_fail("El cuchillo visible no acompañó el arco del primer ataque.")
+	if knife.global_position.distance_to(knife_position_before) < 0.08:
+		_fail("El cuchillo sujeto a la mano no acompañó el arco del ataque.")
 		return
 	for _frame in 17:
 		await physics_frame
@@ -83,8 +149,9 @@ func _run_test() -> void:
 		return
 	for _frame in 32:
 		await physics_frame
+	player.equip_item(2)
 	if not player.start_attack():
-		_fail("No se pudo encadenar un segundo ataque tras la recuperación.")
+		_fail("No se pudo atacar con el hacha tras cambiar de objeto.")
 		return
 	for _frame in 35:
 		await physics_frame
@@ -95,7 +162,7 @@ func _run_test() -> void:
 	world.queue_free()
 	for _frame in 8:
 		await process_frame
-	print("MEDIEVAL COMBAT TEST OK: héroe animado, cuchillo Quaternius e impactos operativos.")
+	print("MEDIEVAL COMBAT TEST OK: inventario 1–4 en Fist.R, clic de ataque e impactos físicos operativos.")
 	quit(0)
 
 
@@ -136,3 +203,13 @@ func _has_human_skin_override(parent: Node, expected_color: Color) -> bool:
 			if override != null and override.albedo_color.is_equal_approx(expected_color) and bool(override.get_meta("human_skin_recolor", false)):
 				return true
 	return false
+
+
+func _brightest_surface_luminance(equipment: MeshInstance3D) -> float:
+	var brightest := 0.0
+	for surface in equipment.mesh.get_surface_count():
+		var material := equipment.mesh.surface_get_material(surface) as BaseMaterial3D
+		if material == null:
+			continue
+		brightest = maxf(brightest, material.albedo_color.get_luminance())
+	return brightest

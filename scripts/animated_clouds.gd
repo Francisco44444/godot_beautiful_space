@@ -1,13 +1,16 @@
 extends Node3D
 class_name AnimatedClouds
 
-## Nubes altas y ligeras sobre planos sin costuras. El sistema evita una
+## Nubes altas y bajas sobre planos sin costuras. El sistema evita una
 ## SphereMesh porque su unión UV producía la cuña vertical visible en el cielo.
 
-@export_range(1, 3, 1) var layer_count := 2
+@export_range(2, 4, 1) var layer_count := 3
 @export var cloud_altitude := 220.0
+@export var low_cloud_altitude := 108.0
 @export var wind_direction := Vector2(1.0, 0.28)
-@export var wind_speed := 0.008
+@export var wind_speed := 0.016
+
+var _cloud_travel := Vector2.ZERO
 
 const CLOUD_SHADER := """
 shader_type spatial;
@@ -89,6 +92,8 @@ func _process(delta: float) -> void:
 	var follow_weight := 1.0 - exp(-2.5 * delta)
 	global_position.x = lerpf(global_position.x, active_camera.global_position.x, follow_weight)
 	global_position.z = lerpf(global_position.z, active_camera.global_position.z, follow_weight)
+	var normalized_wind := wind_direction.normalized()
+	_cloud_travel += normalized_wind * delta * 18.0
 	var daylight := float(get_parent().get("daylight_factor"))
 	var day_color := Color(0.98, 0.99, 1.0, 1.0)
 	var night_color := Color(0.11, 0.15, 0.27, 1.0)
@@ -101,6 +106,15 @@ func _process(delta: float) -> void:
 		var material := layer.material_override as ShaderMaterial
 		if material == null:
 			continue
+		# Además del ruido UV, cada banco viaja físicamente. El desvanecido de los
+		# bordes permite reciclarlo alrededor de la cámara sin saltos visibles.
+		var base_position: Vector3 = layer.get_meta("base_position", layer.position)
+		var layer_index := maxi(layer.get_index(), 0)
+		var travel_span := 230.0 + layer_index * 70.0
+		var wrapped_x := fposmod(_cloud_travel.x * (1.0 + layer_index * 0.18) + travel_span, travel_span * 2.0) - travel_span
+		var wrapped_z := fposmod(_cloud_travel.y * (1.0 + layer_index * 0.13) + travel_span, travel_span * 2.0) - travel_span
+		layer.position.x = base_position.x + wrapped_x
+		layer.position.z = base_position.z + wrapped_z
 		material.set_shader_parameter("cloud_color", night_color.lerp(day_color, daylight))
 		material.set_shader_parameter("shadow_color", night_shadow.lerp(day_shadow, daylight))
 
@@ -123,7 +137,7 @@ func _rebuild_cloud_layers() -> void:
 		plane.set_meta("seam_free_plane", true)
 
 		var mesh := PlaneMesh.new()
-		mesh.size = Vector2(1420.0 + index * 180.0, 980.0 + index * 120.0)
+		mesh.size = Vector2(1320.0 + index * 210.0, 900.0 + index * 130.0)
 		mesh.subdivide_width = 32
 		mesh.subdivide_depth = 24
 		plane.mesh = mesh
@@ -133,12 +147,15 @@ func _rebuild_cloud_layers() -> void:
 		material.set_shader_parameter("wind", normalized_wind)
 		material.set_shader_parameter("speed", wind_speed * (0.86 + index * 0.13))
 		material.set_shader_parameter("scale", 3.7 + index * 0.55)
-		material.set_shader_parameter("coverage", 0.56 + index * 0.035)
+		material.set_shader_parameter("coverage", 0.59 if index == 0 else 0.55 + index * 0.032)
 		material.set_shader_parameter("softness", 0.13 + index * 0.015)
-		material.set_shader_parameter("opacity", 0.36 - index * 0.10)
+		material.set_shader_parameter("opacity", 0.24 if index == 0 else 0.37 - index * 0.075)
 		material.set_shader_parameter("layer_seed", float(index) * 17.3)
 		plane.material_override = material
 
-		plane.position = Vector3(0.0, cloud_altitude + index * 34.0, -90.0 - index * 85.0)
+		plane.position = Vector3(0.0, low_cloud_altitude if index == 0 else cloud_altitude + (index - 1) * 48.0, -70.0 - index * 82.0)
 		plane.rotation_degrees.y = -8.0 + index * 16.0
+		plane.set_meta("base_position", plane.position)
+		plane.set_meta("geometric_motion", true)
+		plane.set_meta("low_cloud", index == 0)
 		add_child(plane)

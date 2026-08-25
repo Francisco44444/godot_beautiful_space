@@ -175,6 +175,12 @@ func _load_quaternius_horse() -> void:
 
 
 func _load_gltf_scene(path: String) -> Node3D:
+	var imported := ResourceLoader.load(path)
+	if imported is PackedScene:
+		var imported_node := (imported as PackedScene).instantiate() as Node3D
+		if imported_node != null:
+			imported_node.set_meta("loaded_via_project_importer", true)
+		return imported_node
 	var state := GLTFState.new()
 	var document := GLTFDocument.new()
 	var error := document.append_from_file(path, state)
@@ -182,6 +188,8 @@ func _load_gltf_scene(path: String) -> Node3D:
 		push_error("No se pudo cargar el modelo Quaternius: %s" % path)
 		return null
 	var node := document.generate_scene(state)
+	if node != null:
+		node.set_meta("loaded_via_project_importer", false)
 	return node as Node3D
 
 

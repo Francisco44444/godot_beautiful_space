@@ -5,12 +5,19 @@
 
 # Builds locales y archivos del sistema.
 builds/
+dist/
 .DS_Store
 .idea/
+__pycache__/
+*.pyc
+/web-game/
+/web-game-live/
 
 # Dependencias locales opcionales del servidor MCP.
 tools/godot-mcp/
 tools/runtime/
+tools/export_templates/
+.ci/
 
 # De los packs fuente sólo versionamos los formatos útiles para Godot. Los
 # proyectos de Blender/Unity duplican el mismo contenido.
@@ -18,3 +25,5 @@ assets/animations/Universal Animation Library 2\[Standard\]/Female Mannequin/
 assets/animations/Universal Animation Library 2\[Standard\]/Unity/
 assets/animations/Universal Animation Library 2\[Standard\]/*.png
 assets/quaternius/Survival Pack - Sept 2020/Blends/
+assets/quaternius/Modular Medieval Buildings - Jul 2017/Blends/
+assets/quaternius/Modular Medieval Buildings - Jul 2017/FBX/

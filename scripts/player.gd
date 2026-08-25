@@ -1,26 +1,68 @@
 class_name Player
 extends CharacterBody3D
 
-## Aventurero Quaternius en tercera persona. Mantiene la máquina de estados
-## a pie/montado y añade combate cuerpo a cuerpo con cuchillo.
+## Aventurero Quaternius en tercera persona con inventario rápido, combate
+## cuerpo a cuerpo y objetos Survival Pack unidos al hueso de la mano.
 
 signal mount_state_changed(mounted: bool, horse: Horse)
 signal attack_started(combo_index: int)
 signal melee_hit(target: Node)
+signal equipment_changed(slot: int, item_name: String)
 
 enum ControlState {
 	ON_FOOT,
 	MOUNTED,
 }
 
-const KNIFE_OBJ_PATH := "res://assets/quaternius/Survival Pack - Sept 2020/OBJ/Knife.obj"
 const OBJ_LOADER: Script = preload("res://scripts/quaternius_obj_loader.gd")
+const SURVIVAL_OBJ_ROOT := "res://assets/quaternius/Survival Pack - Sept 2020/OBJ/"
+const CHARACTER_PATHS: Array[String] = [
+	"res://assets/quaternius/ultimate_animated_characters/glTF/Cowboy_Male.gltf",
+	"res://assets/quaternius/ultimate_animated_characters/glTF/Cowboy_Female.gltf",
+	"res://assets/quaternius/ultimate_animated_characters/glTF/Knight_Male.gltf",
+	"res://assets/quaternius/ultimate_animated_characters/glTF/Knight_Golden_Female.gltf",
+	"res://assets/quaternius/ultimate_animated_characters/glTF/Viking_Male.gltf",
+	"res://assets/quaternius/ultimate_animated_characters/glTF/Viking_Female.gltf",
+	"res://assets/quaternius/ultimate_animated_characters/glTF/Elf.gltf",
+	"res://assets/quaternius/ultimate_animated_characters/glTF/Witch.gltf",
+]
+const EQUIPMENT_SPECS: Dictionary = {
+	1: {
+		"name": "Cuchillo", "node_name": "EquippedKnife", "path": SURVIVAL_OBJ_ROOT + "Knife.obj",
+		# El OBJ crece por +Y desde la empuñadura. Lo inclinamos hacia el frente
+		# del personaje para que la hoja salga del puño y no cuelgue de la muñeca.
+		"scale": 0.74, "position": Vector3(0.055, 0.01, -0.10),
+		"rotation": Vector3(PI * 0.20, 0.0, -0.10), "reach": 1.85,
+	},
+	2: {
+		"name": "Hacha", "node_name": "EquippedAxe", "path": SURVIVAL_OBJ_ROOT + "Axe_Small.obj",
+		# El mango sale del puño en diagonal: hacia delante y ligeramente hacia
+		# fuera. Así deja de copiar la línea vertical del antebrazo.
+		"scale": 0.50, "position": Vector3(0.12, 0.015, -0.12),
+		"rotation": Vector3(-0.55, 0.0, PI + 0.65), "reach": 2.10,
+	},
+	3: {
+		"name": "Antorcha", "node_name": "EquippedTorch", "path": SURVIVAL_OBJ_ROOT + "WoodenTorch_Fire.obj",
+		# Mantiene el mango dentro de la mano, pero su parte alta se proyecta hacia
+		# delante y fuera para separarse visualmente del brazo.
+		"scale": 0.38, "position": Vector3(0.10, 0.015, -0.10),
+		"rotation": Vector3(-0.46, 0.0, PI + 0.58), "reach": 2.20,
+	},
+	4: {
+		"name": "Brújula", "node_name": "EquippedCompass", "path": SURVIVAL_OBJ_ROOT + "Compass_Open.obj",
+		# El dial del OBJ mira por +Z. Con +90º queda mirando hacia arriba, como
+		# una brújula sostenida en la palma, visible desde la cámara elevada.
+		"scale": 0.72, "position": Vector3(0.12, 0.18, -0.08),
+		"rotation": Vector3(PI * 0.5, 0.0, -0.10), "reach": 1.35,
+	},
+}
 
 const ANIM_IDLE := "Idle"
 const ANIM_WALK := "Walk"
 const ANIM_RUN := "Run"
 const ANIM_JUMP := "Jump"
 const ANIM_ATTACK := "SwordSlash"
+const ANIM_STAB := "Punch"
 const ANIM_SIT := "SitDown"
 const REALISTIC_IDLE := ANIM_IDLE
 
@@ -46,6 +88,7 @@ const REALISTIC_IDLE := ANIM_IDLE
 @export_category("Quaternius")
 @export_file("*.gltf") var quaternius_hero_path := "res://assets/quaternius/ultimate_animated_characters/glTF/Cowboy_Male.gltf"
 @export var hero_skin_color := Color("d87842")
+@export var network_remote := false
 
 @export_category("Montura")
 @export var mount_distance: float = 3.6
@@ -75,37 +118,94 @@ var _attack_hits: Dictionary = {}
 var _realistic_stride := 0.0
 var _weapon_grip: Node3D
 var _weapon_base_rotation := Vector3.ZERO
+var _weapon_socket: BoneAttachment3D
+var _equipped_mesh: MeshInstance3D
+var _equipment_mesh_cache: Dictionary = {}
+var _attack_reach := 1.25
 var skin_surface_count := 0
+var equipped_slot := 0
+var equipped_item_name := "Manos vacías"
+var player_display_name := "Aventurero"
+var character_index := 0
+var _network_target_position := Vector3.ZERO
+var _network_target_yaw := 0.0
+var _network_target_velocity := Vector3.ZERO
+var _network_state_ready := false
+var _nameplate: Label3D
 
 
 func _ready() -> void:
 	spawn_position = global_position
+	if not network_remote:
+		var settings := get_node_or_null("/root/GameSettings")
+		if settings != null:
+			player_display_name = String(settings.get("player_name"))
+			character_index = int(settings.get("character_index"))
+			settings.connect("identity_changed", Callable(self, "_on_local_identity_changed"))
+		quaternius_hero_path = _character_path(character_index)
+		add_to_group("local_player")
+	else:
+		collision_layer = 0
+		collision_mask = 0
+		collision.disabled = true
+		attack_area.monitoring = false
+		attack_area.monitorable = false
 	floor_snap_length = 0.35
 	floor_max_angle = deg_to_rad(48.0)
 	attack_shape.disabled = true
+	attack_shape.shape = attack_shape.shape.duplicate()
 	_load_quaternius_hero()
 	model_root.visible = true
 	_configure_realistic_hero()
-	_attach_knife_to_hand()
+	_build_right_hand_socket()
 	_configure_animation_loops()
 	_play_animation(ANIM_IDLE, 0.0)
+	_build_nameplate()
 
 
 func _process(delta: float) -> void:
 	_update_realistic_visual(delta)
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if network_remote:
+		return
+	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+	var key_event := event as InputEventKey
+	var pressed_key := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+	var slot := 0
+	match pressed_key:
+		KEY_1:
+			slot = 1
+		KEY_2:
+			slot = 2
+		KEY_3:
+			slot = 3
+		KEY_4:
+			slot = 4
+	if slot > 0 and equip_item(slot):
+		get_viewport().set_input_as_handled()
+
+
 func _physics_process(delta: float) -> void:
+	if network_remote:
+		_update_network_replica(delta)
+		return
 	_attack_cooldown = maxf(_attack_cooldown - delta, 0.0)
 	if control_state == ControlState.MOUNTED:
 		_sync_with_mount()
 		if Input.is_action_just_pressed("interact"):
+			if _confirm_nearby_exploration():
+				return
 			dismount()
 		return
 
 	if Input.is_action_just_pressed("attack"):
 		start_attack()
 	if Input.is_action_just_pressed("interact") and not is_attacking:
+		if _confirm_nearby_exploration():
+			return
 		var nearby_horse := get_nearby_mount()
 		if nearby_horse != null:
 			mount_horse(nearby_horse)
@@ -122,20 +222,87 @@ func _physics_process(delta: float) -> void:
 		_respawn()
 
 
+func _confirm_nearby_exploration() -> bool:
+	var exploration := get_node_or_null("/root/ExplorationManager")
+	if exploration == null:
+		return false
+	# Actualización inmediata: no obliga a esperar al muestreo periódico de 160 ms
+	# cuando el jugador llega a un hito y pulsa E en el mismo instante.
+	exploration.call("update_player_position", global_position)
+	var discovered := exploration.call("confirm_current_zone") as Dictionary
+	return not discovered.is_empty()
+
+
 func start_attack() -> bool:
+	if equipped_slot == 0 or _equipped_mesh == null:
+		return false
 	if is_mounted() or is_attacking or _attack_cooldown > 0.0:
 		return false
 	is_attacking = true
 	_attack_time = 0.0
 	_attack_hits.clear()
 	attacks_performed += 1
-	_play_animation(ANIM_ATTACK, 0.06, 1.45)
+	var equipped_animation := ANIM_STAB if equipped_slot in [1, 4] else ANIM_ATTACK
+	_play_animation(equipped_animation, 0.06, 1.45)
 	attack_started.emit(attacks_performed)
 	return true
 
 
 func is_mounted() -> bool:
 	return control_state == ControlState.MOUNTED and is_instance_valid(current_mount)
+
+
+func get_facing_direction_xz() -> Vector2:
+	# El CharacterBody no gira: gira Visual, y al montar Visual pasa a ser hijo
+	# del caballo. Leer su base global mantiene brújula y mapa correctos en ambos
+	# estados sin duplicar lógica de orientación.
+	var forward := -visual.global_basis.z
+	var direction := Vector2(forward.x, forward.z)
+	return direction.normalized() if direction.length_squared() > 0.0001 else Vector2.UP
+
+
+func get_network_facing_yaw() -> float:
+	var direction := get_facing_direction_xz()
+	return atan2(-direction.x, -direction.y)
+
+
+func configure_network_replica(name_value: String, index_value: int) -> void:
+	network_remote = true
+	player_display_name = name_value.strip_edges().left(24)
+	if player_display_name.is_empty():
+		player_display_name = "Aventurero"
+	character_index = clampi(index_value, 0, CHARACTER_PATHS.size() - 1)
+	quaternius_hero_path = _character_path(character_index)
+
+
+func apply_identity(name_value: String, index_value: int) -> void:
+	player_display_name = name_value.strip_edges().left(24)
+	if player_display_name.is_empty():
+		player_display_name = "Aventurero"
+	var safe_index := clampi(index_value, 0, CHARACTER_PATHS.size() - 1)
+	var next_path := _character_path(safe_index)
+	var character_changed := safe_index != character_index or next_path != quaternius_hero_path
+	character_index = safe_index
+	quaternius_hero_path = next_path
+	if _nameplate != null:
+		_nameplate.text = player_display_name
+	if character_changed and is_node_ready():
+		_reload_quaternius_hero()
+
+
+func apply_network_state(position_value: Vector3, yaw_value: float, velocity_value: Vector3, slot_value: int) -> void:
+	_network_target_position = position_value
+	_network_target_yaw = yaw_value
+	_network_target_velocity = velocity_value
+	if not _network_state_ready:
+		global_position = position_value
+		visual.rotation.y = yaw_value
+		_network_state_ready = true
+	if slot_value != equipped_slot:
+		if slot_value > 0:
+			equip_item(slot_value)
+		else:
+			_clear_equipped_item()
 
 
 func get_camera_target() -> Node3D:
@@ -213,13 +380,42 @@ func _update_attack(delta: float) -> void:
 
 
 func _apply_melee_hits() -> void:
+	var candidates: Array[Node] = []
 	for body in attack_area.get_overlapping_bodies():
-		if body == self or _attack_hits.has(body.get_instance_id()):
-			continue
-		_attack_hits[body.get_instance_id()] = true
-		if body.has_method("receive_melee_hit"):
-			body.call("receive_melee_hit", attack_area.global_position)
-		melee_hit.emit(body)
+		candidates.append(body)
+
+	# La consulta física adicional evita perder golpes si el arma cruza un
+	# objetivo entre dos actualizaciones del monitor de Area3D.
+	var forward := -visual.global_basis.z.normalized()
+	var query_shape := BoxShape3D.new()
+	query_shape.size = Vector3(1.65, 2.05, _attack_reach)
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = query_shape
+	query.transform = Transform3D(
+		visual.global_basis.orthonormalized(),
+		global_position + Vector3.UP * 1.05 + forward * (_attack_reach * 0.52)
+	)
+	query.collision_mask = 5
+	query.collide_with_bodies = true
+	query.collide_with_areas = false
+	query.exclude = [get_rid()]
+	for result in get_world_3d().direct_space_state.intersect_shape(query, 24):
+		var collider := result.get("collider") as Node
+		if collider != null and collider not in candidates:
+			candidates.append(collider)
+
+	for body in candidates:
+		_apply_hit_to_body(body)
+
+
+func _apply_hit_to_body(body: Node) -> void:
+	if body == self or _attack_hits.has(body.get_instance_id()):
+		return
+	_attack_hits[body.get_instance_id()] = true
+	var hit_position := _equipped_mesh.global_position if _equipped_mesh != null else attack_area.global_position
+	if body.has_method("receive_melee_hit"):
+		body.call("receive_melee_hit", hit_position)
+	melee_hit.emit(body)
 
 
 func _sync_with_mount() -> void:
@@ -327,12 +523,15 @@ func _update_realistic_visual(delta: float) -> void:
 		var follow_through := sin(phase * PI * 0.72)
 		var slash_progress := smoothstep(0.04, 0.78, phase)
 		desired_position.z = -0.18 * strike
-		desired_rotation.y = deg_to_rad(32.0 * strike - 12.0 * follow_through)
-		desired_rotation.z = deg_to_rad(-8.0 * strike)
-		# La hoja parte armada junto al hombro y recorre casi 180 grados hasta
-		# terminar al otro lado del cuerpo durante la ventana de impacto.
-		desired_weapon_rotation.y += deg_to_rad(22.0 * strike)
-		desired_weapon_rotation.z += deg_to_rad(lerpf(64.0, -118.0, slash_progress))
+		desired_rotation.y = deg_to_rad(16.0 * strike - 6.0 * follow_through)
+		desired_rotation.z = deg_to_rad(-4.0 * strike)
+		# Cuchillo/brújula usan una estocada de puño; hacha/antorcha un arco ancho.
+		if equipped_slot in [1, 4]:
+			desired_weapon_rotation.x += deg_to_rad(-24.0 * strike)
+			desired_weapon_rotation.z += deg_to_rad(12.0 * follow_through)
+		else:
+			desired_weapon_rotation.y += deg_to_rad(7.0 * strike)
+			desired_weapon_rotation.z += deg_to_rad(lerpf(92.0, -110.0, slash_progress))
 	else:
 		desired_position.y = absf(sin(_realistic_stride)) * 0.035 * motion_amount
 		desired_rotation.x = deg_to_rad(-5.5 * motion_amount)
@@ -347,25 +546,113 @@ func _update_realistic_visual(delta: float) -> void:
 		realistic_animation.speed_scale = lerpf(0.72, 1.25, motion_amount)
 
 
-func _attach_knife_to_hand() -> void:
-	# El cuchillo del Survival Pack vive sobre un pivote independiente para que
-	# el tajo sea legible sin alterar el rig importado del caballero.
-	var grip := Node3D.new()
-	grip.name = "KnifeGrip"
-	grip.position = Vector3(-0.34, 1.30, -0.13)
-	grip.rotation_degrees = Vector3(72.0, 0.0, -12.0)
-	realistic_pose.add_child(grip)
-	var knife := MeshInstance3D.new()
-	knife.name = "EquippedKnife"
-	knife.mesh = OBJ_LOADER.load_mesh(KNIFE_OBJ_PATH)
-	if knife.mesh == null:
-		knife.queue_free()
+func _build_right_hand_socket() -> void:
+	if skeleton == null:
+		push_error("El protagonista no tiene esqueleto para sujetar objetos.")
 		return
-	knife.scale = Vector3.ONE * 0.58
-	grip.add_child(knife)
-	_configure_knife_materials(knife)
-	_weapon_grip = grip
-	_weapon_base_rotation = grip.rotation
+	var fist_index := skeleton.find_bone("Fist.R")
+	if fist_index < 0:
+		push_error("El protagonista no tiene el hueso Fist.R.")
+		return
+	_weapon_socket = BoneAttachment3D.new()
+	_weapon_socket.name = "RightHandSocket"
+	skeleton.add_child(_weapon_socket)
+	_weapon_socket.bone_name = "Fist.R"
+	_weapon_socket.set_meta("equipment_socket", true)
+	_weapon_grip = Node3D.new()
+	_weapon_grip.name = "EquipmentGrip"
+	_weapon_socket.add_child(_weapon_grip)
+	_weapon_base_rotation = Vector3.ZERO
+
+
+func equip_item(slot: int) -> bool:
+	if not EQUIPMENT_SPECS.has(slot) or _weapon_grip == null:
+		return false
+	if _equipped_mesh != null:
+		_weapon_grip.remove_child(_equipped_mesh)
+		_equipped_mesh.queue_free()
+		_equipped_mesh = null
+	for child in _weapon_grip.get_children():
+		_weapon_grip.remove_child(child)
+		child.queue_free()
+
+	var spec: Dictionary = EQUIPMENT_SPECS[slot]
+	var path: String = spec.path
+	var equipment_mesh := _equipment_mesh_cache.get(path) as ArrayMesh
+	if equipment_mesh == null:
+		equipment_mesh = OBJ_LOADER.load_mesh(path)
+		if equipment_mesh == null:
+			return false
+		_equipment_mesh_cache[path] = equipment_mesh
+
+	_equipped_mesh = MeshInstance3D.new()
+	_equipped_mesh.name = spec.node_name
+	# Cada objeto recibe su propia copia de malla/materiales. Así puede
+	# desaparecer al cambiar de hueco sin dejar instancias de material colgadas.
+	_equipped_mesh.mesh = equipment_mesh.duplicate() as ArrayMesh
+	_equipped_mesh.scale = Vector3.ONE * float(spec.scale)
+	_equipped_mesh.set_meta("equipment_slot", slot)
+	_equipped_mesh.set_meta("held_in_right_hand", true)
+	_equipped_mesh.set_meta("grip_position", spec.position)
+	_equipped_mesh.set_meta("grip_rotation", spec.rotation)
+	_weapon_grip.position = spec.position
+	_weapon_grip.rotation = spec.rotation
+	_weapon_base_rotation = _weapon_grip.rotation
+	_weapon_grip.add_child(_equipped_mesh)
+	_configure_equipment_materials(_equipped_mesh)
+	if slot == 3:
+		_add_torch_light()
+
+	equipped_slot = slot
+	equipped_item_name = spec.name
+	_attack_reach = float(spec.reach)
+	var box := attack_shape.shape as BoxShape3D
+	if box != null:
+		box.size = Vector3(1.7, 2.2, _attack_reach)
+	attack_area.position.z = -_attack_reach * 0.52
+	equipment_changed.emit(equipped_slot, equipped_item_name)
+	return true
+
+
+func get_equipped_mesh() -> MeshInstance3D:
+	return _equipped_mesh
+
+
+func get_equipped_item_name() -> String:
+	return equipped_item_name
+
+
+func _clear_equipped_item() -> void:
+	if _weapon_grip != null:
+		for child in _weapon_grip.get_children():
+			_weapon_grip.remove_child(child)
+			child.queue_free()
+	_equipped_mesh = null
+	equipped_slot = 0
+	equipped_item_name = "Manos vacías"
+	_attack_reach = 1.25
+
+
+func _reload_quaternius_hero() -> void:
+	var previous_slot := equipped_slot
+	_clear_equipped_item()
+	for child in model_root.get_children():
+		model_root.remove_child(child)
+		child.queue_free()
+	skeleton = null
+	character_mesh = null
+	animation_player = null
+	realistic_skeleton = null
+	realistic_animation = null
+	_weapon_socket = null
+	_weapon_grip = null
+	_load_quaternius_hero()
+	_configure_realistic_hero()
+	_build_right_hand_socket()
+	_configure_animation_loops()
+	_play_animation(ANIM_IDLE, 0.0)
+	if previous_slot > 0:
+		equip_item(previous_slot)
 
 
 func _load_quaternius_hero() -> void:
@@ -410,6 +697,12 @@ func _recolor_hero_skin(loaded_scene: Node3D) -> void:
 
 
 func _load_gltf_scene(path: String) -> Node3D:
+	var imported := ResourceLoader.load(path)
+	if imported is PackedScene:
+		var imported_node := (imported as PackedScene).instantiate() as Node3D
+		if imported_node != null:
+			imported_node.set_meta("loaded_via_project_importer", true)
+		return imported_node
 	var state := GLTFState.new()
 	var document := GLTFDocument.new()
 	var error := document.append_from_file(path, state)
@@ -417,18 +710,60 @@ func _load_gltf_scene(path: String) -> Node3D:
 		push_error("No se pudo cargar el modelo Quaternius: %s" % path)
 		return null
 	var node := document.generate_scene(state)
+	if node != null:
+		node.set_meta("loaded_via_project_importer", false)
 	return node as Node3D
 
 
-func _configure_knife_materials(knife_mesh: MeshInstance3D) -> void:
-	for surface in knife_mesh.mesh.get_surface_count():
-		var source := knife_mesh.mesh.surface_get_material(surface) as StandardMaterial3D
+func _configure_equipment_materials(equipment: MeshInstance3D) -> void:
+	for surface in equipment.mesh.get_surface_count():
+		var source := equipment.mesh.surface_get_material(surface) as StandardMaterial3D
 		if source == null:
 			continue
 		var material := source.duplicate() as StandardMaterial3D
-		material.roughness = 0.22 if surface in [1, 2] else 0.74
-		material.metallic = 0.92 if surface in [1, 2] else 0.04
-		knife_mesh.set_surface_override_material(surface, material)
+		var material_name := source.resource_name.to_lower()
+		var is_metal := "grey" in material_name or "yellow" in material_name
+		# Los Kd originales del MTL son extremadamente oscuros (el acero llega a
+		# 0.11), así que con el sol del mundo el hacha parecía negra y la brújula
+		# desaparecía. Conservamos la paleta Quaternius, pero en rango legible.
+		match material_name:
+			"darkwood":
+				material.albedo_color = Color("6b351d")
+			"grey":
+				material.albedo_color = Color("687887")
+			"lightgrey":
+				material.albedo_color = Color("b5c0c8")
+			"yellow":
+				material.albedo_color = Color("b98228")
+			"darkyellow":
+				material.albedo_color = Color("84551d")
+			"black":
+				material.albedo_color = Color("252a31")
+			"red":
+				material.albedo_color = Color("c43f32")
+			"white":
+				material.albedo_color = Color("e1e1d8")
+		material.roughness = 0.36 if is_metal else 0.76
+		material.metallic = 0.42 if is_metal else 0.03
+		if material_name == "fire":
+			material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			material.emission_enabled = true
+			material.emission = Color(1.0, 0.19, 0.025)
+			material.emission_energy_multiplier = 4.2
+		equipment.mesh.surface_set_material(surface, material)
+
+
+func _add_torch_light() -> void:
+	var light := OmniLight3D.new()
+	light.name = "TorchLight"
+	# Coordenada local del remate de WoodenTorch_Fire; hereda rotación y escala.
+	light.position = Vector3(0.0, 2.62, 0.0)
+	light.light_color = Color(1.0, 0.42, 0.12)
+	light.light_energy = 4.2
+	light.omni_range = 13.0
+	light.shadow_enabled = true
+	light.set_meta("equipped_torch_light", true)
+	_equipped_mesh.add_child(light)
 
 
 func _is_sprint_pressed() -> bool:
@@ -447,6 +782,40 @@ func _find_visible_mesh(parent: Node) -> MeshInstance3D:
 		if mesh_instance != null and mesh_instance.mesh != null:
 			return mesh_instance
 	return null
+
+
+func _build_nameplate() -> void:
+	_nameplate = Label3D.new()
+	_nameplate.name = "PlayerName"
+	_nameplate.position = Vector3(0.0, 2.35, 0.0)
+	_nameplate.text = player_display_name
+	_nameplate.font_size = 34
+	_nameplate.outline_size = 8
+	_nameplate.modulate = Color(1.0, 0.91, 0.66)
+	_nameplate.outline_modulate = Color(0.04, 0.055, 0.07, 0.94)
+	_nameplate.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_nameplate.no_depth_test = true
+	_nameplate.visible = network_remote
+	add_child(_nameplate)
+
+
+func _update_network_replica(delta: float) -> void:
+	if not _network_state_ready:
+		return
+	var position_blend := 1.0 - exp(-11.0 * delta)
+	global_position = global_position.lerp(_network_target_position, position_blend)
+	visual.rotation.y = lerp_angle(visual.rotation.y, _network_target_yaw, position_blend)
+	velocity = _network_target_velocity
+	_update_locomotion_animation()
+
+
+func _on_local_identity_changed(name_value: String, index_value: int) -> void:
+	if not network_remote:
+		apply_identity(name_value, index_value)
+
+
+func _character_path(index_value: int) -> String:
+	return CHARACTER_PATHS[clampi(index_value, 0, CHARACTER_PATHS.size() - 1)]
 
 
 func _respawn() -> void:

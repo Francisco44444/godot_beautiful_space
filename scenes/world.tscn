@@ -50,13 +50,13 @@ glow_normalized = true
 glow_intensity = 0.26
 glow_bloom = 0.025
 volumetric_fog_enabled = true
-volumetric_fog_density = 0.00072
+volumetric_fog_density = 0.00055
 volumetric_fog_albedo = Color(0.9, 0.92, 0.84, 1)
 volumetric_fog_emission = Color(0.012, 0.014, 0.022, 1)
 volumetric_fog_emission_energy = 0.08
-volumetric_fog_length = 1450.0
+volumetric_fog_length = 920.0
 volumetric_fog_sky_affect = 0.26
-volumetric_fog_temporal_reprojection_amount = 0.72
+volumetric_fog_temporal_reprojection_amount = 0.80
 adjustment_enabled = true
 adjustment_contrast = 1.04
 adjustment_saturation = 1.04
@@ -198,10 +198,11 @@ sky_mode = 1
 
 [node name="AnimatedClouds" type="Node3D" parent="."]
 script = ExtResource("12_clouds")
-layer_count = 2
+layer_count = 3
 cloud_altitude = 220.0
+low_cloud_altitude = 108.0
 wind_direction = Vector2(1, 0.33)
-wind_speed = 0.008
+wind_speed = 0.016
 
 [node name="ValleyMist" type="FogVolume" parent="."]
 position = Vector3(18, 4, 12)
@@ -212,7 +213,7 @@ material = SubResource("FogMaterial_valley")
 data_directory = "res://terrain/data"
 material = ExtResource("6_material")
 assets = ExtResource("5_assets")
-vertex_spacing = 9.765625
+vertex_spacing = 4.6875
 collision_mode = 1
 collision_layer = 1
 collision_mask = 2
@@ -251,7 +252,7 @@ collision_mask = 1
 [node name="Camera3D" type="Camera3D" parent="CameraRig/SpringArm3D"]
 current = true
 fov = 70.0
-far = 12000.0
+far = 24000.0
 
 [node name="Lookout" type="Node3D" parent="."]
 position = Vector3(98, 0, -110)
@@ -335,10 +336,11 @@ outline_size = 9
 script = ExtResource("3_hud")
 
 [node name="Margin" type="MarginContainer" parent="HUD"]
+visible = false
 offset_left = 22.0
 offset_top = 22.0
 offset_right = 352.0
-offset_bottom = 158.0
+offset_bottom = 190.0
 
 [node name="Panel" type="PanelContainer" parent="HUD/Margin"]
 theme_override_styles/panel = SubResource("Style_panel")
@@ -359,7 +361,7 @@ label_settings = SubResource("Label_title")
 
 [node name="Controls" type="Label" parent="HUD/Margin/Panel/Padding/Content"]
 layout_mode = 2
-text = "WASD / flechas · caminar   Espacio · saltar\nMayús · correr   Clic izq. · cuchillo"
+text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Cuchillo · 2 Hacha · 3 Antorcha · 4 Brújula\nClic izq. · atacar   M · mapa   5–8 · viaje rápido"
 label_settings = SubResource("Label_body")
 
 [node name="MouseHint" type="Label" parent="HUD/Margin/Panel/Padding/Content"]
@@ -368,12 +370,13 @@ text = "Esc libera el ratón"
 label_settings = SubResource("Label_body")
 
 [node name="Objective" type="Label" parent="HUD"]
+visible = false
 anchors_preset = 10
 anchor_right = 1.0
 offset_top = 26.0
 offset_bottom = 58.0
 grow_horizontal = 2
-text = "✦ Sigue el sendero ocre hasta el mirador"
+text = ""
 label_settings = SubResource("Label_objective")
 horizontal_alignment = 1
 
@@ -409,6 +412,7 @@ label_settings = SubResource("Label_mount_hint")
 horizontal_alignment = 1
 
 [node name="MiniMap" type="Control" parent="HUD"]
+visible = false
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
@@ -435,3 +439,59 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("16_island_map")
 full_map = true
+
+[node name="CreditsOverlay" type="ColorRect" parent="HUD"]
+visible = false
+z_index = 200
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.012, 0.025, 0.035, 0.9)
+
+[node name="CreditsPanel" type="PanelContainer" parent="HUD/CreditsOverlay"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -430.0
+offset_top = -245.0
+offset_right = 430.0
+offset_bottom = 245.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Style_panel")
+
+[node name="Padding" type="MarginContainer" parent="HUD/CreditsOverlay/CreditsPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 34
+theme_override_constants/margin_top = 28
+theme_override_constants/margin_right = 34
+theme_override_constants/margin_bottom = 28
+
+[node name="Content" type="VBoxContainer" parent="HUD/CreditsOverlay/CreditsPanel/Padding"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="HUD/CreditsOverlay/CreditsPanel/Padding/Content"]
+layout_mode = 2
+text = "CRÉDITOS Y ATRIBUCIONES"
+label_settings = SubResource("Label_title")
+horizontal_alignment = 1
+
+[node name="CreditsText" type="RichTextLabel" parent="HUD/CreditsOverlay/CreditsPanel/Padding/Content"]
+custom_minimum_size = Vector2(760, 310)
+layout_mode = 2
+mouse_filter = 0
+bbcode_enabled = true
+text = "[center][font_size=24][b]MÚSICA[/b][/font_size]\n\nUso comercial y personal.\nPara proyectos ilimitados, en todo el mundo, para siempre.\n[b]SE REQUIERE ATRIBUCIÓN.[/b]\nPara poder utilizar nuestra música debes dar crédito a FiftySounds.\nIncluye esta información en tu proyecto:\n\n[b]Obras: La Colina que Conoce tu Voz · Promise · Ashes[/b]\n[b]Música de https://www.fiftysounds.com/es/[/b]\n\n[color=#e8c878]0 · cerrar[/color][/center]"
+fit_content = true
+scroll_active = false
+theme_override_colors/default_color = Color(0.92, 0.94, 0.91, 1)
+theme_override_colors/font_outline_color = Color(0.02, 0.03, 0.04, 0.9)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/normal_font_size = 20
+theme_override_font_sizes/bold_font_size = 21

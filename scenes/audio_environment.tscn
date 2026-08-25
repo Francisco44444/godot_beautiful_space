@@ -1,7 +1,9 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/ambient_audio.gd" id="1_audio"]
-[ext_resource type="AudioStream" path="res://assets/audio/original/horizon_theme.ogg" id="2_music"]
+[ext_resource type="AudioStream" path="res://assets/music/The Hill that Knows your Voice.mp3" id="2_music"]
+[ext_resource type="AudioStream" path="res://assets/music/Promise - nieve.mp3" id="5_snow_music"]
+[ext_resource type="AudioStream" path="res://assets/music/Ashes-desierto.mp3" id="6_desert_music"]
 [ext_resource type="AudioStream" path="res://assets/audio/original/valley_wind.ogg" id="3_wind"]
 [ext_resource type="AudioStream" path="res://assets/audio/original/distant_birds.ogg" id="4_birds"]
 
@@ -10,6 +12,16 @@ script = ExtResource("1_audio")
 
 [node name="Music" type="AudioStreamPlayer" parent="."]
 stream = ExtResource("2_music")
+volume_db = -60.0
+bus = &"Music"
+
+[node name="SnowMusic" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("5_snow_music")
+volume_db = -60.0
+bus = &"Music"
+
+[node name="DesertMusic" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("6_desert_music")
 volume_db = -60.0
 bus = &"Music"
 

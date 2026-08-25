@@ -1,0 +1,27 @@
+services:
+  senderos-lobby:
+    build: .
+    container_name: senderos-lobby
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:24569:8080"
+      - "192.168.0.25:24570:8080"
+    environment:
+      LOBBY_ROOM_TTL: "50"
+      LOBBY_HEARTBEAT: "15"
+      LOBBY_MAX_ROOMS: "256"
+      LOBBY_TRUST_PROXY: "1"
+      LOBBY_LOCAL_PUBLIC_ADDRESS: "franfuco4444.synology.me"
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

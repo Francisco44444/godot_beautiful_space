@@ -1,0 +1,143 @@
+name: Compilar Windows
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.7.1"
+
+jobs:
+  windows:
+    name: Exportar Windows x86-64
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Descargar el proyecto
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Calcular la versión de la compilación
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+              echo "Etiqueta de versión no válida: $GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+            release=true
+            package_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/SenderosDelHorizonte-Windows-x86_64-${version}.zip"
+            notes="Actualización automática ${GITHUB_REF_NAME} de Senderos del Horizonte."
+          else
+            base_version="$(python3 tools/set_project_version.py --print-current)"
+            version="${base_version}.${GITHUB_RUN_NUMBER}"
+            release=false
+            package_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            notes="Compilación de prueba ${GITHUB_SHA:0:7}; no pertenece al canal de actualizaciones."
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "package_url=$package_url" >> "$GITHUB_OUTPUT"
+          echo "notes=$notes" >> "$GITHUB_OUTPUT"
+
+      - name: Descargar Godot y la plantilla oficial de Windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/godot .ci/templates tools/export_templates
+          base_url="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl --fail --location --retry 3 \
+            --output .ci/godot-linux.zip \
+            "$base_url/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl --fail --location --retry 3 \
+            --output .ci/export-templates.tpz \
+            "$base_url/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q .ci/godot-linux.zip -d .ci/godot
+          unzip -q .ci/export-templates.tpz -d .ci/templates
+          cp .ci/templates/templates/windows_release_x86_64.exe \
+            tools/export_templates/windows_release_x86_64.exe
+          chmod +x ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+
+      - name: Aplicar la versión e importar recursos
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/set_project_version.py --version "${{ steps.build.outputs.version }}"
+          timeout 30m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --import
+
+      - name: Comprobar sistemas básicos
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/test_lobby_directory.py -v
+          timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/multiplayer_test.gd
+
+      - name: Crear paquete, manifiesto e instalador
+        shell: bash
+        env:
+          GODOT_BIN: ${{ github.workspace }}/.ci/godot/Godot_v4.7.1-stable_linux.x86_64
+        run: |
+          ./tools/build_windows_release_ci.sh \
+            "${{ steps.build.outputs.version }}" \
+            "${{ steps.build.outputs.package_url }}" \
+            "${{ steps.build.outputs.notes }}"
+
+      - name: Conservar la compilación de prueba
+        uses: actions/upload-artifact@v7
+        with:
+          name: Senderos-Windows-${{ steps.build.outputs.version }}
+          path: |
+            dist/releases/${{ steps.build.outputs.version }}/SenderosDelHorizonte-Windows-x86_64-${{ steps.build.outputs.version }}.zip
+            dist/releases/${{ steps.build.outputs.version }}/SenderosDelHorizonte-Instalador.zip
+            dist/releases/${{ steps.build.outputs.version }}/version.json
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Publicar la actualización oficial
+        if: steps.build.outputs.release == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_dir="dist/releases/$VERSION"
+          package="$release_dir/SenderosDelHorizonte-Windows-x86_64-$VERSION.zip"
+          manifest="$release_dir/version.json"
+          installer="$release_dir/SenderosDelHorizonte-Instalador.zip"
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "$package" "$manifest" "$installer" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" --latest
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "$package" "$manifest" "$installer" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --generate-notes --latest \
+              --title "Senderos del Horizonte $GITHUB_REF_NAME"
+          fi

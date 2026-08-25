@@ -28,6 +28,8 @@ func _run_test() -> void:
 
 	var ambient_audio := world.get_node("AmbientAudio") as AmbientAudio
 	ambient_audio.music.stop()
+	ambient_audio.snow_music.stop()
+	ambient_audio.desert_music.stop()
 	ambient_audio.wind.stop()
 	ambient_audio.birds.stop()
 	world.queue_free()
