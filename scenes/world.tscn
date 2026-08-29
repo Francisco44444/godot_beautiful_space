@@ -1,4 +1,4 @@
-[gd_scene load_steps=45 format=3]
+[gd_scene load_steps=46 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/third_person_camera.gd" id="2_camera"]
@@ -15,6 +15,7 @@
 [ext_resource type="Script" path="res://scripts/island_environment.gd" id="15_island_environment"]
 [ext_resource type="Script" path="res://scripts/island_map.gd" id="16_island_map"]
 [ext_resource type="Script" path="res://scripts/adventure_system.gd" id="17_adventure"]
+[ext_resource type="Script" path="res://scripts/rpg_story_runtime.gd" id="18_story"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSky_quaternius"]
 sky_top_color = Color(0.18, 0.55, 0.92, 1)
@@ -235,6 +236,9 @@ script = ExtResource("13_wildlife")
 
 [node name="AdventureSystem" type="Node3D" parent="."]
 script = ExtResource("17_adventure")
+
+[node name="RPGStoryRuntime" type="Node3D" parent="."]
+script = ExtResource("18_story")
 
 [node name="AmbientAudio" parent="." instance=ExtResource("9_audio")]
 

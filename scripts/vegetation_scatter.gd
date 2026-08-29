@@ -7,6 +7,7 @@ extends Node3D
 ## convertir cada planta en un draw call independiente.
 
 const ASSET_ROOT := "res://assets/quaternius/store_bundle/glTF/"
+const NATURE_OBJ_ROOT := "res://assets/quaternius/Nature Pack - Jun 2019/OBJ/"
 const GREEN_TREE_FILES: PackedStringArray = [
 	"CommonTree_1.gltf", "CommonTree_2.gltf", "CommonTree_3.gltf",
 	"CommonTree_4.gltf", "CommonTree_5.gltf", "Pine_1.gltf", "Pine_2.gltf", "Pine_3.gltf",
@@ -43,6 +44,13 @@ const PEBBLE_FILES: PackedStringArray = [
 	"Pebble_Square_2.gltf", "Pebble_Square_3.gltf", "Pebble_Square_4.gltf",
 	"Pebble_Square_5.gltf", "Pebble_Square_6.gltf",
 ]
+const MOSS_ROCK_FILES: PackedStringArray = [
+	"Rock_Moss_1.obj", "Rock_Moss_3.obj", "Rock_Moss_6.obj",
+]
+const CACTUS_FILES: PackedStringArray = [
+	"Cactus_1.obj", "Cactus_3.obj", "CactusFlowers_3.obj",
+]
+const DENSE_GRASS_SOURCE_INDEX := 0
 const GRASS_WIND_SHADER := """
 shader_type spatial;
 render_mode cull_disabled, depth_prepass_alpha;
@@ -50,7 +58,6 @@ render_mode cull_disabled, depth_prepass_alpha;
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic;
 uniform float breeze_strength = 0.035;
 uniform float gust_strength = 0.16;
-uniform float snow_amount = 0.0;
 
 void vertex() {
 	vec3 instance_origin = MODEL_MATRIX[3].xyz;
@@ -66,9 +73,7 @@ void vertex() {
 
 void fragment() {
 	vec4 tex = texture(albedo_texture, UV);
-	float green_mask = smoothstep(0.025, 0.20, tex.g - max(tex.r, tex.b));
-	vec3 snow_color = vec3(0.88, 0.93, 0.98);
-	ALBEDO = mix(tex.rgb, snow_color, green_mask * snow_amount * 0.94);
+	ALBEDO = tex.rgb;
 	ROUGHNESS = 0.92;
 	ALPHA = tex.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.32;
@@ -100,12 +105,39 @@ uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropi
 void fragment() {
 	vec4 tex = texture(albedo_texture, UV);
 	float leaf = smoothstep(0.015, 0.16, tex.g - max(tex.r, tex.b));
-	vec3 shadowed_wood = tex.rgb * vec3(0.42, 0.48, 0.58);
-	vec3 blue_leaf = mix(vec3(0.025, 0.10, 0.17), vec3(0.10, 0.34, 0.46), tex.g);
-	ALBEDO = mix(shadowed_wood, blue_leaf, leaf * 0.94);
+	vec3 shadowed_wood = tex.rgb * vec3(0.40, 0.30, 0.26);
+	vec3 crimson_leaf = mix(vec3(0.16, 0.012, 0.018), vec3(0.58, 0.035, 0.025), tex.r + tex.g * 0.25);
+	ALBEDO = mix(shadowed_wood, crimson_leaf, leaf * 0.96);
 	ROUGHNESS = 0.96;
 	ALPHA = tex.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.32;
+}
+"""
+const DENSE_GRASS_SHADER := """
+shader_type spatial;
+render_mode cull_disabled;
+
+uniform vec4 base_color : source_color = vec4(0.15, 0.46, 0.075, 1.0);
+uniform float wind_strength = 0.095;
+uniform float gust_strength = 0.11;
+
+void vertex() {
+	vec3 instance_origin = MODEL_MATRIX[3].xyz;
+	float phase = instance_origin.x * 0.037 + instance_origin.z * 0.051;
+	float local_phase = phase + VERTEX.x * 0.29 + VERTEX.z * 0.23;
+	float height_mask = smoothstep(0.03, 1.05, VERTEX.y);
+	float slow_cycle = sin(TIME * 0.24 + phase * 0.31) * 0.5 + 0.5;
+	float gust_envelope = smoothstep(0.67, 0.96, slow_cycle);
+	float broad_wave = sin(TIME * 0.82 + local_phase);
+	float fine_wave = sin(TIME * 1.37 + local_phase * 1.71);
+	float bend = (wind_strength + gust_envelope * gust_strength) * (broad_wave * 0.76 + fine_wave * 0.24) * height_mask;
+	VERTEX.x += bend;
+	VERTEX.z += bend * 0.42 + fine_wave * 0.016 * height_mask;
+}
+
+void fragment() {
+	ALBEDO = base_color.rgb;
+	ROUGHNESS = 0.96;
 }
 """
 const GRASS_LOD_SHADER := """
@@ -174,8 +206,8 @@ const FOREST_ZONES: Array[Vector4] = [
 ]
 const TREE_CELL_SIZE := 340.0
 const TREE_LOD_CELL_SIZE := TREE_CELL_SIZE
-const TREE_COVERAGE_CELL_SIZE := 54.0
-const TREE_COVERAGE_TARGET_RATIO := 0.36
+const TREE_COVERAGE_CELL_SIZE := 34.0
+const TREE_COVERAGE_TARGET_RATIO := 0.55
 const TREE_LOD_SWITCH_DISTANCE := 340.0
 const TREE_LOD_VISIBILITY_END := 5200.0
 const TREE_LOD_HYSTERESIS := 18.0
@@ -188,13 +220,18 @@ const GRASS_LOD_HYSTERESIS := 8.0
 const EXPLICIT_LOD_REFRESH_SECONDS := 0.12
 const DETAIL_CELL_SIZE := 440.0
 const GROUND_CELL_SIZE := 380.0
+const GRASS_COVERAGE_SPACING := 13.0
+const DENSE_GRASS_CLUSTER_COPIES := 20
+const MYSTERY_DEAD_TREE_COUNT := 4200
 
 @export var terrain_path: NodePath = NodePath("../Terrain3D")
 @export_category("Claro y bosque Quaternius")
-@export var tree_count := 52000
+@export var tree_count := 80000
 @export_range(0.0, 0.15, 0.001) var autumn_tree_ratio := 0.004
 @export var rock_count := 3000
-@export var grass_count := 110000
+@export var moss_rock_count := 4200
+@export var cactus_count := 720
+@export var grass_count := 220000
 @export var fern_count := 10000
 @export var shrub_count := 10000
 @export var flower_count := 8000
@@ -209,7 +246,10 @@ const GROUND_CELL_SIZE := 380.0
 
 var generated_tree_count := 0
 var generated_rock_count := 0
+var generated_moss_rock_count := 0
+var generated_cactus_count := 0
 var generated_grass_count := 0
+var generated_mystery_dead_tree_count := 0
 var generated_fern_count := 0
 var generated_shrub_count := 0
 var generated_flower_count := 0
@@ -234,6 +274,8 @@ var generated_grass_lod_cells := 0
 var explicit_lod_visible_full_cells := 0
 var explicit_lod_visible_proxy_cells := 0
 var tree_positions: Array[Vector3] = []
+var rock_positions: Array[Vector3] = []
+var moss_rock_positions: Array[Vector3] = []
 
 var _random := RandomNumberGenerator.new()
 var _tree_meshes: Array[Mesh] = []
@@ -241,6 +283,8 @@ var _tree_lod_meshes: Array[Mesh] = []
 var _grass_lod_meshes: Array[Mesh] = []
 var _rock_meshes: Array[Mesh] = []
 var _grass_meshes: Array[Mesh] = []
+var _moss_rock_meshes: Array[Mesh] = []
+var _cactus_meshes: Array[Mesh] = []
 var _fern_meshes: Array[Mesh] = []
 var _shrub_meshes: Array[Mesh] = []
 var _flower_meshes: Array[Mesh] = []
@@ -249,7 +293,7 @@ var _dead_tree_meshes: Array[Mesh] = []
 var _pebble_meshes: Array[Mesh] = []
 var _snow_tree_offset := -1
 var _mystery_tree_offset := -1
-var _snow_grass_offset := -1
+var _dense_grass_offset := -1
 var _snow_fern_offset := -1
 var _snow_shrub_offset := -1
 var _snow_shader: Shader
@@ -266,7 +310,8 @@ func _ready() -> void:
 	_random.seed = random_seed
 	set_meta("project_assets_loaded_via_importer", true)
 	set_meta("explicit_tree_lod", true)
-	set_meta("sparse_static_grass_lod", true)
+	set_meta("dense_static_grass_lod", true)
+	set_meta("grass_patch_clumps", DENSE_GRASS_CLUSTER_COPIES)
 	set_meta("exclusive_lod_pairs", true)
 	var green_tree_meshes := _load_mesh_library(GREEN_TREE_FILES)
 	var autumn_tree_meshes := _load_mesh_library(AUTUMN_TREE_FILES)
@@ -275,16 +320,20 @@ func _ready() -> void:
 	_snow_tree_offset = _tree_meshes.size()
 	_tree_meshes.append_array(_make_snow_mesh_library(green_tree_meshes))
 	_mystery_tree_offset = _tree_meshes.size()
-	_tree_meshes.append_array(_make_mystery_mesh_library(green_tree_meshes))
+	# El Bosque Tenebroso abandona las copas azules: sólo usa los árboles
+	# retorcidos rojos del pack, oscurecidos hacia carmesí.
+	_tree_meshes.append_array(_make_mystery_mesh_library(autumn_tree_meshes))
 	_tree_lod_meshes = _make_tree_lod_mesh_library()
 	_rock_meshes = _load_mesh_library(ROCK_FILES)
+	_moss_rock_meshes = _load_obj_mesh_library(MOSS_ROCK_FILES)
+	_cactus_meshes = _load_obj_mesh_library(CACTUS_FILES)
 	_grass_meshes = _load_mesh_library(GRASS_FILES)
-	_snow_grass_offset = _grass_meshes.size()
-	for grass_mesh in _grass_meshes.duplicate():
-		_grass_meshes.append((grass_mesh as Mesh).duplicate(true) as Mesh)
+	var dense_grass_source := _grass_meshes[DENSE_GRASS_SOURCE_INDEX] if _grass_meshes.size() > DENSE_GRASS_SOURCE_INDEX else null
+	if dense_grass_source != null:
+		_dense_grass_offset = _grass_meshes.size()
+		_grass_meshes.append(_make_dense_grass_patch_mesh(dense_grass_source))
 	_grass_lod_meshes = [
 		_make_grass_lod_mesh(2, 0.72, 0.34, Color(0.12, 0.40, 0.09), Color(0.42, 0.76, 0.20)),
-		_make_grass_lod_mesh(2, 0.72, 0.34, Color(0.55, 0.66, 0.64), Color(0.90, 0.95, 0.98)),
 	]
 	_fern_meshes = _load_mesh_library(FERN_FILES)
 	_snow_fern_offset = _fern_meshes.size()
@@ -297,7 +346,8 @@ func _ready() -> void:
 	_dead_tree_meshes = _load_mesh_library(DEAD_TREE_FILES)
 	_pebble_meshes = _load_mesh_library(PEBBLE_FILES)
 	if (
-		_tree_meshes.is_empty() or _rock_meshes.is_empty() or _grass_meshes.is_empty()
+		_tree_meshes.is_empty() or _rock_meshes.is_empty() or _moss_rock_meshes.is_empty()
+		or _cactus_meshes.is_empty() or _grass_meshes.is_empty() or _dense_grass_offset < 0
 		or _fern_meshes.is_empty() or _shrub_meshes.is_empty() or _flower_meshes.is_empty()
 		or _mushroom_meshes.is_empty() or _dead_tree_meshes.is_empty() or _pebble_meshes.is_empty()
 	):
@@ -307,14 +357,17 @@ func _ready() -> void:
 
 	_scatter_forest()
 	_scatter_rocks()
+	_scatter_moss_rocks()
+	_scatter_desert_cacti()
 	_scatter_ground_cover()
 	_scatter_color_details()
 	_scatter_path_pebbles()
 	_scatter_forest_details()
+	_scatter_mystery_dead_trees()
 	call_deferred("_update_explicit_lod_visibility", true)
 	print(
-		"QUATERNIUS VALLEY READY: %d árboles verdes, %d nevados, %d azules tenebrosos, %d otoñales (%d de cobertura anti-calvas; %d celdas primarias), %d rocas, %d hierbas animadas (%d nevadas), %d helechos, %d arbustos, %d flores, %d setas y %d guijarros en %d celdas; las calles de piedra viven en Terrain3D."
-		% [generated_green_tree_count, generated_snow_tree_count, generated_mystery_tree_count, generated_autumn_tree_count, generated_coverage_tree_count, generated_coverage_primary_tree_count, generated_rock_count, generated_grass_count, generated_snow_grass_count, generated_fern_count, generated_shrub_count, generated_flower_count, generated_mushroom_count, generated_path_pebble_count, generated_cell_count]
+		"QUATERNIUS VALLEY READY: %d árboles verdes, %d nevados, %d rojos tenebrosos, %d otoñales y %d secos tenebrosos; %d rocas desérticas, %d rocas hundidas desérticas, %d cactus grandes y %d parches densos de hierba exclusivamente verde en %d celdas."
+		% [generated_green_tree_count, generated_snow_tree_count, generated_mystery_tree_count, generated_autumn_tree_count, generated_mystery_dead_tree_count, generated_rock_count, generated_moss_rock_count, generated_cactus_count, generated_grass_count, generated_cell_count]
 	)
 
 
@@ -347,10 +400,18 @@ func _scatter_forest() -> void:
 		if not _tree_point_allowed(point):
 			continue
 		var height := _height_at(point)
-		var snow_probability := _snow_probability(point, height)
-		var snowy := _random.randf() < snow_probability
 		var mystery_strength := _mystery_forest_strength(point)
-		var mystery := not snowy and mystery_strength > 0.24 and _random.randf() < smoothstep(0.18, 0.62, mystery_strength)
+		# Dentro del bioma tenebroso no se permite que el azar vuelva a introducir
+		# árboles verdes o nevados: el límite irregular decide el bioma completo.
+		var mystery := mystery_strength > 0.26
+		var snow_probability := _snow_probability(point, height)
+		# La retícula anti-calvas también alcanza la nieve, pero allí se aclara de
+		# forma gradual hasta conservar aproximadamente el 80 % en las cumbres. Los
+		# ejemplares descartados se recuperan en otros biomas al continuar el bucle.
+		var snow_thinning := smoothstep(0.18, 0.72, snow_probability)
+		if snow_thinning > 0.0 and _random.randf() > lerpf(1.0, 0.80, snow_thinning):
+			continue
+		var snowy := not mystery and _random.randf() < snow_probability
 		var autumn := not snowy and not mystery and _random.randf() < autumn_tree_ratio
 		var variant := 0
 		var local_tree_variant := _random.randi_range(0, GREEN_TREE_FILES.size() - 1)
@@ -361,6 +422,7 @@ func _scatter_forest() -> void:
 			variant = _snow_tree_offset + local_tree_variant
 			generated_snow_tree_count += 1
 		elif mystery:
+			local_tree_variant = _random.randi_range(0, AUTUMN_TREE_FILES.size() - 1)
 			variant = _mystery_tree_offset + local_tree_variant
 			generated_mystery_tree_count += 1
 		elif autumn:
@@ -371,7 +433,7 @@ func _scatter_forest() -> void:
 			generated_green_tree_count += 1
 		# Siluetas más monumentales sin aumentar instancias ni draw calls: el mismo
 		# MultiMesh/LOD conserva el rendimiento, pero el bosque gana dosel y escala.
-		var scale_value := _random.randf_range(1.48, 2.68)
+		var scale_value := _random.randf_range(1.85, 3.35)
 		if local_tree_variant >= 5:
 			scale_value *= _random.randf_range(1.05, 1.30)
 		var position := Vector3(point.x, height + 0.10, point.y)
@@ -407,13 +469,21 @@ func _scatter_forest() -> void:
 func _scatter_rocks() -> void:
 	var buckets: Dictionary = {}
 	var attempts := 0
-	while generated_rock_count < rock_count and attempts < rock_count * 24:
+	while generated_rock_count < rock_count and attempts < rock_count * 72:
 		attempts += 1
-		var point := _corridor_point(5.2, 142.0, 0.62)
-		if distance_to_route(point) < 8.0 or _inside_clearing(point, 9.0, 16.0) or _inside_village_clearing(point, -5.0) or _inside_desert(point):
+		var point := Vector2(
+			_random.randfn(2600.0, 1120.0),
+			_random.randfn(2100.0, 820.0)
+		)
+		if (
+			not _desert_decoration_point_allowed(point)
+			or distance_to_route(point) < 10.0
+			or _inside_clearing(point, 9.0, 16.0)
+			or _inside_village_clearing(point, 1.0)
+		):
 			continue
 		var height := _height_at(point)
-		if is_nan(height):
+		if is_nan(height) or height < 2.0:
 			continue
 		var variant := _random.randi_range(0, _rock_meshes.size() - 1)
 		var scale_value := _random.randf_range(0.42, 1.20)
@@ -422,53 +492,146 @@ func _scatter_rocks() -> void:
 			scale_value * _random.randf_range(0.72, 1.08),
 			scale_value * _random.randf_range(0.82, 1.26)
 		)
-		var position := Vector3(point.x, height + 0.03, point.y)
+		var position := Vector3(point.x, height - scale_value * _random.randf_range(0.03, 0.10), point.y)
 		_bucket_transform(buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(position, _random.randf_range(0.0, TAU), scale_vector))
-		if distance_to_route(point) < 28.0 or generated_rock_count % 4 == 0:
+		if distance_to_route(point) < 30.0 or generated_rock_count % 4 == 0:
 			_add_rock_collision(position, _rock_meshes[variant].get_aabb().size * scale_vector)
 			generated_rock_collision_count += 1
+		rock_positions.append(position)
 		generated_rock_count += 1
 	_install_cell_buckets("RockCells", buckets, _rock_meshes, 420.0, true)
+	var root := get_node("RockCells") as Node3D
+	root.set_meta("desert_only", true)
+	root.set_meta("sunk_into_ground", true)
+	root.set_meta("excluded_from_cliffs", true)
+
+
+func _scatter_moss_rocks() -> void:
+	var buckets: Dictionary = {}
+	var attempts := 0
+	while generated_moss_rock_count < moss_rock_count and attempts < moss_rock_count * 72:
+		attempts += 1
+		var point := Vector2(
+			_random.randfn(2600.0, 1120.0),
+			_random.randfn(2100.0, 820.0)
+		)
+		# Estas rocas ligeramente hundidas pertenecen sólo a la arena del desierto.
+		# Se descartan expresamente playas, paredes y taludes abruptos.
+		if (
+			not _desert_decoration_point_allowed(point)
+			or distance_to_route(point) < 9.0
+			or _inside_clearing(point, 8.0, 14.0)
+			or _inside_village_clearing(point, 2.0)
+		):
+			continue
+		var height := _height_at(point)
+		if is_nan(height) or height < 2.0:
+			continue
+		var variant := _random.randi_range(0, _moss_rock_meshes.size() - 1)
+		var scale_value := _random.randf_range(2.15, 4.55)
+		var scale_vector := Vector3(
+			scale_value * _random.randf_range(0.82, 1.22),
+			scale_value * _random.randf_range(0.72, 1.02),
+			scale_value * _random.randf_range(0.84, 1.20)
+		)
+		# La ligera penetración elimina el aspecto de roca apoyada sobre una mesa.
+		var position := Vector3(point.x, height - scale_value * _random.randf_range(0.06, 0.14), point.y)
+		_bucket_transform(
+			buckets,
+			variant,
+			point,
+			DETAIL_CELL_SIZE,
+			_make_transform(position, _random.randf_range(0.0, TAU), scale_vector)
+		)
+		if distance_to_route(point) < 31.0 or generated_moss_rock_count % 9 == 0:
+			_add_rock_collision(position, _moss_rock_meshes[variant].get_aabb().size * scale_vector)
+			generated_rock_collision_count += 1
+		moss_rock_positions.append(position)
+		generated_moss_rock_count += 1
+	_install_cell_buckets("MossRockCells", buckets, _moss_rock_meshes, 680.0, true)
+	var root := get_node("MossRockCells") as Node3D
+	root.set_meta("sunk_into_ground", true)
+	root.set_meta("desert_only", true)
+	root.set_meta("excluded_from_cliffs", true)
+
+
+func _scatter_desert_cacti() -> void:
+	var buckets: Dictionary = {}
+	var attempts := 0
+	while generated_cactus_count < cactus_count and attempts < cactus_count * 60:
+		attempts += 1
+		var point := Vector2(
+			_random.randfn(2600.0, 1120.0),
+			_random.randfn(2100.0, 820.0)
+		)
+		if (
+			not _inside_desert_core(point)
+			or _coast_ratio(point) > 0.77
+			or _slope_at(point) > 0.30
+			or distance_to_route(point) < 13.0
+			or _inside_village_clearing(point, 5.0)
+		):
+			continue
+		var height := _height_at(point)
+		if is_nan(height) or height < 2.0:
+			continue
+		var variant := _random.randi_range(0, _cactus_meshes.size() - 1)
+		var scale_value := _random.randf_range(3.6, 6.9)
+		var scale_vector := Vector3(
+			scale_value * _random.randf_range(0.86, 1.14),
+			scale_value,
+			scale_value * _random.randf_range(0.86, 1.14)
+		)
+		var position := Vector3(point.x, height + 0.02, point.y)
+		_bucket_transform(
+			buckets,
+			variant,
+			point,
+			DETAIL_CELL_SIZE,
+			_make_transform(position, _random.randf_range(0.0, TAU), scale_vector)
+		)
+		if generated_cactus_count % 5 == 0 or distance_to_route(point) < 34.0:
+			_add_tree_collision(position, _cactus_meshes[variant].get_aabb(), scale_value)
+			generated_tree_collision_count += 1
+		generated_cactus_count += 1
+	_install_cell_buckets("CactusCells", buckets, _cactus_meshes, 1250.0, true)
+	var root := get_node("CactusCells") as Node3D
+	root.set_meta("nature_pack_source", "Nature Pack - Jun 2019")
+	root.set_meta("desert_core_only", true)
 
 
 func _scatter_ground_cover() -> void:
 	var grass_buckets: Dictionary = {}
 	var grass_lod_buckets: Dictionary = {}
-	var attempts := 0
-	while generated_grass_count < grass_count and attempts < grass_count * 14:
-		attempts += 1
-		var point := _corridor_point(2.35, 126.0, 0.76)
-		if distance_to_route(point) < 8.2 or _inside_clearing(point, 4.3, 8.0) or _inside_stone_village_street(point, 1.8) or _inside_desert(point) or _slope_at(point) > 0.88:
-			continue
+	var coverage_points := _build_grass_coverage_points(grass_count)
+	for point in coverage_points:
 		var height := _height_at(point)
-		if is_nan(height):
-			continue
-		var variant := _random.randi_range(0, _grass_meshes.size() - 1)
-		var snowy := _random.randf() < _snow_probability(point, height)
-		if snowy:
-			variant = _snow_grass_offset + _random.randi_range(0, GRASS_FILES.size() - 1)
-			generated_snow_grass_count += 1
-		else:
-			variant = _random.randi_range(0, GRASS_FILES.size() - 1)
-		var scale_value := _random.randf_range(0.64, 1.28)
+		var variant := _dense_grass_offset
+		var scale_value := _random.randf_range(0.88, 1.16)
 		var scale_vector := Vector3(
-			scale_value * _random.randf_range(1.30, 2.10),
+			scale_value * _random.randf_range(0.92, 1.08),
 			scale_value,
-			scale_value * _random.randf_range(1.30, 2.10)
+			scale_value * _random.randf_range(0.92, 1.08)
 		)
 		var transform := _make_transform(Vector3(point.x, height + 0.02, point.y), _random.randf_range(0.0, TAU), scale_vector)
 		_bucket_transform(grass_buckets, variant, point, GRASS_CELL_SIZE, transform)
-		_bucket_transform(grass_lod_buckets, 1 if snowy else 0, point, GRASS_CELL_SIZE, transform)
+		_bucket_transform(grass_lod_buckets, 0, point, GRASS_CELL_SIZE, transform)
 		generated_grass_count += 1
 	_install_cell_buckets("GrassCells", grass_buckets, _grass_meshes, 0.0, false)
 	_install_grass_lod_buckets(grass_lod_buckets)
+	var grass_root := get_node("GrassCells") as Node3D
+	grass_root.set_meta("coverage", "all_green_terrain")
+	grass_root.set_meta("excluded_biomes", PackedStringArray(["snow", "desert", "mystery_forest"]))
+	grass_root.set_meta("source_model", GRASS_FILES[DENSE_GRASS_SOURCE_INDEX])
+	grass_root.set_meta("clumps_per_instance", DENSE_GRASS_CLUSTER_COPIES)
+	grass_root.set_meta("effective_clump_count", generated_grass_count * DENSE_GRASS_CLUSTER_COPIES)
 
 	var fern_buckets: Dictionary = {}
-	attempts = 0
+	var attempts := 0
 	while generated_fern_count < fern_count and attempts < fern_count * 16:
 		attempts += 1
 		var point := _corridor_point(2.8, 132.0, 0.70)
-		if distance_to_route(point) < 8.5 or _inside_clearing(point, 5.4, 10.0) or _inside_stone_village_street(point, 2.1) or _inside_desert(point) or _slope_at(point) > 0.82:
+		if distance_to_route(point) < 8.5 or _inside_clearing(point, 5.4, 10.0) or _inside_stone_village_street(point, 2.1) or _inside_desert(point) or _inside_mystery_forest(point) or _slope_at(point) > 0.82:
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -487,7 +650,7 @@ func _scatter_ground_cover() -> void:
 	while generated_shrub_count < shrub_count and attempts < shrub_count * 16:
 		attempts += 1
 		var point := _corridor_point(3.4, 136.0, 0.68)
-		if distance_to_route(point) < 9.0 or _inside_clearing(point, 6.2, 11.5) or _inside_stone_village_street(point, 2.5) or _inside_desert(point) or _slope_at(point) > 0.82:
+		if distance_to_route(point) < 9.0 or _inside_clearing(point, 6.2, 11.5) or _inside_stone_village_street(point, 2.5) or _inside_desert(point) or _inside_mystery_forest(point) or _slope_at(point) > 0.82:
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -508,7 +671,7 @@ func _scatter_color_details() -> void:
 	while generated_flower_count < flower_count and attempts < flower_count * 15:
 		attempts += 1
 		var point := _corridor_point(1.9, 108.0, 0.78)
-		if distance_to_route(point) < 8.0 or _inside_clearing(point, 3.8, 7.0) or _inside_stone_village_street(point, 1.5) or _inside_desert(point) or _slope_at(point) > 0.84:
+		if distance_to_route(point) < 8.0 or _inside_clearing(point, 3.8, 7.0) or _inside_stone_village_street(point, 1.5) or _inside_desert(point) or _inside_mystery_forest(point) or _slope_at(point) > 0.84:
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -526,7 +689,7 @@ func _scatter_color_details() -> void:
 	while generated_mushroom_count < mushroom_count and attempts < mushroom_count * 18:
 		attempts += 1
 		var point := _corridor_point(2.0, 112.0, 0.72)
-		if distance_to_route(point) < 8.0 or _inside_clearing(point, 3.8, 7.5) or _inside_stone_village_street(point, 1.5) or _inside_desert(point):
+		if distance_to_route(point) < 8.0 or _inside_clearing(point, 3.8, 7.5) or _inside_stone_village_street(point, 1.5) or _inside_desert(point) or _inside_mystery_forest(point):
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
@@ -576,16 +739,56 @@ func _scatter_forest_details() -> void:
 		# Los troncos secos son parte del bosque, nunca del interior de una casa,
 		# patio o ciudadela. El resto del arbolado ya respetaba estas reservas,
 		# pero este pase de detalle podía atravesar edificios completos.
-		if distance_to_route(point) < 5.2 or _inside_clearing(point, 9.5, 15.5) or _inside_village_clearing(point, 8.0) or _inside_desert(point):
+		if distance_to_route(point) < 5.2 or _inside_clearing(point, 9.5, 15.5) or _inside_village_clearing(point, 8.0) or _inside_desert(point) or _inside_mystery_forest(point):
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
 			continue
 		var variant := _random.randi_range(0, _dead_tree_meshes.size() - 1)
-		var scale_value := _random.randf_range(0.88, 1.62)
+		var scale_value := _random.randf_range(1.10, 2.03)
 		_bucket_transform(buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.08, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		created += 1
 	_install_cell_buckets("ForestDetailCells", buckets, _dead_tree_meshes, 245.0, true)
+
+
+func _scatter_mystery_dead_trees() -> void:
+	var buckets: Dictionary = {}
+	var attempts := 0
+	while generated_mystery_dead_tree_count < MYSTERY_DEAD_TREE_COUNT and attempts < MYSTERY_DEAD_TREE_COUNT * 44:
+		attempts += 1
+		var point := Vector2(
+			_random.randfn(4400.0, 980.0),
+			_random.randfn(-1380.0, 780.0)
+		)
+		if (
+			not _inside_mystery_forest(point)
+			or _coast_ratio(point) > 0.83
+			or distance_to_route(point) < 10.5
+			or _inside_village_clearing(point, 5.0)
+			or _slope_at(point) > 0.78
+		):
+			continue
+		var height := _height_at(point)
+		if is_nan(height) or height < 2.5:
+			continue
+		var variant := _random.randi_range(0, _dead_tree_meshes.size() - 1)
+		var scale_value := _random.randf_range(1.56, 3.06)
+		var position := Vector3(point.x, height + 0.06, point.y)
+		_bucket_transform(
+			buckets,
+			variant,
+			point,
+			DETAIL_CELL_SIZE,
+			_make_transform(position, _random.randf_range(0.0, TAU), Vector3.ONE * scale_value)
+		)
+		if distance_to_route(point) < 30.0 or generated_mystery_dead_tree_count % 18 == 0:
+			_add_tree_collision(position, _dead_tree_meshes[variant].get_aabb(), scale_value)
+			generated_tree_collision_count += 1
+		generated_mystery_dead_tree_count += 1
+	_install_cell_buckets("MysteryDeadTreeCells", buckets, _dead_tree_meshes, 760.0, true)
+	var root := get_node("MysteryDeadTreeCells") as Node3D
+	root.set_meta("biome", "Bosque Tenebroso")
+	root.set_meta("palette", "red_and_dead_only")
 
 
 func _load_mesh_library(file_names: PackedStringArray) -> Array[Mesh]:
@@ -598,6 +801,65 @@ func _load_mesh_library(file_names: PackedStringArray) -> Array[Mesh]:
 		if mesh != null:
 			result.append(mesh)
 		source.free()
+	return result
+
+
+func _load_obj_mesh_library(file_names: PackedStringArray) -> Array[Mesh]:
+	var result: Array[Mesh] = []
+	for file_name in file_names:
+		var mesh := _load_obj_mesh(NATURE_OBJ_ROOT + file_name)
+		if mesh != null:
+			result.append(mesh)
+	return result
+
+
+func _load_obj_mesh(path: String) -> Mesh:
+	# Los OBJ del Nature Pack se importan como ArrayMesh. Mantener esta carga por
+	# ResourceLoader hace que sus materiales MTL, caché y LOD pasen por Godot.
+	var resource := ResourceLoader.load(path)
+	if resource is Mesh:
+		return resource as Mesh
+	if resource is PackedScene:
+		var scene := (resource as PackedScene).instantiate()
+		var mesh := _find_first_mesh(scene)
+		scene.free()
+		return mesh
+	push_error("No se pudo cargar la malla OBJ Quaternius: %s" % path)
+	return null
+
+
+func _make_dense_grass_patch_mesh(source: Mesh) -> Mesh:
+	# Una instancia representa veinte macollas reales. Así 220.000 transforms
+	# cubren el terreno como 4,4 millones de matas, pero el LOD sólo conserva los
+	# parches completos de las celdas cercanas y dos triángulos en la distancia.
+	var result := ArrayMesh.new()
+	var shader := Shader.new()
+	shader.code = DENSE_GRASS_SHADER
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter("base_color", Color(0.18, 0.53, 0.075, 1.0))
+	material.set_shader_parameter("wind_strength", 0.095)
+	material.set_shader_parameter("gust_strength", 0.11)
+	for surface_index in source.get_surface_count():
+		var surface := SurfaceTool.new()
+		surface.begin(source.surface_get_primitive_type(surface_index))
+		for copy_index in DENSE_GRASS_CLUSTER_COPIES:
+			var normalized := (float(copy_index) + 0.37) / float(DENSE_GRASS_CLUSTER_COPIES)
+			var angle := TAU * fmod(float(copy_index) * 0.61803398875 + 0.17, 1.0)
+			var radius := sqrt(normalized) * 5.85
+			# Grass_Common_Short del Stylized Nature MegaKit ya tiene hojas altas y
+			# curvadas. Esta escala conserva su silueta densa sin convertirla en juncos.
+			var scale_value := 0.72 + 0.17 * sin(float(copy_index) * 2.31 + 0.4)
+			var basis := Basis(Vector3.UP, angle * 2.73).scaled(
+				Vector3(scale_value * (0.88 + 0.16 * normalized), scale_value, scale_value)
+			)
+			var transform := Transform3D(
+				basis,
+				Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+			)
+			surface.append_from(source, surface_index, transform)
+		surface.set_material(material)
+		surface.commit(result)
 	return result
 
 
@@ -647,8 +909,8 @@ func _make_tree_lod_mesh_library() -> Array[Mesh]:
 		_make_tree_lod_mesh(Color("2f7644"), Color("62402a"), true),
 		_make_tree_lod_mesh(Color("b45232"), Color("75503a"), false),
 		_make_tree_lod_mesh(Color("dce9e7"), Color("7b6758"), true),
-		_make_tree_lod_mesh(Color("21556b"), Color("394b57"), false),
-		_make_tree_lod_mesh(Color("173f59"), Color("344957"), true),
+		_make_tree_lod_mesh(Color("65151b"), Color("3d2725"), false),
+		_make_tree_lod_mesh(Color("3f0d12"), Color("302321"), true),
 	]
 
 
@@ -765,7 +1027,6 @@ func _apply_grass_wind_materials() -> void:
 			var wind_material := ShaderMaterial.new()
 			wind_material.shader = shader
 			wind_material.set_shader_parameter("albedo_texture", source_material.albedo_texture)
-			wind_material.set_shader_parameter("snow_amount", 1.0 if mesh_index >= _snow_grass_offset else 0.0)
 			mesh.surface_set_material(surface_index, wind_material)
 
 
@@ -903,8 +1164,9 @@ func _install_tree_lod_buckets(buckets: Dictionary) -> void:
 func _install_grass_lod_buckets(buckets: Dictionary) -> void:
 	var category := Node3D.new()
 	category.name = "GrassLODCells"
-	category.set_meta("lod_tier", "sparse_proxy")
+	category.set_meta("lod_tier", "dense_patch_proxy")
 	category.set_meta("source_grass_count", grass_count)
+	category.set_meta("effective_clump_count", grass_count * DENSE_GRASS_CLUSTER_COPIES)
 	category.set_meta("switch_distance_ratio", GRASS_LOD_SWITCH_RATIO)
 	category.set_meta("visibility_end", GRASS_LOD_VISIBILITY_END)
 	category.set_meta("shadows_disabled", true)
@@ -1185,15 +1447,86 @@ func _tree_distribution_point() -> Vector2:
 	# participan de forma equilibrada; el filtro de material posterior descarta
 	# agua, arena, caminos y paredes.
 	var distribution := _random.randf()
-	if distribution < 0.35:
+	# El 33 % sólo se aplica al presupuesto sobrante después de la retícula. Al
+	# ampliar ésta a pradera y nieve, la cantidad junto a caminos se conserva y
+	# los nuevos ejemplares se concentran en las superficies interiores vacías.
+	if distribution < 0.33:
 		var sample := _route_sample()
 		var point: Vector2 = sample[0]
 		var normal: Vector2 = sample[1]
 		var side := -1.0 if _random.randf() < 0.5 else 1.0
 		return point + normal * lerpf(13.0, 178.0, sqrt(_random.randf())) * side
-	if distribution < 0.70:
+	if distribution < 0.72:
 		return _forest_zone_point()
 	return Vector2(_random.randf_range(-4850.0, 5450.0), _random.randf_range(-4380.0, 4380.0))
+
+
+func _build_grass_coverage_points(target_count: int) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	var minimum := Vector2(-4850.0, -4380.0)
+	var maximum := Vector2(5450.0, 4380.0)
+	var columns := ceili((maximum.x - minimum.x) / GRASS_COVERAGE_SPACING)
+	var rows := ceili((maximum.y - minimum.y) / GRASS_COVERAGE_SPACING)
+	for row in rows:
+		for column in columns:
+			var point := minimum + Vector2(
+				(float(column) + 0.5) * GRASS_COVERAGE_SPACING,
+				(float(row) + 0.5) * GRASS_COVERAGE_SPACING
+			)
+			point += Vector2(
+				_random.randf_range(-0.34, 0.34),
+				_random.randf_range(-0.34, 0.34)
+			) * GRASS_COVERAGE_SPACING
+			if _grass_coverage_point_allowed(point):
+				result.append(point)
+	# El recorte se hace tras barajar, de modo que no privilegie una esquina del
+	# mapa. Si las exclusiones crecen en el futuro, el relleno aleatorio garantiza
+	# que el contrato de instancias siga siendo exacto.
+	for index in range(result.size() - 1, 0, -1):
+		var swap_index := _random.randi_range(0, index)
+		var temporary := result[index]
+		result[index] = result[swap_index]
+		result[swap_index] = temporary
+	if result.size() > target_count:
+		result.resize(target_count)
+	var attempts := 0
+	while result.size() < target_count and attempts < target_count * 30:
+		attempts += 1
+		var point := Vector2(
+			_random.randf_range(minimum.x, maximum.x),
+			_random.randf_range(minimum.y, maximum.y)
+		)
+		if _grass_coverage_point_allowed(point):
+			result.append(point)
+	return result
+
+
+func _grass_coverage_point_allowed(point: Vector2) -> bool:
+	if (
+		distance_to_route(point) < 8.2
+		or _inside_clearing(point, 5.0, 9.0)
+		or _inside_stone_village_street(point, 2.0)
+		or _inside_village_clearing(point, -4.0)
+		or _inside_desert(point)
+		or _inside_mystery_forest(point)
+		or _coast_ratio(point) > 0.80
+		or _slope_at(point) > 0.72
+	):
+		return false
+	var height := _height_at(point)
+	if is_nan(height) or height < 2.5:
+		return false
+	# La hierba se corta antes de la primera franja de nieve; no se recolorea de
+	# blanco ni se permite bajo los árboles del bioma tenebroso.
+	if _snow_probability(point, height) > 0.06:
+		return false
+	var terrain_material := terrain.data.get_texture_id(Vector3(point.x, 0.0, point.y))
+	var base_id := int(terrain_material.x)
+	var overlay_id := int(terrain_material.y)
+	var blend := terrain_material.z
+	var base_is_meadow := base_id == 0
+	var overlay_is_meadow := overlay_id == 0
+	return (base_is_meadow and (overlay_is_meadow or blend < 0.12)) or (overlay_is_meadow and blend > 0.88)
 
 
 func _build_tree_coverage_points(target_count: int) -> Array[Vector2]:
@@ -1233,7 +1566,7 @@ func _build_tree_coverage_points(target_count: int) -> Array[Vector2]:
 					break
 			# Algunos compañeros rompen la lectura geométrica sin crear nodos nuevos:
 			# todas las instancias siguen agrupadas en los mismos MultiMesh por celda.
-			if _random.randf() < 0.42:
+			if _random.randf() < 0.75:
 				var companion := center + Vector2(
 					_random.randf_range(-0.43, 0.43),
 					_random.randf_range(-0.43, 0.43)
@@ -1258,13 +1591,14 @@ func _build_tree_coverage_points(target_count: int) -> Array[Vector2]:
 func _tree_coverage_point_allowed(point: Vector2) -> bool:
 	if not _tree_point_allowed(point):
 		return false
-	# La cobertura anti-calvas sólo consume presupuesto sobre pradera. Nieve,
-	# roca y Bosque Tenebroso mantienen sus agrupaciones propias por bioma.
+	# La cobertura anti-calvas incluye tanto pradera como nieve. Antes sólo
+	# aceptaba el id 0 y las grandes llanuras nevadas quedaban dependiendo del
+	# reparto aleatorio, aunque el arbolado general pareciera denso desde lejos.
 	var terrain_material := terrain.data.get_texture_id(Vector3(point.x, 0.0, point.y))
-	var base_is_grass := int(terrain_material.x) == 0
-	var overlay_is_grass := int(terrain_material.y) == 0
+	var base_is_forest_floor := int(terrain_material.x) in [0, 4]
+	var overlay_is_forest_floor := int(terrain_material.y) in [0, 4]
 	var blend := terrain_material.z
-	return (base_is_grass and (overlay_is_grass or blend < 0.70)) or (overlay_is_grass and blend > 0.30)
+	return (base_is_forest_floor and (overlay_is_forest_floor or blend < 0.70)) or (overlay_is_forest_floor and blend > 0.30)
 
 
 func _tree_point_allowed(point: Vector2) -> bool:
@@ -1294,6 +1628,14 @@ func _forest_zone_point() -> Vector2:
 	return Vector2(zone.x + cos(angle) * zone.z * radius * distortion, zone.y + sin(angle) * zone.w * radius * distortion)
 
 
+func _desert_decoration_point_allowed(point: Vector2) -> bool:
+	if not _inside_desert_core(point) or _coast_ratio(point) > 0.77 or _slope_at(point) > 0.32:
+		return false
+	var terrain_material := terrain.data.get_texture_id(Vector3(point.x, 0.0, point.y))
+	var dominant_id := int(terrain_material.y) if terrain_material.z >= 0.50 else int(terrain_material.x)
+	return dominant_id == 3
+
+
 func _inside_desert(point: Vector2) -> bool:
 	var core := _gaussian_strength(point, Vector2(2400.0, 2050.0), Vector2(1450.0, 1120.0))
 	var coast := _gaussian_strength(point, Vector2(4380.0, 2500.0), Vector2(1550.0, 1180.0))
@@ -1303,6 +1645,13 @@ func _inside_desert(point: Vector2) -> bool:
 	var cliffs := pow(cliff_local.x / 1550.0, 2.0) + pow(cliff_local.y / 1750.0, 2.0) < 1.0
 	var coastal_beach := _coast_ratio(point) > 0.815
 	return dunes or cliffs or coastal_beach
+
+
+func _inside_desert_core(point: Vector2) -> bool:
+	var core := _gaussian_strength(point, Vector2(2400.0, 2050.0), Vector2(1450.0, 1120.0))
+	var coast := _gaussian_strength(point, Vector2(4380.0, 2500.0), Vector2(1550.0, 1180.0))
+	var southern := _gaussian_strength(point, Vector2(2450.0, 3550.0), Vector2(1750.0, 760.0))
+	return maxf(core, maxf(coast * 0.96, southern * 0.78)) > 0.38
 
 
 func _snow_probability(point: Vector2, height: float) -> float:
@@ -1322,6 +1671,10 @@ func _mystery_forest_strength(point: Vector2) -> float:
 	var coast := _gaussian_strength(point, Vector2(5200.0, -620.0), Vector2(820.0, 980.0)) * 0.88
 	var veins := 0.86 + sin(point.x * 0.0034 + point.y * 0.0021) * 0.11
 	return clampf(maxf(core, maxf(north, coast)) * veins, 0.0, 1.0)
+
+
+func _inside_mystery_forest(point: Vector2) -> bool:
+	return _mystery_forest_strength(point) > 0.26
 
 
 func _gaussian_strength(point: Vector2, center: Vector2, spread: Vector2) -> float:
@@ -1395,7 +1748,7 @@ func _distance_to_segment_2d(point: Vector2, start: Vector2, finish: Vector2) ->
 
 func _add_tree_collision(base: Vector3, bounds: AABB, tree_scale: float) -> void:
 	var shape := CylinderShape3D.new()
-	shape.radius = clampf(tree_scale * 0.34, 0.38, 0.82)
+	shape.radius = clampf(tree_scale * 0.34, 0.38, 1.18)
 	shape.height = maxf(bounds.size.y * tree_scale * 0.76, 4.0)
 	var collision := CollisionShape3D.new()
 	collision.shape = shape

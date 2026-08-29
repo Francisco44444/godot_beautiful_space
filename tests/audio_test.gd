@@ -89,6 +89,21 @@ func _run_test() -> void:
 	if audio.current_music_zone != "snow" or audio.snow_music.volume_db < audio.music.volume_db + 35.0 or audio.snow_music_weight < 0.90:
 		_fail("Promise no toma la mezcla al entrar en Cumbres Blancas.")
 		return
+	if audio.birds.volume_db > -58.0:
+		_fail("Los pájaros continúan sonando dentro de la zona de nieve: %.2f dB" % audio.birds.volume_db)
+		return
+	var dark_point := Vector2(4620.0, -1260.0)
+	player.global_position = Vector3(dark_point.x, terrain.data.get_height(Vector3(dark_point.x, 0.0, dark_point.y)), dark_point.y)
+	audio.call("_process", 1.0)
+	if audio.current_music_zone != "dark_forest" or audio.dark_forest_weight < 0.95:
+		_fail("El Bosque Tenebroso no activa su mezcla de silencio propia.")
+		return
+	if maxf(audio.music.volume_db, maxf(audio.snow_music.volume_db, audio.desert_music.volume_db)) > -58.0:
+		_fail("Alguna música continúa sonando dentro del Bosque Tenebroso.")
+		return
+	if audio.birds.volume_db > -58.0:
+		_fail("Los pájaros continúan sonando dentro del Bosque Tenebroso: %.2f dB" % audio.birds.volume_db)
+		return
 	var valley_point := Vector2(0.0, 190.0)
 	player.global_position = Vector3(valley_point.x, terrain.data.get_height(Vector3(valley_point.x, 0.0, valley_point.y)), valley_point.y)
 	audio.call("_process", 1.0)
@@ -125,13 +140,8 @@ func _run_test() -> void:
 		return
 
 	print(
-		"AUDIO TEST OK: tres músicas por bioma (%.0f/%.0f/%.0f s), desierto sin pájaros, viento y %d cascos."
-		% [
-			audio.music.stream.get_length(),
-			audio.snow_music.stream.get_length(),
-			audio.desert_music.stream.get_length(),
-			horse.hoofbeat_count,
-		]
+		"AUDIO TEST OK: música por bioma, nieve/desierto sin pájaros, bosque tenebroso en silencio, viento y %d cascos."
+		% horse.hoofbeat_count
 	)
 	audio.music.stop()
 	audio.snow_music.stop()

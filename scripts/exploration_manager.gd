@@ -14,6 +14,10 @@ signal progress_loaded(completed: int, total: int)
 signal save_completed(path: String)
 signal save_failed(path: String, error: String)
 signal objective_action_completed(zone: Dictionary, action_key: String)
+signal story_objective_changed(objective: Dictionary)
+signal story_chapter_completed(chapter: Dictionary)
+
+const STORY_CATALOG: Script = preload("res://scripts/rpg_story_catalog.gd")
 
 const SAVE_VERSION := 2
 const TOTAL_ZONES := 200
@@ -236,6 +240,56 @@ func get_zones_by_biome(biome: String) -> Array[Dictionary]:
 	return result
 
 
+func get_story_chapters() -> Array[Dictionary]:
+	var chapters: Array[Dictionary] = STORY_CATALOG.get_chapters()
+	for chapter_index in chapters.size():
+		var chapter := chapters[chapter_index].duplicate(true) as Dictionary
+		var completed := 0
+		for zone in _zones:
+			if int(zone.get("chapter_index", 0)) == chapter_index + 1 and _discovered.has(String(zone.id)):
+				completed += 1
+		chapter["index"] = chapter_index + 1
+		chapter["completed"] = completed
+		chapter["total"] = 25
+		chapter["unlocked"] = chapter_index == 0 or _chapter_completed(chapter_index)
+		chapters[chapter_index] = chapter
+	return chapters
+
+
+func get_story_objectives(chapter_index: int = 0) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for zone in _zones:
+		if chapter_index <= 0 or int(zone.get("chapter_index", 0)) == chapter_index:
+			result.append(_zone_with_status(zone))
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.get("story_order", 9999)) < int(b.get("story_order", 9999))
+	)
+	return result
+
+
+func get_current_story_objective() -> Dictionary:
+	var best: Dictionary = {}
+	var best_order := 999999
+	for zone in _zones:
+		var zone_id := String(zone.id)
+		var order := int(zone.get("story_order", 999999))
+		if not _discovered.has(zone_id) and order < best_order:
+			best = zone
+			best_order = order
+	return _zone_with_status(best)
+
+
+func get_story_progress() -> Dictionary:
+	var current := get_current_story_objective()
+	return {
+		"completed": get_completed_count(),
+		"total": get_zone_count(),
+		"current": current,
+		"chapter": int(current.get("chapter_index", 8 if get_completed_count() >= TOTAL_ZONES else 1)),
+		"finished": get_completed_count() >= TOTAL_ZONES,
+	}
+
+
 func set_tracked_player(player: Node3D) -> void:
 	_tracked_player = player
 	if is_instance_valid(_tracked_player):
@@ -328,6 +382,11 @@ func _complete_zone(zone_id: String) -> Dictionary:
 		save_progress()
 	var completed_zone := _zone_with_status(zone)
 	zone_discovered.emit(completed_zone, _discovered.size(), _zones.size())
+	var completed_chapter_index := int(completed_zone.get("chapter_index", 0))
+	if completed_chapter_index > 0 and _chapter_completed(completed_chapter_index):
+		var chapters := get_story_chapters()
+		story_chapter_completed.emit(chapters[completed_chapter_index - 1])
+	story_objective_changed.emit(get_current_story_objective())
 	_emit_progress()
 	nearby_zone_changed.emit({})
 	return completed_zone
@@ -391,6 +450,7 @@ func clear_progress(persist: bool = true) -> void:
 	_emit_progress()
 	nearby_zone_changed.emit({})
 	selected_zone_changed.emit({})
+	story_objective_changed.emit(get_current_story_objective())
 
 
 func get_save_state() -> Dictionary:
@@ -420,6 +480,7 @@ func apply_save_state(state: Dictionary, persist: bool = true) -> bool:
 	_emit_progress()
 	nearby_zone_changed.emit({})
 	selected_zone_changed.emit(get_selected_zone())
+	story_objective_changed.emit(get_current_story_objective())
 	if persist and autosave_enabled:
 		save_progress()
 	return true
@@ -478,6 +539,7 @@ func load_progress() -> bool:
 	progress_loaded.emit(_discovered.size(), _zones.size())
 	_emit_progress()
 	selected_zone_changed.emit(get_selected_zone())
+	story_objective_changed.emit(get_current_story_objective())
 	return true
 
 
@@ -534,7 +596,26 @@ func _build_catalog() -> void:
 		"target_id": "zone_200_atardecer",
 		"variant": 0,
 	})
+	# Conserva posiciones, IDs y requisitos físicos para que mapas y guardados
+	# existentes sigan siendo válidos; la campaña añade una ruta narrativa encima.
+	_zones = STORY_CATALOG.decorate_zones(_zones)
+	_zones_by_id.clear()
+	for decorated_zone in _zones:
+		_zones_by_id[String(decorated_zone.id)] = decorated_zone
 	assert(_zones.size() == TOTAL_ZONES)
+
+
+func _chapter_completed(chapter_index: int) -> bool:
+	if chapter_index < 1 or chapter_index > 8:
+		return false
+	var found := 0
+	for zone in _zones:
+		if int(zone.get("chapter_index", 0)) != chapter_index:
+			continue
+		found += 1
+		if not _discovered.has(String(zone.id)):
+			return false
+	return found == 25
 
 
 func _objective_for_zone(layout: Dictionary, local_index: int, global_index: int) -> Dictionary:
@@ -760,10 +841,11 @@ func _validated_payload(text: String):
 	if (
 		int(payload.get("schema_version", -1)) != SAVE_VERSION
 		or int(payload.get("total_zones", -1)) != _zones.size()
-		or String(payload.get("catalog_signature", "")) != _catalog_signature()
 		or not payload.get("discovered_ids", null) is Array
 	):
 		return null
+	# Los títulos pasaron de marcadores genéricos a capítulos narrativos. Una
+	# firma antigua no debe borrar un progreso válido si sus 200 IDs aún existen.
 	var seen := {}
 	for raw_id in payload.discovered_ids:
 		if not raw_id is String:

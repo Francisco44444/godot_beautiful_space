@@ -17,6 +17,7 @@ Todos los siguientes packs se publican bajo [CC0 1.0 Universal](https://creative
 - [Ultimate Animated Character Pack](https://quaternius.com/packs/ultimatedanimatedcharacter.html): 50 archivos glTF disponibles en la carpeta pública oficial, conservados en `assets/quaternius/ultimate_animated_characters/glTF`. El protagonista activo es `Knight_Golden_Male.gltf`.
 - [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html): caballo y fauna animada en `assets/quaternius/ultimate_animated_animals`.
 - [Stylized Nature Mega Kit](https://quaternius.com/): árboles, pinos, troncos, hierba, plantas, flores, arbustos, setas, rocas y guijarros activos en `assets/quaternius/store_bundle/glTF`.
+- *Nature Pack - Jun 2019*: selección de rocas hundidas y cactus del desierto en `assets/quaternius/Nature Pack - Jun 2019/OBJ`.
 - [Medieval Village MegaKit](https://quaternius.com/packs/medievalvillagemegakit.html): arquitectura y atrezo seleccionados en `assets/models/medieval_village`, además de módulos de la biblioteca glTF organizada.
 - *Modular Medieval Buildings - Jul 2017*: murallas, puertas, puentes, torres, atalayas, estandartes y atrezo de los tres castillos monumentales, conservados en `assets/quaternius/Modular Medieval Buildings - Jul 2017/OBJ`.
 - *Survival Pack - Sept 2020*: cuchillo activo y biblioteca de herramientas y armas en `assets/quaternius/Survival Pack - Sept 2020`.

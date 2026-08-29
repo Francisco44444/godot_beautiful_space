@@ -27,3 +27,25 @@ assets/animations/Universal Animation Library 2\[Standard\]/*.png
 assets/quaternius/Survival Pack - Sept 2020/Blends/
 assets/quaternius/Modular Medieval Buildings - Jul 2017/Blends/
 assets/quaternius/Modular Medieval Buildings - Jul 2017/FBX/
+
+# Packs fuente que el usuario conserva localmente. El juego sólo versiona la
+# selección mínima que usa en tiempo de ejecución para no subir cientos de MB.
+/assets/quaternius/Fantasy Props MegaKit/
+/assets/quaternius/Medieval Village MegaKit/
+/assets/quaternius/Stylized Nature MegaKit\[Standard\]/
+/assets/quaternius/Nature Pack - Jun 2019/*
+!/assets/quaternius/Nature Pack - Jun 2019/License.txt
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/
+/assets/quaternius/Nature Pack - Jun 2019/OBJ/*
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Rock_Moss_1.obj
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Rock_Moss_1.mtl
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Rock_Moss_3.obj
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Rock_Moss_3.mtl
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Rock_Moss_6.obj
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Rock_Moss_6.mtl
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Cactus_1.obj
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Cactus_1.mtl
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Cactus_3.obj
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/Cactus_3.mtl
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/CactusFlowers_3.obj
+!/assets/quaternius/Nature Pack - Jun 2019/OBJ/CactusFlowers_3.mtl

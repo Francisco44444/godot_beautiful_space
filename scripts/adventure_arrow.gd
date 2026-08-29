@@ -8,6 +8,7 @@ var velocity := Vector3.ZERO
 var shooter: Node3D
 var lifetime := 8.0
 var damage := 1
+var draw_strength := 0.0
 var _flying := true
 var _trail: GPUParticles3D
 
@@ -17,9 +18,17 @@ func _ready() -> void:
 	_build_flight_trail()
 
 
-func launch(direction: Vector3, speed: float, owner_node: Node3D) -> void:
+func launch(direction: Vector3, speed: float, owner_node: Node3D, strength: float = 1.0) -> void:
 	velocity = direction.normalized() * speed
 	shooter = owner_node
+	draw_strength = clampf(strength, 0.0, 1.0)
+	damage = 1 + floori(draw_strength * 2.0)
+	lifetime = 8.0
+	_flying = true
+	set_physics_process(true)
+	if _trail != null:
+		_trail.amount_ratio = lerpf(0.38, 1.0, draw_strength)
+		_trail.emitting = true
 	look_at(global_position + velocity.normalized(), Vector3.UP, true)
 
 

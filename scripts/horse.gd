@@ -24,6 +24,11 @@ const HOOFBEATS: Array[AudioStream] = [
 @export var horse_name: String = "Brisa"
 @export var respawn_height: float = -12.0
 
+@export_category("Llamada desde el horizonte")
+@export var summon_horizon_distance: float = 58.0
+@export var summon_teleport_threshold: float = 30.0
+@export var summon_materialize_delay: float = 0.42
+
 @export_category("Quaternius")
 @export_file("*.gltf") var quaternius_horse_path := "res://assets/quaternius/ultimate_animated_animals/glTF/Horse.gltf"
 
@@ -44,6 +49,11 @@ var hoofbeat_count := 0
 var sprint_requested := false
 var _summon_target: Node3D
 var _is_being_called := false
+var _summon_pending := false
+var _summon_timer := 0.0
+var _summon_destination := Vector3.ZERO
+var summon_teleport_count := 0
+var _saved_collision_layer := 1
 
 
 func _ready() -> void:
@@ -59,6 +69,12 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _summon_pending:
+		_summon_timer -= delta
+		velocity = Vector3.ZERO
+		if _summon_timer <= 0.0:
+			_materialize_at_horizon()
+		return
 	_apply_gravity(delta)
 	if mounted:
 		_is_being_called = false
@@ -94,13 +110,105 @@ func call_to(target: Node3D) -> void:
 	if mounted or target == null:
 		return
 	_summon_target = target
-	_is_being_called = true
-	name_label.text = "%s · EN CAMINO" % horse_name.to_upper()
+	var distance := global_position.distance_to(target.global_position)
+	if distance > summon_teleport_threshold:
+		_schedule_horizon_arrival(target)
+	else:
+		_is_being_called = true
+	name_label.text = "%s · CRUZA EL HORIZONTE" % horse_name.to_upper()
 	name_label.visible = true
 
 
 func is_coming_when_called() -> bool:
-	return _is_being_called
+	return _is_being_called or _summon_pending
+
+
+func _schedule_horizon_arrival(target: Node3D) -> void:
+	var forward := -target.global_basis.z
+	var camera := get_viewport().get_camera_3d()
+	if camera != null:
+		forward = -camera.global_basis.z
+	forward.y = 0.0
+	forward = forward.normalized() if forward.length_squared() > 0.01 else Vector3.FORWARD
+	var right := Vector3.UP.cross(forward).normalized()
+	var preferred := target.global_position + forward * summon_horizon_distance + right * 8.0
+	_summon_destination = _find_safe_summon_point(preferred, target.global_position, forward)
+	_summon_pending = true
+	_is_being_called = false
+	_summon_timer = summon_materialize_delay
+	_saved_collision_layer = collision_layer
+	collision_layer = 0
+	visual.visible = false
+	velocity = Vector3.ZERO
+
+
+func _find_safe_summon_point(preferred: Vector3, target_position: Vector3, forward: Vector3) -> Vector3:
+	var terrain := get_node_or_null("../Terrain3D")
+	if terrain == null or terrain.get("data") == null:
+		return Vector3(preferred.x, target_position.y + 1.0, preferred.z)
+	var directions: Array[Vector3] = [
+		forward,
+		forward.rotated(Vector3.UP, deg_to_rad(24.0)),
+		forward.rotated(Vector3.UP, deg_to_rad(-24.0)),
+		forward.rotated(Vector3.UP, deg_to_rad(48.0)),
+		forward.rotated(Vector3.UP, deg_to_rad(-48.0)),
+	]
+	for direction in directions:
+		var point := target_position + direction * summon_horizon_distance
+		var height: float = terrain.data.get_height(point)
+		var nearby_height: float = terrain.data.get_height(point + Vector3(direction.z, 0.0, -direction.x) * 2.5)
+		if not is_nan(height) and not is_nan(nearby_height) and height > 1.4 and absf(nearby_height - height) < 2.0:
+			return Vector3(point.x, height + 0.24, point.z)
+	var fallback_height: float = terrain.data.get_height(preferred)
+	return Vector3(preferred.x, fallback_height + 0.24 if not is_nan(fallback_height) else target_position.y + 1.0, preferred.z)
+
+
+func _materialize_at_horizon() -> void:
+	_summon_pending = false
+	global_position = _summon_destination
+	velocity = Vector3.ZERO
+	collision_layer = _saved_collision_layer
+	visual.visible = true
+	_is_being_called = is_instance_valid(_summon_target)
+	summon_teleport_count += 1
+	_spawn_arrival_mist()
+	if _is_being_called:
+		var direction := _summon_target.global_position - global_position
+		direction.y = 0.0
+		if direction.length_squared() > 0.01:
+			visual.rotation.y = atan2(-direction.x, -direction.z)
+			velocity = direction.normalized() * gallop_speed * 0.72
+	name_label.text = "%s · GALOPA HACIA TI" % horse_name.to_upper()
+
+
+func _spawn_arrival_mist() -> void:
+	var particles := CPUParticles3D.new()
+	particles.name = "HorizonArrivalMist"
+	particles.amount = 26
+	particles.lifetime = 0.82
+	particles.one_shot = true
+	particles.explosiveness = 0.78
+	particles.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	particles.emission_sphere_radius = 1.4
+	particles.direction = Vector3.UP
+	particles.spread = 58.0
+	particles.initial_velocity_min = 1.1
+	particles.initial_velocity_max = 2.8
+	particles.gravity = Vector3(0.0, -1.2, 0.0)
+	particles.scale_amount_min = 0.35
+	particles.scale_amount_max = 0.85
+	particles.color = Color(0.72, 0.83, 0.90, 0.56)
+	var puff := SphereMesh.new()
+	puff.radius = 0.12
+	puff.height = 0.24
+	puff.radial_segments = 5
+	puff.rings = 3
+	particles.mesh = puff
+	get_parent().add_child(particles)
+	particles.global_position = global_position + Vector3.UP * 0.4
+	particles.emitting = true
+	var cleanup := get_tree().create_timer(1.1)
+	cleanup.timeout.connect(particles.queue_free)
 
 
 func _follow_summon_target(delta: float) -> void:

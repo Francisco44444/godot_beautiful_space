@@ -90,9 +90,9 @@ func _spawn_tree(zone: Dictionary) -> void:
 	if scene != null:
 		var visual := scene.instantiate() as Node3D
 		visual.name = "StandingTree"
-		visual.scale = Vector3.ONE * 2.45
+		visual.scale = Vector3.ONE * 3.05
 		resource.add_child(visual)
-	_add_capsule_collision(resource, 1.15, 10.5, Vector3(0.0, 5.25, 0.0))
+	_add_capsule_collision(resource, 1.44, 13.1, Vector3(0.0, 6.55, 0.0))
 	_add_marker(resource, "ÁRBOL MARCADO", Color(0.52, 0.95, 0.36))
 	generated_tree_count += 1
 

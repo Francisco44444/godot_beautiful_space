@@ -90,6 +90,8 @@ func _run_test() -> void:
 		failures.append("La niebla regional mantiene demasiados volúmenes activos simultáneamente")
 	elif island_environment.get("ocean") == null or not bool(island_environment.get("ocean").get_meta("low_poly_waves", false)):
 		failures.append("Falta el mar low-poly animado")
+	elif not bool(island_environment.get("ocean").get_meta("multiscale_nonrepeating_waves", false)):
+		failures.append("El mar lejano sigue dependiendo de un patrón uniforme en vez de ondas multiescala")
 	elif not bool(island_environment.get("ocean").get_meta("spherical_horizon", false)):
 		failures.append("El mar no curva ni oculta el límite blanco del horizonte")
 	elif not bool(island_environment.get("ocean").get_meta("animated_tides", false)):
@@ -107,6 +109,8 @@ func _run_test() -> void:
 		var high_tide := float(island_environment.get("tide_height"))
 		if high_tide - low_tide < 4.5 or absf((island_environment.get("ocean") as MeshInstance3D).position.y - high_tide) > 0.01:
 			failures.append("La marea no recorre suficiente altura para llenar y vaciar las rías")
+		if int(island_environment.get("scenic_cascade_count")) < 1 or int(island_environment.get("scenic_cascade_mist_count")) < 1:
+			failures.append("No se generó ninguna cascada low-poly anclada al terreno con bruma de impacto")
 		var tide_player := world.get_node("Player") as Player
 		var terrain := world.get_node("Terrain3D") as Terrain3D
 		var tidal_point := Vector2(-3990.0, 2200.0)
@@ -164,6 +168,29 @@ func _run_test() -> void:
 				failures.append("El sol diurno permanece visible durante la noche")
 			if not moon.visible or moon_light.light_energy < 0.55 or not moon_light.shadow_enabled:
 				failures.append("La luna no alumbra ni proyecta sombras durante la noche")
+			island_environment.call("sync_celestial_sources", active_camera)
+			var moon_source := (moon.global_position - active_camera.global_position).normalized() if active_camera != null else Vector3.ZERO
+			var moon_light_source := moon_light.global_basis.z.normalized()
+			print("MOON ALIGNMENT: visual=%s light=%s tracked=%s dot=%.6f error=%.4f°" % [
+				moon_source, moon_light_source, island_environment.get("moon_source_direction"),
+				moon_source.dot(moon_light_source), float(island_environment.call("get_moon_alignment_error_degrees")),
+			])
+			if (
+				active_camera == null
+				or moon_source.dot(moon_light_source) < 0.9998
+				or float(island_environment.call("get_moon_alignment_error_degrees")) > 0.25
+				or not bool(moon_light.get_meta("aligned_with_visible_moon", false))
+			):
+				failures.append("La luz nocturna no procede visualmente del disco lunar; las sombras quedan desalineadas")
+			var fixed_moon_source := moon_source
+			world.sun_cycle_radians = 5.35
+			world.call("_update_sun_cycle", 0.0)
+			island_environment.call("sync_celestial_sources", active_camera)
+			var later_moon_source := (moon.global_position - active_camera.global_position).normalized() if active_camera != null else Vector3.ZERO
+			if fixed_moon_source.dot(later_moon_source) < 0.99999 or not bool(moon.get_meta("fixed_sky_direction", false)):
+				failures.append("La luna cambia de lugar durante la noche en vez de permanecer fija en el cielo")
+			if later_moon_source.dot(moon_light.global_basis.z.normalized()) < 0.9998:
+				failures.append("La luz lunar deja de coincidir con la luna fija al avanzar la noche")
 
 	var ambient_audio := world.get_node("AmbientAudio") as AmbientAudio
 	ambient_audio.music.stop()
@@ -177,7 +204,7 @@ func _run_test() -> void:
 		_fail(failures)
 		return
 
-	print("ATMOSPHERE TEST OK: ciclo completo, luna low-poly luminosa, estrellas, mar y niebla regional.")
+	print("ATMOSPHERE TEST OK: luna y sombras alineadas, mar multiescala, cascadas, estrellas y niebla regional.")
 	quit(0)
 
 

@@ -54,9 +54,18 @@ func _run_test() -> void:
 
 	var player := world.get_node("Player") as Player
 	var horse := world.get_node("Horse") as Horse
+	# Si Brisa está lejos no cruza todo el mapa durante minutos: desaparece fuera
+	# de plano, se materializa en el horizonte y desde allí galopa hasta el jugador.
+	horse.global_position = player.global_position + Vector3(500.0, 0.0, 0.0)
 	world.call("call_horse_to_player")
-	if not horse.call("is_coming_when_called"):
+	if not horse.call("is_coming_when_called") or not bool(horse.get("_summon_pending")) or horse.visual.visible:
 		_fail("El botón H no puede llamar al caballo.")
+		return
+	for _frame in 38:
+		await physics_frame
+	var arrival_distance := horse.global_position.distance_to(player.global_position)
+	if horse.summon_teleport_count != 1 or not horse.visual.visible or arrival_distance < 18.0 or arrival_distance > 82.0:
+		_fail("Brisa no se materializó de forma creíble en el horizonte: %.2f m." % arrival_distance)
 		return
 	var saved_position := Vector3(143.0, 22.0, -87.0)
 	player.global_position = saved_position

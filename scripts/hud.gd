@@ -56,6 +56,15 @@ var bow_power_bar: ProgressBar
 var adventure_action_hint: Label
 var action_feedback_label: Label
 var action_feedback_seconds := 0.0
+var story_hint_panel: PanelContainer
+var story_hint_label: Label
+var story_hint_expanded := false
+var story_current_objective: Dictionary = {}
+var story_dialogue_overlay: ColorRect
+var story_dialogue_title: Label
+var story_dialogue_body: RichTextLabel
+var story_dialogue_open := false
+var player_health_bar: ProgressBar
 var inventory_manager: Node
 var pause_menu: PauseMenu
 
@@ -72,6 +81,7 @@ func _ready() -> void:
 	_build_exploration_journal()
 	_build_inventory_overlay()
 	_build_quickbar()
+	_build_story_hud()
 	pause_menu = PauseMenu.new()
 	add_child(pause_menu)
 	pause_menu.closed.connect(func() -> void:
@@ -104,12 +114,18 @@ func _ready() -> void:
 		exploration.connect("nearby_zone_changed", Callable(self, "_on_exploration_nearby_changed"))
 		exploration.connect("zone_discovered", Callable(self, "_on_exploration_zone_discovered"))
 		exploration.connect("selected_zone_changed", Callable(self, "_on_exploration_selected_changed"))
+		exploration.connect("story_objective_changed", Callable(self, "_on_story_objective_changed"))
 		_on_exploration_progress_changed(
 			int(exploration.call("get_completed_count")),
 			int(exploration.call("get_zone_count")),
 			float(exploration.call("get_progress_ratio"))
 		)
 		_on_exploration_nearby_changed(exploration.call("get_nearby_zone") as Dictionary)
+		_on_story_objective_changed(exploration.call("get_current_story_objective") as Dictionary)
+	var story_runtime := get_node_or_null("../RPGStoryRuntime")
+	if story_runtime != null:
+		story_runtime.connect("dialogue_requested", Callable(self, "_on_story_dialogue_requested"))
+		story_runtime.connect("player_health_changed", Callable(self, "_on_player_health_changed"))
 	if DisplayServer.get_name().to_lower() != "headless":
 		_set_lobby_open(true)
 	else:
@@ -124,6 +140,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if lobby_open:
 		return
 	if pause_menu != null and pause_menu.visible:
+		return
+	if story_dialogue_open:
 		return
 	if event.is_action_pressed("settings"):
 		_set_settings_open(not settings_open)
@@ -144,6 +162,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if journal_key.pressed and not journal_key.echo and journal_code == KEY_H:
 			_call_horse()
+			get_viewport().set_input_as_handled()
+			return
+		if journal_key.pressed and not journal_key.echo and journal_code == KEY_P:
+			_set_story_hint_expanded(not story_hint_expanded)
 			get_viewport().set_input_as_handled()
 			return
 	if exploration_journal_open:
@@ -181,7 +203,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _handle_cancel() -> void:
 	# Cierra primero el nivel visual actual. Solo cuando no queda ninguna ventana
 	# abre el menú de pausa, como esperan los juegos convencionales.
-	if lobby_open:
+	if story_dialogue_open:
+		_set_story_dialogue_open(false)
+	elif story_hint_expanded:
+		_set_story_hint_expanded(false)
+	elif lobby_open:
 		_set_lobby_open(false)
 	elif settings_open:
 		_set_settings_open(false)
@@ -261,7 +287,7 @@ func is_settings_open() -> bool:
 
 
 func _exit_tree() -> void:
-	if (settings_open or lobby_open or exploration_journal_open or inventory_open or (pause_menu != null and pause_menu.visible)) and get_tree() != null:
+	if (settings_open or lobby_open or exploration_journal_open or inventory_open or story_dialogue_open or (pause_menu != null and pause_menu.visible)) and get_tree() != null:
 		get_tree().paused = false
 
 
@@ -300,6 +326,163 @@ func _process(delta: float) -> void:
 		mount_hint.visible = nearby_horse != null
 		if nearby_horse != null:
 			mount_hint.text = "E · Montar a %s" % nearby_horse.horse_name
+
+
+func _build_story_hud() -> void:
+	story_hint_panel = PanelContainer.new()
+	story_hint_panel.name = "PersistentStoryHint"
+	story_hint_panel.z_index = 78
+	story_hint_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	story_hint_panel.position = Vector2(-448.0, 218.0)
+	story_hint_panel.size = Vector2(428.0, 132.0)
+	story_hint_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	story_hint_panel.visible = false
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.045, 0.055, 0.88)
+	style.border_color = Color(0.82, 0.58, 0.25, 0.90)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(12)
+	style.shadow_color = Color(0.0, 0.0, 0.0, 0.48)
+	style.shadow_size = 7
+	story_hint_panel.add_theme_stylebox_override("panel", style)
+	add_child(story_hint_panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 15)
+	margin.add_theme_constant_override("margin_top", 11)
+	margin.add_theme_constant_override("margin_right", 15)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	story_hint_panel.add_child(margin)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 6)
+	margin.add_child(content)
+	story_hint_label = Label.new()
+	story_hint_label.name = "StoryHintText"
+	story_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	story_hint_label.add_theme_font_size_override("font_size", 16)
+	story_hint_label.add_theme_color_override("font_color", Color(1.0, 0.89, 0.65))
+	story_hint_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.95))
+	story_hint_label.add_theme_constant_override("shadow_offset_x", 2)
+	story_hint_label.add_theme_constant_override("shadow_offset_y", 2)
+	content.add_child(story_hint_label)
+	player_health_bar = ProgressBar.new()
+	player_health_bar.name = "PlayerHealth"
+	player_health_bar.max_value = 100.0
+	player_health_bar.value = 100.0
+	player_health_bar.show_percentage = false
+	player_health_bar.custom_minimum_size = Vector2(0.0, 9.0)
+	player_health_bar.tooltip_text = "Vida"
+	content.add_child(player_health_bar)
+
+	story_dialogue_overlay = ColorRect.new()
+	story_dialogue_overlay.name = "StoryDialogue"
+	story_dialogue_overlay.z_index = 292
+	story_dialogue_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	story_dialogue_overlay.color = Color(0.008, 0.012, 0.018, 0.76)
+	story_dialogue_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	story_dialogue_overlay.visible = false
+	add_child(story_dialogue_overlay)
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.position = Vector2(-430.0, -235.0)
+	panel.size = Vector2(860.0, 470.0)
+	var dialogue_style := StyleBoxFlat.new()
+	dialogue_style.bg_color = Color(0.055, 0.045, 0.038, 0.98)
+	dialogue_style.border_color = Color(0.88, 0.65, 0.31)
+	dialogue_style.set_border_width_all(3)
+	dialogue_style.set_corner_radius_all(16)
+	panel.add_theme_stylebox_override("panel", dialogue_style)
+	story_dialogue_overlay.add_child(panel)
+	var dialogue_margin := MarginContainer.new()
+	dialogue_margin.add_theme_constant_override("margin_left", 34)
+	dialogue_margin.add_theme_constant_override("margin_top", 28)
+	dialogue_margin.add_theme_constant_override("margin_right", 34)
+	dialogue_margin.add_theme_constant_override("margin_bottom", 26)
+	panel.add_child(dialogue_margin)
+	var dialogue_content := VBoxContainer.new()
+	dialogue_content.add_theme_constant_override("separation", 15)
+	dialogue_margin.add_child(dialogue_content)
+	story_dialogue_title = Label.new()
+	story_dialogue_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	story_dialogue_title.add_theme_font_size_override("font_size", 28)
+	story_dialogue_title.add_theme_color_override("font_color", Color(1.0, 0.80, 0.40))
+	dialogue_content.add_child(story_dialogue_title)
+	story_dialogue_body = RichTextLabel.new()
+	story_dialogue_body.bbcode_enabled = true
+	story_dialogue_body.fit_content = false
+	story_dialogue_body.custom_minimum_size = Vector2(790.0, 300.0)
+	story_dialogue_body.add_theme_font_size_override("normal_font_size", 18)
+	story_dialogue_body.add_theme_color_override("default_color", Color(0.94, 0.91, 0.82))
+	dialogue_content.add_child(story_dialogue_body)
+	var close_button := Button.new()
+	close_button.text = "Continuar  ·  Esc"
+	close_button.custom_minimum_size = Vector2(0.0, 42.0)
+	close_button.pressed.connect(func() -> void: _set_story_dialogue_open(false))
+	dialogue_content.add_child(close_button)
+
+
+func _on_story_objective_changed(objective: Dictionary) -> void:
+	story_current_objective = objective.duplicate(true)
+	_refresh_story_hint()
+
+
+func _refresh_story_hint() -> void:
+	if story_hint_label == null:
+		return
+	if story_current_objective.is_empty():
+		story_hint_label.text = "LA VOZ DE AELORIA\nLa isla recuerda tu viaje completo."
+		return
+	var order := int(story_current_objective.get("story_order", 1))
+	var step := posmod(order - 1, 25) + 1
+	var compact := "%s  ·  %d/25\n◆ %s" % [
+		String(story_current_objective.get("chapter_title", "AVENTURA")),
+		step,
+		String(story_current_objective.get("name", "Sigue el sendero")),
+	]
+	if story_hint_expanded:
+		compact = "%s\n\n%s\n\nRECOMPENSA: %s\nP · ocultar pista" % [
+		compact.get_slice("\n", 0) + "\n◆ " + String(story_current_objective.get("name", "Sigue el sendero")),
+		String(story_current_objective.get("description", "Busca las marcas del Eco.")),
+		String(story_current_objective.get("reward_preview", "Progreso de historia")),
+		]
+	story_hint_label.text = compact
+
+
+func _set_story_hint_expanded(open: bool) -> void:
+	story_hint_expanded = open
+	if story_hint_panel != null:
+		story_hint_panel.visible = open
+		story_hint_panel.position.y = 218.0
+		story_hint_panel.size.y = 288.0
+		story_hint_panel.set_meta("expanded", open)
+	_refresh_story_hint()
+
+
+func _on_story_dialogue_requested(speaker: String, role: String, title: String, body: String) -> void:
+	story_dialogue_title.text = "%s · %s\n%s" % [speaker, role, title]
+	story_dialogue_body.text = body
+	_set_story_dialogue_open(true)
+
+
+func _set_story_dialogue_open(open: bool) -> void:
+	story_dialogue_open = open
+	if story_dialogue_overlay != null:
+		story_dialogue_overlay.visible = open
+	if open:
+		mini_map.visible = false
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		get_tree().paused = true
+	else:
+		get_tree().paused = false
+		mini_map.visible = mini_map_open and not map_open
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _on_player_health_changed(current: int, maximum: int) -> void:
+	if player_health_bar == null:
+		return
+	player_health_bar.max_value = maximum
+	player_health_bar.value = current
+	player_health_bar.tooltip_text = "Vida · %d/%d" % [current, maximum]
 
 
 func _build_settings_overlay() -> void:
@@ -843,7 +1026,7 @@ func _build_exploration_hud() -> void:
 	margin.add_child(content)
 	exploration_progress_label = Label.new()
 	exploration_progress_label.name = "ExplorationProgressLabel"
-	exploration_progress_label.text = "AVENTURA DE LA ISLA · 0 / 200 · L diario"
+	exploration_progress_label.text = "AVENTURA DE LA ISLA · 0 / 200 · L: diario · P: pista"
 	exploration_progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	exploration_progress_label.add_theme_font_size_override("font_size", 12)
 	exploration_progress_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.58))
@@ -1036,7 +1219,7 @@ func _on_exploration_progress_changed(completed: int, total: int, ratio: float) 
 		exploration_progress_bar.max_value = float(total)
 		exploration_progress_bar.value = float(completed)
 	if exploration_progress_label != null:
-		exploration_progress_label.text = "AVENTURA DE LA ISLA · %d / %d · %.1f%% · L diario" % [
+		exploration_progress_label.text = "AVENTURA DE LA ISLA · %d / %d · %.1f%% · L: diario · P: pista" % [
 			completed,
 			total,
 			ratio * 100.0,
@@ -1084,54 +1267,54 @@ func _build_quickbar() -> void:
 	quickbar_panel.z_index = 72
 	quickbar_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	quickbar_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	quickbar_panel.position = Vector2(-498.0, -104.0)
-	quickbar_panel.size = Vector2(478.0, 84.0)
+	quickbar_panel.position = Vector2(-344.0, -70.0)
+	quickbar_panel.size = Vector2(324.0, 52.0)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.025, 0.035, 0.028, 0.84)
 	style.border_color = Color(0.80, 0.61, 0.29, 0.94)
 	style.set_border_width_all(2)
-	style.set_corner_radius_all(20)
+	style.set_corner_radius_all(13)
 	quickbar_panel.add_theme_stylebox_override("panel", style)
 	add_child(quickbar_panel)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 4)
 	quickbar_panel.add_child(row)
 	for slot in range(1, 5):
 		var button := Button.new()
 		button.name = "QuickSlot%d" % slot
-		button.custom_minimum_size = Vector2(66.0, 66.0)
+		button.custom_minimum_size = Vector2(42.0, 42.0)
 		button.expand_icon = true
-		button.add_theme_constant_override("icon_max_width", 44)
-		button.add_theme_font_size_override("font_size", 15)
+		button.add_theme_constant_override("icon_max_width", 27)
+		button.add_theme_font_size_override("font_size", 11)
 		button.add_theme_color_override("font_color", Color(1.0, 0.88, 0.55))
 		var slot_style := StyleBoxFlat.new()
 		slot_style.bg_color = Color(0.08, 0.11, 0.08, 0.92)
 		slot_style.border_color = Color(0.53, 0.47, 0.28, 0.92)
 		slot_style.set_border_width_all(2)
-		slot_style.set_corner_radius_all(22)
+		slot_style.set_corner_radius_all(13)
 		button.add_theme_stylebox_override("normal", slot_style)
 		button.pressed.connect(_on_quickslot_button_pressed.bind(slot))
 		row.add_child(button)
 		quickbar_buttons.append(button)
 	arrow_counter = Label.new()
-	arrow_counter.custom_minimum_size = Vector2(62.0, 62.0)
+	arrow_counter.custom_minimum_size = Vector2(40.0, 40.0)
 	arrow_counter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	arrow_counter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	arrow_counter.add_theme_font_size_override("font_size", 14)
+	arrow_counter.add_theme_font_size_override("font_size", 10)
 	arrow_counter.add_theme_color_override("font_color", Color(0.55, 0.88, 1.0))
 	row.add_child(arrow_counter)
 	horse_call_button = Button.new()
 	horse_call_button.name = "CallHorseButton"
 	horse_call_button.text = "H\n🐎"
 	horse_call_button.tooltip_text = "Llamar a Brisa"
-	horse_call_button.custom_minimum_size = Vector2(66.0, 66.0)
-	horse_call_button.add_theme_font_size_override("font_size", 17)
+	horse_call_button.custom_minimum_size = Vector2(42.0, 42.0)
+	horse_call_button.add_theme_font_size_override("font_size", 11)
 	var horse_style := StyleBoxFlat.new()
 	horse_style.bg_color = Color(0.17, 0.12, 0.065, 0.94)
 	horse_style.border_color = Color(0.93, 0.69, 0.31, 0.96)
 	horse_style.set_border_width_all(2)
-	horse_style.set_corner_radius_all(22)
+	horse_style.set_corner_radius_all(13)
 	horse_call_button.add_theme_stylebox_override("normal", horse_style)
 	horse_call_button.pressed.connect(_call_horse)
 	row.add_child(horse_call_button)

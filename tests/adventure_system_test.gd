@@ -137,15 +137,36 @@ func _run_test() -> void:
 		return
 	player.set("_bow_draw_time", 0.92)
 	player.set("_bow_draw_strength", 0.88)
+	player.call("_update_bow_pose", 0.0)
+	for _frame in 3:
+		await process_frame
+	var nocked_arrow := world.find_child("NockedArrow", true, false)
+	var bow_strings := player.get("_bow_string_segments") as Array
+	var string_target := player.get("_bow_right_target") as Marker3D
+	if nocked_arrow == null or nocked_arrow.get_node_or_null("ReadableShaft") == null:
+		_fail("La flecha no aparece encajada mientras se tensa el arco.")
+		return
+	if bow_strings.size() != 2 or string_target == null or string_target.position.y < 1.70:
+		_fail("La cuerda dinámica no acompaña la mano hasta la mejilla durante el tensado.")
+		return
+	var released_strength := float(player.call("get_bow_draw_strength"))
 	if not player.call("_release_bow_arrow") or int(_inventory.call("get_arrow_count")) != arrows_before - 1:
 		_fail("Soltar el arco no disparó ni consumió exactamente una flecha.")
 		return
+	await process_frame
 	var projectile := world.find_child("ArrowProjectile", true, false)
 	if projectile == null:
 		_fail("El disparo no creó el proyectil físico de flecha.")
 		return
-	if projectile.get_node_or_null("ReadableShaft") == null or projectile.get_node_or_null("FlightTrail") == null:
+	var flight_trail := projectile.get_node_or_null("FlightTrail") as GPUParticles3D
+	if projectile.get_node_or_null("ReadableShaft") == null or flight_trail == null or not flight_trail.emitting:
 		_fail("La flecha no tiene una silueta legible y una estela de vuelo visible.")
+		return
+	if absf(float(projectile.get("draw_strength")) - released_strength) > 0.01 or (projectile.get("velocity") as Vector3).length() < 65.0:
+		_fail("La velocidad/estela de la flecha no dependen de la fuerza de tensado.")
+		return
+	if player.get("_bow_string_segments").size() != 0:
+		_fail("La cuerda tensada no desapareció limpiamente al soltar la flecha.")
 		return
 
 	var hud := world.get_node("HUD")

@@ -45,9 +45,10 @@ func _run_test() -> void:
 		return
 
 	var hand_socket := model_root.find_child("RightHandSocket", true, false) as BoneAttachment3D
+	var left_hand_socket := model_root.find_child("LeftHandWeaponSocket", true, false) as BoneAttachment3D
 	var equipment_grip := model_root.find_child("EquipmentGrip", true, false) as Node3D
-	if hand_socket == null or hand_socket.bone_name != "Fist.R" or equipment_grip == null:
-		_fail("Los objetos no están unidos al hueso Fist.R de la mano.")
+	if hand_socket == null or hand_socket.bone_name != "Fist.R" or left_hand_socket == null or left_hand_socket.bone_name != "Fist.L" or equipment_grip == null:
+		_fail("Faltan los sockets calibrados de ambas manos.")
 		return
 	if player.equipped_slot != 0 or player.get_equipped_mesh() != null or equipment_grip.get_child_count() != 0:
 		_fail("El protagonista debe comenzar con las manos vacías y sin objetos enfundados.")
@@ -75,11 +76,13 @@ func _run_test() -> void:
 		if equipped.mesh.get_surface_count() < 1 or equipped.mesh.get_aabb().size.length() <= 0.0:
 			_fail("El objeto %d no conserva su geometría y materiales Quaternius." % slot)
 			return
-		if not bool(equipped.get_meta("held_in_right_hand", false)) or equipment_grip.get_child_count() != 1:
+		var expected_hand := "left" if slot == 3 else "right"
+		var expected_socket := left_hand_socket if slot == 3 else hand_socket
+		if String(equipped.get_meta("held_in_hand", "")) != expected_hand or equipment_grip.get_child_count() != 1:
 			_fail("El objeto %d no sustituyó limpiamente al anterior en la mano." % slot)
 			return
-		if equipped.get_parent() != equipment_grip or equipped.top_level:
-			_fail("El objeto %d no hereda directamente el movimiento de Fist.R." % slot)
+		if equipment_grip.get_parent() != expected_socket or equipped.get_parent() != equipment_grip or equipped.top_level:
+			_fail("El objeto %d no hereda el movimiento de la mano %s." % [slot, expected_hand])
 			return
 		if equipment_grip.position.length() > 0.27:
 			_fail("El agarre del objeto %d queda demasiado lejos del centro del puño." % slot)
@@ -90,16 +93,19 @@ func _run_test() -> void:
 		if _brightest_surface_luminance(equipped) < 0.32:
 			_fail("El objeto %d vuelve a quedar ilegible por materiales demasiado oscuros." % slot)
 			return
-		var authored_up := (equipment_grip.basis * Vector3.UP).normalized()
-		if slot in [2, 4]:
-			var arm_parallelism := authored_up.dot(Vector3.DOWN)
-			if (
-				arm_parallelism < 0.52 or arm_parallelism > 0.82
-				or absf(authored_up.x) < 0.38
-				or absf(authored_up.z) < 0.34
-			):
-				_fail("El hacha/antorcha %d vuelve a quedar paralela al antebrazo." % slot)
-				return
+		var world_up := (equipment_grip.global_basis * Vector3.UP).normalized()
+		var local_direction := equipped.get_meta("rest_direction", Vector3.UP) as Vector3
+		var expected_direction := (
+			player.visual.global_basis.x.normalized() * local_direction.x
+			+ Vector3.UP * local_direction.y
+			- player.visual.global_basis.z.normalized() * local_direction.z
+		).normalized()
+		if world_up.dot(expected_direction) < 0.985:
+			_fail("El objeto %d no conserva su dirección de agarre calibrada (%.3f)." % [slot, world_up.dot(expected_direction)])
+			return
+		if slot in [2, 4] and absf(world_up.dot(Vector3.UP)) > 0.93:
+			_fail("El objeto %d vuelve a quedar paralelo al brazo en vez de inclinarse hacia fuera." % slot)
+			return
 		if slot == 4 and equipped.get_node_or_null("TorchLight") == null:
 			_fail("La antorcha equipada no emite luz.")
 			return
@@ -157,7 +163,7 @@ func _run_test() -> void:
 	world.queue_free()
 	for _frame in 8:
 		await process_frame
-	print("MEDIEVAL COMBAT TEST OK: espada, hacha, arco y antorcha en Fist.R; ataques físicos operativos.")
+	print("MEDIEVAL COMBAT TEST OK: agarres inclinados visibles, arco en Fist.L, armas en Fist.R y ataques físicos operativos.")
 	quit(0)
 
 

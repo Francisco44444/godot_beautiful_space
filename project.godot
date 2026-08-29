@@ -11,10 +11,14 @@ config_version=5
 [application]
 
 config/name="Senderos del Horizonte"
-config/version="0.1.1"
+config/version="0.1.2"
 run/main_scene="res://scenes/world.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
+
+[audio]
+
+buses/default_bus_layout="uid://bk26twbgbbba6"
 
 [autoload]
 
@@ -24,10 +28,6 @@ LobbyDirectory="*res://scripts/lobby_directory.gd"
 ExplorationManager="*res://scripts/exploration_manager.gd"
 InventoryManager="*res://scripts/inventory_manager.gd"
 SaveGameManager="*res://scripts/save_game_manager.gd"
-
-[audio]
-
-buses/default_bus_layout="uid://bk26twbgbbba6"
 
 [display]
 

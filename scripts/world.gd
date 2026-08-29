@@ -283,10 +283,12 @@ func apply_local_player_save_state(state: Dictionary) -> bool:
 
 
 func get_shared_world_save_state() -> Dictionary:
+	var story := get_node_or_null("RPGStoryRuntime")
 	return {
 		"sun_cycle_radians": sun_cycle_radians,
 		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
 		"horse_position": [horse.global_position.x, horse.global_position.y, horse.global_position.z],
+		"story": story.call("get_save_state") if story != null else {},
 	}
 
 
@@ -299,14 +301,19 @@ func apply_shared_world_save_state(state: Dictionary) -> void:
 	if horse_position is Array and (horse_position as Array).size() == 3 and not horse.mounted:
 		horse.global_position = Vector3(float(horse_position[0]), float(horse_position[1]), float(horse_position[2]))
 		horse.velocity = Vector3.ZERO
+	var story := get_node_or_null("RPGStoryRuntime")
+	if story != null:
+		story.call_deferred("apply_save_state", state.get("story", {}))
 
 
 func get_network_world_state() -> Dictionary:
 	var wildlife := get_node_or_null("QuaterniusWildlife")
+	var story := get_node_or_null("RPGStoryRuntime")
 	return {
 		"sun_cycle_radians": sun_cycle_radians,
 		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
 		"wildlife": wildlife.call("get_network_state") if wildlife != null else [],
+		"enemies": story.call("get_network_enemy_state") if story != null else [],
 	}
 
 
@@ -320,6 +327,9 @@ func _on_network_world_state_received(state: Dictionary) -> void:
 	var wildlife := get_node_or_null("QuaterniusWildlife")
 	if wildlife != null:
 		wildlife.call("apply_network_state", state.get("wildlife", []))
+	var story := get_node_or_null("RPGStoryRuntime")
+	if story != null:
+		story.call("apply_network_enemy_state", state.get("enemies", []))
 
 
 func _apply_lod_distance(distance_metres: float) -> void:
@@ -545,6 +555,8 @@ func _update_sun_cycle(delta: float) -> void:
 	var twilight := 1.0 - smoothstep(0.02, 0.34, absf(solar_height))
 	sun.rotation_degrees.x = -rad_to_deg(sun_cycle_radians)
 	sun.rotation_degrees.y = -122.0 + sin(sun_cycle_radians * 0.5) * 18.0
+	if island_environment != null:
+		island_environment.sync_celestial_sources()
 	sun.light_energy = daylight_factor * lerpf(0.62, 1.35, maxf(solar_height, 0.0))
 	sun.light_color = Color(1.0, 0.58, 0.32).lerp(Color(1.0, 0.93, 0.79), smoothstep(0.05, 0.62, solar_height))
 	sky_fill.light_energy = lerpf(0.19, 0.22, daylight_factor)
