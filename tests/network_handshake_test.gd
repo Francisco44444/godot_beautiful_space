@@ -18,6 +18,7 @@ class DummyPlayer:
 var _settings: Node
 var _session: Node
 var _remote_states: Dictionary = {}
+var _resource_break_requests: Array[Dictionary] = []
 var _port := 24681
 
 
@@ -98,6 +99,10 @@ func _run_capacity_client() -> void:
 func _run_host() -> void:
 	_settings.call("set_player_identity", "AnfitriónTest", 2, false)
 	_session.connect("remote_state_received", Callable(self, "_on_remote_state_received"))
+	_session.connect(
+		"world_resource_break_requested",
+		Callable(self, "_on_world_resource_break_requested")
+	)
 	var dummy := _make_dummy(Vector3(11.0, 2.0, -7.0), 0.75, Vector3(2.0, 0.0, -1.0), 2)
 	var error: Error = _session.call("host_game", _port)
 	if error != OK:
@@ -111,6 +116,13 @@ func _run_host() -> void:
 		return
 	if not await _wait_for_remote_state(Vector3(-19.0, 3.0, 14.0), 10.0):
 		push_error("El host no recibió el estado remoto del invitado.")
+		_session.call("leave_session")
+		quit(1)
+		return
+	if not await _wait_for_resource_break_request(
+		"vegetation", "forest_tree_network_test", 10.0
+	):
+		push_error("El host no recibió la petición fiable de tala del invitado.")
 		_session.call("leave_session")
 		quit(1)
 		return
@@ -140,6 +152,15 @@ func _run_client() -> void:
 			found_host = found_host or String(identity.name) == "AnfitriónTest"
 			found_client = found_client or String(identity.name) == "InvitadoTest"
 		if found_host and found_client and await _wait_for_remote_state(Vector3(11.0, 2.0, -7.0), 10.0):
+			if not bool(_session.call(
+				"request_world_resource_break",
+				"vegetation",
+				"forest_tree_network_test"
+			)):
+				push_error("El invitado no pudo enviar la petición fiable de tala.")
+				_session.call("leave_session")
+				quit(1)
+				return
 			# El primer estado del cliente puede llegar antes que su identidad y el
 			# servidor lo descarta correctamente. Dejamos varios ticks posteriores.
 			await create_timer(0.5).timeout
@@ -188,6 +209,36 @@ func _wait_for_remote_state(expected_position: Vector3, timeout_seconds: float) 
 	while float(Time.get_ticks_msec() - start) / 1000.0 < timeout_seconds:
 		for position in _remote_states.values():
 			if (position as Vector3).distance_to(expected_position) < 0.01:
+				return true
+		await process_frame
+	return false
+
+
+func _on_world_resource_break_requested(
+	peer_id: int,
+	domain: String,
+	resource_id: String
+) -> void:
+	_resource_break_requests.append({
+		"peer_id": peer_id,
+		"domain": domain,
+		"resource_id": resource_id,
+	})
+
+
+func _wait_for_resource_break_request(
+	domain: String,
+	resource_id: String,
+	timeout_seconds: float
+) -> bool:
+	var start := Time.get_ticks_msec()
+	while float(Time.get_ticks_msec() - start) / 1000.0 < timeout_seconds:
+		for request in _resource_break_requests:
+			if (
+				int(request.peer_id) > 1
+				and String(request.domain) == domain
+				and String(request.resource_id) == resource_id
+			):
 				return true
 		await process_frame
 	return false

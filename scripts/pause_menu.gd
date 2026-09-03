@@ -13,6 +13,7 @@ var _page_title: Label
 var _page_content: VBoxContainer
 var _save_list: ItemList
 var _status: Label
+var _credits_bbcode := ""
 
 
 func _ready() -> void:
@@ -95,6 +96,7 @@ func _build_interface() -> void:
 	_add_main_button("Controles", "ControlsButton", _show_controls)
 	_add_main_button("Gráficos", "GraphicsButton", _show_graphics)
 	_add_main_button("Sonido", "SoundButton", _show_sound)
+	_add_main_button("Agradecimientos", "CreditsButton", _show_credits)
 	_add_main_button("Multijugador", "MultiplayerButton", func() -> void: multiplayer_requested.emit())
 	_add_main_button("Salir del juego", "QuitButton", func() -> void:
 		SaveGameManager.save_current_game("salida")
@@ -164,8 +166,28 @@ func _show_controls() -> void:
 		+ "E · interactuar / explorar / montar   H · llamar al caballo\n\n"
 		+ "[b]Equipo[/b]\n1 espada   2 hacha   3 arco   4 antorcha   Clic · atacar / tensar\n"
 		+ "I · inventario   L · diario de aventura\n\n"
-		+ "[b]Mundo e interfaz[/b]\nM · mapa   B · minimapa   N · ayuda   Z · configuración   0 · créditos\n"
-		+ "5–9 · viajes de prueba   Esc · cerrar ventana / pausa"
+		+ "[b]Mundo e interfaz[/b]\nM · mapa   B · minimapa   N · ayuda   Z · configuración\n"
+		+ "5–9 · viajes de prueba   0 · siguiente jefe final   Esc · cerrar ventana / pausa"
+	)
+	_page_content.add_child(text)
+
+
+func set_credits_content(bbcode: String) -> void:
+	_credits_bbcode = bbcode
+
+
+func _show_credits() -> void:
+	_clear_page("AGRADECIMIENTOS")
+	var text := RichTextLabel.new()
+	text.name = "CreditsText"
+	text.bbcode_enabled = true
+	text.fit_content = false
+	text.scroll_active = true
+	text.custom_minimum_size = Vector2(540.0, 410.0)
+	text.add_theme_font_size_override("normal_font_size", 17)
+	text.add_theme_font_size_override("bold_font_size", 18)
+	text.text = _credits_bbcode if not _credits_bbcode.is_empty() else (
+		"[center][b]Gracias por acompañarnos en Senderos del Horizonte.[/b][/center]"
 	)
 	_page_content.add_child(text)
 

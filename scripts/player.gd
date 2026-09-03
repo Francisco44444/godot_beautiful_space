@@ -473,20 +473,40 @@ func _apply_melee_hits() -> void:
 		if collider != null and collider not in candidates:
 			candidates.append(collider)
 
+	var hit_world_target := false
 	for body in candidates:
-		_apply_hit_to_body(body)
+		hit_world_target = _apply_hit_to_body(body) or hit_world_target
+
+	# Los bosques usan MultiMesh y una única malla física para decenas de miles
+	# de troncos. Consultar su índice espacial al blandir el arma permite talar
+	# cualquier árbol sin convertir cada ejemplar en un nodo/collider individual.
+	if not hit_world_target:
+		var vegetation := get_node_or_null("../VegetationScatter")
+		if vegetation != null and vegetation.has_method("try_hit_nearest_tree"):
+			vegetation.call(
+				"try_hit_nearest_tree",
+				equipped_category,
+				equipped_item_id,
+				global_position,
+				forward,
+				_attack_reach,
+				self
+			)
 
 
-func _apply_hit_to_body(body: Node) -> void:
+func _apply_hit_to_body(body: Node) -> bool:
 	if body == self or _attack_hits.has(body.get_instance_id()):
-		return
+		return false
 	_attack_hits[body.get_instance_id()] = true
 	var hit_position := _equipped_mesh.global_position if _equipped_mesh != null else attack_area.global_position
 	if body.has_method("receive_tool_hit"):
 		body.call("receive_tool_hit", equipped_category, equipped_item_id, hit_position, self)
 	elif body.has_method("receive_melee_hit"):
 		body.call("receive_melee_hit", hit_position)
+	else:
+		return false
 	melee_hit.emit(body)
+	return true
 
 
 func _sync_with_mount() -> void:

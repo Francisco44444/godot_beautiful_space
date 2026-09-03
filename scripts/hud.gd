@@ -67,6 +67,8 @@ var story_dialogue_open := false
 var player_health_bar: ProgressBar
 var inventory_manager: Node
 var pause_menu: PauseMenu
+var fps_counter: Label
+var fps_refresh_elapsed := 0.0
 
 
 func _ready() -> void:
@@ -75,6 +77,7 @@ func _ready() -> void:
 	mini_map.visible = false
 	full_map.visible = false
 	credits_overlay.visible = false
+	_build_fps_counter()
 	_build_settings_overlay()
 	_build_lobby_overlay()
 	_build_exploration_hud()
@@ -84,6 +87,9 @@ func _ready() -> void:
 	_build_story_hud()
 	pause_menu = PauseMenu.new()
 	add_child(pause_menu)
+	var credits_text := credits_overlay.get_node_or_null("CreditsPanel/Padding/Content/CreditsText") as RichTextLabel
+	if credits_text != null:
+		pause_menu.set_credits_content(credits_text.text.replace("0 · cerrar", "Esc · volver"))
 	pause_menu.closed.connect(func() -> void:
 		mini_map.visible = mini_map_open and not map_open
 	)
@@ -185,12 +191,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var key_event := event as InputEventKey
 	var pressed_key := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
-	if pressed_key == KEY_0:
-		_set_credits_open(not credits_open)
-		get_viewport().set_input_as_handled()
-	elif credits_open:
+	if credits_open:
 		return
-	elif pressed_key == KEY_N:
+	if pressed_key == KEY_N:
 		controls_open = not controls_open
 		controls_panel.visible = controls_open
 		get_viewport().set_input_as_handled()
@@ -296,6 +299,10 @@ func is_credits_open() -> bool:
 
 
 func _process(delta: float) -> void:
+	fps_refresh_elapsed += delta
+	if fps_counter != null and fps_refresh_elapsed >= 0.20:
+		fps_refresh_elapsed = 0.0
+		fps_counter.text = str(Engine.get_frames_per_second())
 	if exploration_notice_seconds > 0.0:
 		exploration_notice_seconds = maxf(exploration_notice_seconds - delta, 0.0)
 		if exploration_notice_seconds <= 0.0:
@@ -326,6 +333,28 @@ func _process(delta: float) -> void:
 		mount_hint.visible = nearby_horse != null
 		if nearby_horse != null:
 			mount_hint.text = "E · Montar a %s" % nearby_horse.horse_name
+
+
+func _build_fps_counter() -> void:
+	fps_counter = Label.new()
+	fps_counter.name = "FPSCounter"
+	fps_counter.z_index = 300
+	fps_counter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fps_counter.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	fps_counter.offset_left = -84.0
+	fps_counter.offset_top = 7.0
+	fps_counter.offset_right = -12.0
+	fps_counter.offset_bottom = 35.0
+	fps_counter.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	fps_counter.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	fps_counter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	fps_counter.add_theme_font_size_override("font_size", 18)
+	fps_counter.add_theme_color_override("font_color", Color.WHITE)
+	fps_counter.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
+	fps_counter.add_theme_constant_override("outline_size", 5)
+	fps_counter.text = str(Engine.get_frames_per_second())
+	fps_counter.set_meta("displays_frames_per_second", true)
+	add_child(fps_counter)
 
 
 func _build_story_hud() -> void:
@@ -1609,7 +1638,7 @@ func _controls_summary() -> String:
 		+ "1 Espada · 2 Hacha · 3 Arco · 4 Antorcha · I Inventario\n"
 		+ "Con el arco: mantén clic para tensar y apuntar; suelta para disparar\n"
 		+ "5 Dunas · 6 Nieve · 7 Villa · 8 Bosque Umbrío · 9 Bosque Tenebroso\n"
-		+ "Mapa: %s · B Minimapa · L Diario de 200 zonas · N Ayuda · 0 Créditos\n" % GameSettings.action_keys("map")
+		+ "Mapa: %s · B Minimapa · L Diario de 200 zonas · N Ayuda · 0 Siguiente jefe final\n" % GameSettings.action_keys("map")
 		+ "Configuración / identidad / multijugador: %s · Esc cerrar ventana / menú de pausa" % GameSettings.action_keys("settings")
 	)
 

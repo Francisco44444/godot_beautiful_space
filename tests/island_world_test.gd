@@ -57,8 +57,8 @@ func _run_test() -> void:
 	var mini_map := hud.get_node("MiniMap") as Control
 	var full_map := hud.get_node("FullMap") as Control
 	var credits_overlay := hud.get_node("CreditsOverlay") as Control
-	if controls_panel.visible or mini_map.visible or full_map.visible or credits_overlay.visible or int(full_map.call("get_poi_count")) < 10 or int(full_map.call("get_road_count")) < 10:
-		_fail("Los controles y el minimapa deben empezar ocultos sin perder la red insular.")
+	if controls_panel.visible or not mini_map.visible or full_map.visible or credits_overlay.visible or int(full_map.call("get_poi_count")) < 10 or int(full_map.call("get_road_count")) < 10:
+		_fail("Los controles deben empezar ocultos y el minimapa activo sin perder la red insular.")
 		return
 	if (
 		not bool(full_map.get_meta("ocean_fills_exterior", false))
@@ -79,8 +79,12 @@ func _run_test() -> void:
 	minimap_event.physical_keycode = KEY_B
 	minimap_event.pressed = true
 	hud.call("_unhandled_input", minimap_event)
+	if mini_map.visible:
+		_fail("La tecla B no oculta el minimapa.")
+		return
+	hud.call("_unhandled_input", minimap_event)
 	if not mini_map.visible:
-		_fail("La tecla B no muestra el minimapa.")
+		_fail("La tecla B no vuelve a mostrar el minimapa.")
 		return
 	var map_event := InputEventAction.new()
 	map_event.action = "map"
@@ -93,35 +97,56 @@ func _run_test() -> void:
 	if not mini_map.visible or full_map.visible:
 		_fail("La tecla M no recupera el estado elegido del minimapa.")
 		return
-	var credits_event := InputEventKey.new()
-	credits_event.physical_keycode = KEY_0
-	credits_event.pressed = true
-	hud.call("_unhandled_input", credits_event)
-	var credits_text := credits_overlay.get_node("CreditsPanel/Padding/Content/CreditsText") as RichTextLabel
+	var pause_menu := hud.get_node_or_null("PauseMenu")
+	if pause_menu == null:
+		_fail("El menú de pausa no existe.")
+		return
+	pause_menu.call("set_open", true)
+	var credits_button := pause_menu.find_child("CreditsButton", true, false) as Button
+	if credits_button == null:
+		_fail("Agradecimientos no aparece como entrada del menú de pausa.")
+		return
+	credits_button.pressed.emit()
+	var credits_text := pause_menu.find_child("CreditsText", true, false) as RichTextLabel
 	if (
-		not credits_overlay.visible
-		or not bool(hud.call("is_credits_open"))
-		or mini_map.visible
+		credits_text == null
 		or "La Colina que Conoce tu Voz" not in credits_text.text
 		or "Promise" not in credits_text.text
 		or "Ashes" not in credits_text.text
 		or "Música de https://www.fiftysounds.com/es/" not in credits_text.text
 	):
-		_fail("La tecla 0 no abre el menú con la atribución completa de FiftySounds.")
+		_fail("La entrada Agradecimientos no contiene la atribución completa de FiftySounds.")
 		return
-	hud.call("_unhandled_input", credits_event)
-	if credits_overlay.visible or bool(hud.call("is_credits_open")) or not mini_map.visible:
-		_fail("La tecla 0 no cierra los créditos y restaura el minimapa.")
+	pause_menu.call("set_open", false)
+	if credits_overlay.visible or paused:
+		_fail("Cerrar el menú de agradecimientos no devuelve correctamente al juego.")
 		return
 
 	if int(world.call("get_fast_travel_count")) != 5:
 		_fail("El mapa no expone los cinco destinos de viaje rápido, incluido el Bosque Tenebroso.")
 		return
+	var player := world.get_node("Player") as Player
+	if int(world.call("get_boss_travel_count")) != 4:
+		_fail("La tecla 0 no expone los cuatro enfrentamientos finales.")
+		return
+	var boss_event := InputEventKey.new()
+	boss_event.physical_keycode = KEY_0
+	boss_event.pressed = true
+	for boss_index in 4:
+		world.call("_unhandled_input", boss_event)
+		var boss_destination: Vector2 = world.call("get_boss_travel_position", boss_index)
+		var player_position := Vector2(player.global_position.x, player.global_position.z)
+		if player_position.distance_to(boss_destination) > 0.05 or int(world.get("last_boss_travel_index")) != boss_index:
+			_fail("La pulsación 0 no viaja al jefe final %d en orden." % (boss_index + 1))
+			return
+	world.call("_unhandled_input", boss_event)
+	if int(world.get("last_boss_travel_index")) != 0:
+		_fail("Después del último jefe, la tecla 0 no vuelve al primero.")
+		return
 	var travel_event := InputEventKey.new()
 	travel_event.physical_keycode = KEY_5
 	travel_event.pressed = true
 	world.call("_unhandled_input", travel_event)
-	var player := world.get_node("Player") as Player
 	var hero_visual := player.get_node("Visual") as Node3D
 	hero_visual.rotation.y = 0.0
 	var north_facing := full_map.call("_player_map_direction") as Vector2

@@ -71,8 +71,65 @@ func _run_test() -> void:
 	var animated_clouds := world.get_node_or_null("AnimatedClouds")
 	if animated_clouds == null or not animated_clouds.has_method("_process"):
 		failures.append("Falta el sistema de nubes animadas")
-	elif animated_clouds.get_child_count() != 3 or animated_clouds.has_node("MovingCloudDome"):
-		failures.append("Las nubes deben incluir una capa baja y dos altas sin bóveda con costura")
+	else:
+		if (
+			bool(animated_clouds.get_meta("illustrated_billboards", true))
+			or not bool(animated_clouds.get_meta("drawn_clouds_disabled", false))
+			or not bool(animated_clouds.get_meta("procedural_clouds_only", false))
+			or not bool(animated_clouds.get_meta("distributed_cloud_banks", false))
+			or not bool(animated_clouds.get_meta("clear_sky_gaps", false))
+			or int(animated_clouds.get_meta("depth_band_count", 0)) != 1
+			or bool(animated_clouds.get_meta("sun_occlusion", true))
+			or bool(animated_clouds.get_meta("separate_shadow_masks", true))
+			or not bool(animated_clouds.get_meta("procedural_diffuse_veil", false))
+			or bool(animated_clouds.get_meta("hybrid_cloud_system", true))
+		):
+			failures.append("El cielo debe usar sólo la franja procedural, sin tarjetas que giren con la cámara")
+		for node_name in [
+			"IllustratedCloudNear",
+			"IllustratedCloudMid",
+			"IllustratedCloudHorizon",
+			"CloudShadowMasks",
+		]:
+			if animated_clouds.get_node_or_null(node_name) != null:
+				failures.append("El cielo conserva la capa ilustrada desactivada %s" % node_name)
+		var procedural_veil := animated_clouds.get_node_or_null("ProceduralCloudVeil") as MeshInstance3D
+		var procedural_dome_count := 0
+		for cloud_child in animated_clouds.get_children():
+			var cloud_mesh_instance := cloud_child as MeshInstance3D
+			if cloud_mesh_instance != null and cloud_mesh_instance.mesh is SphereMesh:
+				procedural_dome_count += 1
+		if procedural_veil == null or not procedural_veil.mesh is SphereMesh:
+			failures.append("Falta la SphereMesh interior de ProceduralCloudVeil")
+		elif procedural_dome_count != 1:
+			failures.append("El cielo debe usar un único domo procedural")
+		else:
+			var veil_material := procedural_veil.material_override as ShaderMaterial
+			if veil_material == null and procedural_veil.mesh.get_surface_count() > 0:
+				veil_material = procedural_veil.mesh.surface_get_material(0) as ShaderMaterial
+			var veil_shader_code := "" if veil_material == null or veil_material.shader == null else veil_material.shader.code
+			var veil_shader_lower := veil_shader_code.to_lower()
+			if (
+				veil_shader_code.is_empty()
+				or not veil_shader_code.contains("TIME")
+				or veil_shader_code.contains("UV")
+				or (not veil_shader_lower.contains("fbm") and not veil_shader_lower.contains("noise"))
+				or (not veil_shader_lower.contains("sky_direction") and not veil_shader_lower.contains("dome_direction"))
+				or not veil_shader_lower.contains("horizon_blend")
+				or not veil_shader_lower.contains("cloud_region")
+				or not veil_shader_lower.contains("region_field")
+			):
+				failures.append("ProceduralCloudVeil debe distribuir bancos separados, animados y sin UV")
+		for legacy_name in [
+			"MovingCloudDome",
+			"CloudLayer01",
+			"CloudLayer02",
+			"CloudLayer03",
+			"ShadowCumulus",
+			"DistantCumulus",
+		]:
+			if animated_clouds.get_node_or_null(legacy_name) != null:
+				failures.append("El cielo conserva el nodo de nubes antiguo %s" % legacy_name)
 
 	var sky_fill := world.get_node_or_null("SkyFill") as DirectionalLight3D
 	if sky_fill == null or sky_fill.light_energy <= 0.0:

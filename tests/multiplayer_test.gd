@@ -69,8 +69,10 @@ func _run_test() -> void:
 		or not shared_state.has("tide_phase")
 		or not shared_state.has("wildlife")
 		or (shared_state.wildlife as Array).is_empty()
+		or not shared_state.has("vegetation_resources")
+		or not shared_state.has("adventure_resources")
 	):
-		_fail("La autoridad no prepara sol, luna derivada, marea y fauna para los invitados.")
+		_fail("La autoridad no prepara clima, fauna y recursos persistentes para los invitados.")
 		return
 	var host_save_states := session.call("get_party_save_states") as Dictionary
 	if not host_save_states.has("Lúa") or not (host_save_states["Lúa"] as Dictionary).has("inventory"):
@@ -91,6 +93,43 @@ func _run_test() -> void:
 		await physics_frame
 	if not replica.get_node("PlayerName").visible or replica.equipped_slot != 2:
 		_fail("La réplica no muestra nombre o equipo sincronizado.")
+		return
+	# Una petición remota solo prospera cerca del objeto y con el hacha. El id
+	# aceptado entra inmediatamente en el estado autoritativo que reciben todos.
+	var scatter := world.get_node("VegetationScatter") as VegetationScatter
+	var resource_ids: PackedStringArray = scatter.get("_harvest_tree_ids")
+	var tree_positions: Array[Vector3] = scatter.get("_harvest_tree_positions")
+	var network_tree_id := resource_ids[0]
+	var network_tree_position := tree_positions[0]
+	replica.global_position = network_tree_position + Vector3(0.0, 0.0, 2.4)
+	replica.equipped_slot = 1
+	if bool(world.call(
+		"_on_network_world_resource_break_requested", 42, "vegetation", network_tree_id
+	)):
+		_fail("El anfitrión aceptó una tala remota sin el hacha.")
+		return
+	replica.equipped_slot = 2
+	replica.global_position = network_tree_position + Vector3(30.0, 0.0, 0.0)
+	if bool(world.call(
+		"_on_network_world_resource_break_requested", 42, "vegetation", network_tree_id
+	)):
+		_fail("El anfitrión aceptó una tala remota desde demasiada distancia.")
+		return
+	replica.global_position = network_tree_position + Vector3(0.0, 0.0, 2.4)
+	# La prueba no debe escribir una ranura real del usuario.
+	save_manager.call("bind_world", null)
+	if not bool(world.call(
+		"_on_network_world_resource_break_requested", 42, "vegetation", network_tree_id
+	)):
+		_fail("El anfitrión rechazó una tala remota válida y cercana.")
+		return
+	var authoritative_state := world.call("get_network_world_state") as Dictionary
+	var destroyed_ids := (
+		(authoritative_state.vegetation_resources as Dictionary)
+		.get("destroyed_resource_ids", []) as Array
+	)
+	if network_tree_id not in destroyed_ids:
+		_fail("La tala aceptada no entró en el estado mundial compartido.")
 		return
 
 	session.call("leave_session")

@@ -14,6 +14,15 @@ func _run_test() -> void:
 		_fail("No se cargó el singleton de configuración.")
 		return
 	game_settings.call("reset_defaults", false)
+	if (
+		game_settings.get("resolution") != Vector2i(1600, 900)
+		or int(ProjectSettings.get_setting("display/window/size/viewport_width", 0)) != 1600
+		or int(ProjectSettings.get_setting("display/window/size/viewport_height", 0)) != 900
+		or int(ProjectSettings.get_setting("display/window/size/window_width_override", 0)) != 1600
+		or int(ProjectSettings.get_setting("display/window/size/window_height_override", 0)) != 900
+	):
+		_fail("La ventana inicial no está configurada a 1600 × 900.")
+		return
 	var scene := load("res://scenes/world.tscn") as PackedScene
 	if scene == null:
 		_fail("No se pudo cargar la escena principal.")

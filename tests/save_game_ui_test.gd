@@ -24,6 +24,17 @@ func _run_test() -> void:
 		await process_frame
 	var hud := world.get_node("HUD")
 	var minimap := hud.get_node("MiniMap") as Control
+	var fps_counter := hud.get_node_or_null("FPSCounter") as Label
+	if (
+		fps_counter == null
+		or not bool(fps_counter.get_meta("displays_frames_per_second", false))
+		or fps_counter.anchor_left != 1.0
+		or fps_counter.anchor_right != 1.0
+		or fps_counter.horizontal_alignment != HORIZONTAL_ALIGNMENT_RIGHT
+		or fps_counter.get_theme_color("font_color") != Color.WHITE
+	):
+		_fail("El contador blanco de FPS no está fijado en la esquina superior derecha.")
+		return
 	if not minimap.visible:
 		_fail("El minimapa no comienza activo.")
 		return

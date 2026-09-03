@@ -9,7 +9,9 @@ signal lod_distance_changed(distance_metres: float)
 signal identity_changed(player_name: String, character_index: int)
 
 const SETTINGS_PATH := "user://graphics_settings.cfg"
-const DEFAULT_RESOLUTION := Vector2i(1280, 720)
+const SETTINGS_SCHEMA_VERSION := 2
+const LEGACY_DEFAULT_RESOLUTION := Vector2i(1280, 720)
+const DEFAULT_RESOLUTION := Vector2i(1600, 900)
 const DEFAULT_LOD_DISTANCE := 340.0
 const MIN_LOD_DISTANCE := 180.0
 const MAX_LOD_DISTANCE := 900.0
@@ -36,10 +38,13 @@ var resolution := DEFAULT_RESOLUTION
 var lod_distance_metres := DEFAULT_LOD_DISTANCE
 var player_name := DEFAULT_PLAYER_NAME
 var character_index := DEFAULT_CHARACTER_INDEX
+var _settings_need_migration_save := false
 
 
 func _ready() -> void:
 	_load_settings()
+	if _settings_need_migration_save:
+		_save_settings()
 	call_deferred("_apply_resolution")
 
 
@@ -108,9 +113,16 @@ func _load_settings() -> void:
 	var config := ConfigFile.new()
 	if config.load(SETTINGS_PATH) != OK:
 		return
+	var stored_schema := int(config.get_value("general", "schema_version", 1))
 	var stored_width := int(config.get_value("video", "width", DEFAULT_RESOLUTION.x))
 	var stored_height := int(config.get_value("video", "height", DEFAULT_RESOLUTION.y))
-	resolution = _closest_supported_resolution(Vector2i(stored_width, stored_height))
+	var stored_resolution := Vector2i(stored_width, stored_height)
+	# Las instalaciones existentes guardaron 1280×720 como valor inicial. Se
+	# migra una sola vez al nuevo tamaño; después, si el usuario elige 1280 desde
+	# Gráficos, la versión 2 de la configuración respetará esa decisión.
+	if stored_schema < SETTINGS_SCHEMA_VERSION and stored_resolution == LEGACY_DEFAULT_RESOLUTION:
+		stored_resolution = DEFAULT_RESOLUTION
+	resolution = _closest_supported_resolution(stored_resolution)
 	lod_distance_metres = snappedf(clampf(
 		float(config.get_value("graphics", "lod_distance_metres", DEFAULT_LOD_DISTANCE)),
 		MIN_LOD_DISTANCE,
@@ -122,10 +134,12 @@ func _load_settings() -> void:
 		0,
 		CHARACTER_OPTIONS.size() - 1
 	)
+	_settings_need_migration_save = stored_schema < SETTINGS_SCHEMA_VERSION
 
 
 func _save_settings() -> void:
 	var config := ConfigFile.new()
+	config.set_value("general", "schema_version", SETTINGS_SCHEMA_VERSION)
 	config.set_value("video", "width", resolution.x)
 	config.set_value("video", "height", resolution.y)
 	config.set_value("graphics", "lod_distance_metres", lod_distance_metres)

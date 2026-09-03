@@ -10,6 +10,7 @@ signal session_status_changed(message: String)
 signal roster_changed(roster: Dictionary)
 signal remote_state_received(peer_id: int, position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int)
 signal world_state_received(state: Dictionary)
+signal world_resource_break_requested(peer_id: int, domain: String, resource_id: String)
 
 enum SessionMode {
 	OFFLINE,
@@ -35,6 +36,7 @@ var _save_snapshot_accumulator := 0.0
 var _active_port := PORT
 var _party_save_states: Dictionary = {}
 var _loaded_party_states: Dictionary = {}
+var _last_resource_break_request_msec: Dictionary = {}
 
 
 func _ready() -> void:
@@ -147,6 +149,7 @@ func leave_session() -> void:
 	_save_snapshot_accumulator = 0.0
 	_party_save_states.clear()
 	_loaded_party_states.clear()
+	_last_resource_break_request_msec.clear()
 	_set_offline_roster()
 	if was_networked:
 		session_ended.emit()
@@ -185,8 +188,31 @@ func is_networked() -> bool:
 	return session_mode in [SessionMode.HOST, SessionMode.CLIENT]
 
 
+func is_host() -> bool:
+	return session_mode == SessionMode.HOST
+
+
 func is_world_authority() -> bool:
 	return session_mode != SessionMode.CLIENT
+
+
+func request_world_resource_break(domain: String, resource_id: String) -> bool:
+	## Los invitados nunca deciden el estado final de un objeto. Envían una
+	## petición fiable y el anfitrión valida herramienta, distancia y existencia.
+	if session_mode != SessionMode.CLIENT or not _valid_resource_break_request(domain, resource_id):
+		return false
+	_server_request_world_resource_break.rpc_id(1, domain, resource_id)
+	return true
+
+
+func broadcast_world_state_now() -> void:
+	## Tras aceptar una rotura no esperamos al siguiente pulso de 5 Hz: el
+	## inventario de objetos destruidos se comunica inmediatamente a los invitados.
+	if session_mode != SessionMode.HOST or not multiplayer.is_server():
+		return
+	var world := get_tree().current_scene
+	if world != null and world.has_method("get_network_world_state"):
+		_broadcast_world_state(world.call("get_network_world_state") as Dictionary)
 
 
 func get_party_save_states() -> Dictionary:
@@ -342,6 +368,26 @@ func _server_receive_save_snapshot(snapshot: Dictionary) -> void:
 	_party_save_states[String(identity.name)] = snapshot.duplicate(true)
 
 
+@rpc("any_peer", "call_remote", "reliable")
+func _server_request_world_resource_break(domain: String, resource_id: String) -> void:
+	if not multiplayer.is_server() or session_mode != SessionMode.HOST:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender <= 1 or not players.has(sender) or not _is_peer_ready(sender):
+		return
+	if not _valid_resource_break_request(domain, resource_id):
+		return
+	# Un golpe final legítimo no puede repetirse varias veces en unos milisegundos.
+	# El objeto también vuelve a validarse en el mundo, por lo que reenviar un id
+	# ya destruido nunca duplica botín.
+	var now := Time.get_ticks_msec()
+	var previous := int(_last_resource_break_request_msec.get(sender, 0))
+	if now - previous < 80:
+		return
+	_last_resource_break_request_msec[sender] = now
+	world_resource_break_requested.emit(sender, domain, resource_id)
+
+
 @rpc("authority", "call_remote", "reliable")
 func _client_apply_loaded_state(state: Dictionary) -> void:
 	if session_mode != SessionMode.CLIENT or not _is_valid_save_snapshot(state):
@@ -380,6 +426,17 @@ func _is_valid_save_snapshot(snapshot: Dictionary) -> bool:
 		return false
 	var items = (inventory as Dictionary).get("items", {})
 	return items is Dictionary and (items as Dictionary).size() <= 512
+
+
+func _valid_resource_break_request(domain: String, resource_id: String) -> bool:
+	return (
+		domain in ["vegetation", "adventure"]
+		and not resource_id.is_empty()
+		and resource_id.length() <= 96
+		and "\n" not in resource_id
+		and "\r" not in resource_id
+		and "\t" not in resource_id
+	)
 
 
 func _is_valid_port(port_value: int) -> bool:

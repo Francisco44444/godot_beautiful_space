@@ -35,6 +35,8 @@ var _player: Player
 var _mesh_cache: Dictionary = {}
 var _inventory: Node
 var _exploration: Node
+var _resources_by_id: Dictionary = {}
+var _destroyed_resource_ids: Dictionary = {}
 
 
 func _ready() -> void:
@@ -90,10 +92,11 @@ func _spawn_tree(zone: Dictionary) -> void:
 	if scene != null:
 		var visual := scene.instantiate() as Node3D
 		visual.name = "StandingTree"
-		visual.scale = Vector3.ONE * 3.05
+		visual.scale = Vector3.ONE * 3.65
 		resource.add_child(visual)
-	_add_capsule_collision(resource, 1.44, 13.1, Vector3(0.0, 6.55, 0.0))
+	_add_capsule_collision(resource, 1.72, 15.72, Vector3(0.0, 7.86, 0.0))
 	_add_marker(resource, "ÁRBOL MARCADO", Color(0.52, 0.95, 0.36))
+	_apply_saved_resource_state(resource)
 	generated_tree_count += 1
 
 
@@ -110,6 +113,7 @@ func _spawn_rock(zone: Dictionary) -> void:
 		resource.add_child(visual)
 	_add_box_collision(resource, Vector3(3.2, 2.5, 3.0), Vector3(0.0, 1.15, 0.0))
 	_add_marker(resource, "VETA DE RUBÍ", Color(1.0, 0.28, 0.56))
+	_apply_saved_resource_state(resource)
 	generated_rock_count += 1
 
 
@@ -154,7 +158,9 @@ func _new_resource(zone: Dictionary, kind: String) -> AdventureResource:
 	resource.adventure_system = self
 	resource.position = zone.position
 	resource.rotation.y = float(int(zone.get("variant", 0)) % 17) * 0.37
+	resource.set_meta("initial_transform", resource.transform)
 	add_child(resource)
+	_resources_by_id[resource.zone_id] = resource
 	return resource
 
 
@@ -175,6 +181,14 @@ func open_chest(chest: AdventureResource, player: Player) -> void:
 
 
 func break_resource(resource: AdventureResource, player: Player) -> void:
+	var network := get_node_or_null("/root/NetworkSession")
+	if (
+		network != null
+		and bool(network.call("is_networked"))
+		and not bool(network.call("is_world_authority"))
+	):
+		network.call("request_world_resource_break", "adventure", resource.zone_id)
+	_destroyed_resource_ids[resource.zone_id] = true
 	resource.disable_collisions()
 	if resource.label != null:
 		resource.label.visible = false
@@ -197,6 +211,71 @@ func break_resource(resource: AdventureResource, player: Player) -> void:
 			# mezcla arbitraria de gemas moradas, verdes y cian.
 			spawn_pickup("Crystal4", 1 + absi(resource.zone_id.hash()) % 3, resource.global_position + Vector3(0.0, 0.55, 0.0), resource.zone_id, "mine_rock")
 		)
+	var save_manager := get_node_or_null("/root/SaveGameManager")
+	if save_manager != null:
+		save_manager.call("save_current_game", "recurso roto")
+
+
+func network_break_resource(resource_id: String, remote_player: Player) -> bool:
+	## El anfitrión reconstruye y valida el golpe final recibido por red antes de
+	## alterar una misión. Los cofres, animales y reliquias no pasan por esta ruta.
+	if (
+		not _is_network_host()
+		or remote_player == null
+		or remote_player.equipped_slot != 2
+		or _destroyed_resource_ids.has(resource_id)
+	):
+		return false
+	var resource := _resources_by_id.get(resource_id) as AdventureResource
+	if resource == null or resource.broken or resource.kind not in ["tree", "rock"]:
+		return false
+	var delta := remote_player.global_position - resource.global_position
+	if Vector2(delta.x, delta.z).length() > 7.0 or absf(delta.y) > 8.0:
+		return false
+	resource.health = 0
+	resource.broken = true
+	break_resource(resource, remote_player)
+	return true
+
+
+func _is_network_host() -> bool:
+	var network := get_node_or_null("/root/NetworkSession")
+	return network != null and bool(network.call("is_host"))
+
+
+func _apply_saved_resource_state(resource: AdventureResource) -> void:
+	if not _destroyed_resource_ids.has(resource.zone_id):
+		return
+	resource.broken = true
+	resource.visible = false
+	resource.disable_collisions()
+	if resource.label != null:
+		resource.label.visible = false
+
+
+func get_save_state() -> Dictionary:
+	var ids := PackedStringArray(_destroyed_resource_ids.keys())
+	ids.sort()
+	return {"destroyed_resource_ids": Array(ids)}
+
+
+func apply_save_state(state: Dictionary) -> void:
+	_destroyed_resource_ids.clear()
+	for id_value in state.get("destroyed_resource_ids", []):
+		_destroyed_resource_ids[String(id_value)] = true
+	for resource_id in _resources_by_id:
+		var resource := _resources_by_id[resource_id] as AdventureResource
+		if _destroyed_resource_ids.has(resource_id):
+			_apply_saved_resource_state(resource)
+		else:
+			resource.broken = false
+			resource.visible = true
+			resource.set_collisions_enabled(true)
+			var initial_transform = resource.get_meta("initial_transform", null)
+			if initial_transform is Transform3D:
+				resource.transform = initial_transform as Transform3D
+			if resource.label != null:
+				resource.label.visible = true
 
 
 func spawn_pickup(item_id: String, amount: int, world_position: Vector3, zone_id: String = "", action_key: String = "") -> AdventurePickup:

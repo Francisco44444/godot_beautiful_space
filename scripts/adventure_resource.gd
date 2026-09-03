@@ -18,9 +18,14 @@ var label: Label3D
 func _ready() -> void:
 	collision_layer = 5
 	collision_mask = 0
-	add_to_group("adventure_interactable")
-	if kind in ["tree", "rock"]:
-		add_to_group("melee_target")
+	if bool(get_meta("ambient_breakable", false)):
+		# Las centenas de piezas del desierto se detectan por física al golpearlas;
+		# no entran en el barrido de prompts que se ejecuta cada fotograma.
+		add_to_group("ambient_breakable")
+	else:
+		add_to_group("adventure_interactable")
+		if kind in ["tree", "rock", "cactus"]:
+			add_to_group("melee_target")
 
 
 func get_interaction_prompt() -> String:
@@ -37,6 +42,8 @@ func get_interaction_prompt() -> String:
 			return "2 · Hacha  ·  Clic · Talar"
 		"rock":
 			return "2 · Hacha  ·  Clic · Romper veta"
+		"cactus":
+			return "2 · Hacha  ·  Clic · Cortar cactus"
 	return ""
 
 
@@ -75,7 +82,7 @@ func interact(player: Player) -> bool:
 
 
 func receive_tool_hit(category: String, _item_id: String, _hit_position: Vector3, player: Player) -> void:
-	if broken or kind not in ["tree", "rock"]:
+	if broken or kind not in ["tree", "rock", "cactus"]:
 		return
 	if category != required_category:
 		player.action_feedback.emit("Necesitas equipar el hacha con 2")
@@ -87,6 +94,9 @@ func receive_tool_hit(category: String, _item_id: String, _hit_position: Vector3
 		broken = true
 		if adventure_system != null:
 			adventure_system.call("break_resource", self, player)
+	elif bool(get_meta("ambient_breakable", false)):
+		var resource_name := "roca" if kind == "rock" else "cactus"
+		player.action_feedback.emit("Golpe al %s · faltan %d" % [resource_name, health])
 
 
 func receive_projectile_hit(_hit_position: Vector3, _shooter: Node) -> void:
@@ -96,12 +106,23 @@ func receive_projectile_hit(_hit_position: Vector3, _shooter: Node) -> void:
 
 
 func disable_collisions() -> void:
+	set_collisions_enabled(false)
+
+
+func set_collisions_enabled(enabled: bool) -> void:
 	for child in get_children():
 		if child is CollisionShape3D:
-			(child as CollisionShape3D).set_deferred("disabled", true)
+			(child as CollisionShape3D).set_deferred("disabled", not enabled)
 
 
 func _hit_feedback() -> void:
+	if (
+		bool(get_meta("ambient_breakable", false))
+		and adventure_system != null
+		and adventure_system.has_method("resource_hit_feedback")
+	):
+		adventure_system.call("resource_hit_feedback", self, false)
+		return
 	var original := scale
 	var tween := create_tween()
 	tween.tween_property(self, "scale", original * Vector3(1.06, 0.95, 1.06), 0.07)
@@ -109,6 +130,13 @@ func _hit_feedback() -> void:
 
 
 func _wrong_tool_shake() -> void:
+	if (
+		bool(get_meta("ambient_breakable", false))
+		and adventure_system != null
+		and adventure_system.has_method("resource_hit_feedback")
+	):
+		adventure_system.call("resource_hit_feedback", self, true)
+		return
 	var original := rotation.z
 	var tween := create_tween()
 	tween.tween_property(self, "rotation:z", original + 0.04, 0.05)

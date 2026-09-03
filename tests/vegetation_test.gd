@@ -4,11 +4,15 @@ extends SceneTree
 ## y no invada el sendero jugable. También valida personajes y caballo.
 
 const EXPECTED_TREE_COUNT := 80000
-const EXPECTED_ROCK_COUNT := 3000
-const EXPECTED_MOSS_ROCK_COUNT := 4200
-const EXPECTED_CACTUS_COUNT := 720
+const EXPECTED_ROCK_COUNT := 504
+const EXPECTED_MOSS_ROCK_COUNT := 0
+const EXPECTED_CACTUS_COUNT := 173
 const EXPECTED_MYSTERY_DEAD_TREE_COUNT := 4200
 const EXPECTED_GRASS_COUNT := 220000
+const EXPECTED_GRASS_CLUMPS_PER_PATCH := 1550
+const MAX_GRASS_FULL_TRIANGLES_PER_PATCH := 6300
+const MAX_GRASS_MID_TRIANGLES_PER_PATCH := 910
+const MAX_GRASS_LOD_TRIANGLES_PER_PATCH := 410
 const EXPECTED_FERN_COUNT := 10000
 const EXPECTED_SHRUB_COUNT := 10000
 const EXPECTED_FLOWER_COUNT := 8000
@@ -47,15 +51,26 @@ func _run_test() -> void:
 	root.add_child(world)
 	var scatter := world.get_node("VegetationScatter") as VegetationScatter
 	var terrain := world.get_node("Terrain3D") as Terrain3D
+	var player := world.get_node("Player") as Player
 	var horse := world.get_node("Horse") as Horse
 	var clouds := world.get_node_or_null("AnimatedClouds") as Node3D
 	var wildlife := world.get_node_or_null("QuaterniusWildlife") as Node3D
 	var medieval_set := world.get_node_or_null("MedievalSetDressing") as MedievalSetDressing
 
-	# La vegetación es estática y dispersa; solo esperamos la actualización diferida
-	# que selecciona de forma exclusiva malla completa o proxy en cada celda.
+	# La distribución es estática; sólo la ventana GPU cercana y el fundido LOD
+	# se actualizan después de que exista una cámara activa.
 	for _frame in range(4):
 		await process_frame
+	var vegetation_cache := load("res://generated/vegetation_layout_cache.res") as VegetationLayoutCache
+	if vegetation_cache == null or vegetation_cache.schema_version != 4 or "scale=2.20-4.00" not in vegetation_cache.signature:
+		_fail("La caché de vegetación no contiene la escala equilibrada de los árboles.")
+		return
+	if vegetation_cache != null and vegetation_cache.grass_records.size() >= 3:
+		scatter.call(
+			"_update_grass_near_field",
+			Vector2(vegetation_cache.grass_records[0], vegetation_cache.grass_records[2]),
+			true
+		)
 
 	if wildlife == null or int(wildlife.get("generated_animal_count")) < 6:
 		_fail("El valle debe cargar fauna Quaternius desde el pack de animales.")
@@ -78,30 +93,73 @@ func _run_test() -> void:
 		_fail("La biblioteca debería contener %d personajes glTF; contiene %d." % [EXPECTED_CHARACTER_COUNT, character_count])
 		return
 
-	if clouds == null or clouds.get_child_count() != 3:
-		_fail("El cielo debe tener dos capas altas y una capa baja de nubes.")
+	if clouds == null:
+		_fail("Falta el sistema de nubes procedurales.")
 		return
-	if clouds.get_node_or_null("MovingCloudDome") != null:
-		_fail("La bóveda esférica con costura debe permanecer eliminada.")
+	if (
+		bool(clouds.get_meta("illustrated_billboards", true))
+		or not bool(clouds.get_meta("drawn_clouds_disabled", false))
+		or not bool(clouds.get_meta("procedural_clouds_only", false))
+		or not bool(clouds.get_meta("distributed_cloud_banks", false))
+		or not bool(clouds.get_meta("clear_sky_gaps", false))
+		or int(clouds.get_meta("depth_band_count", 0)) != 1
+		or not bool(clouds.get_meta("procedural_diffuse_veil", false))
+		or bool(clouds.get_meta("hybrid_cloud_system", true))
+	):
+		_fail("Las nubes no declaran bancos procedurales con huecos despejados.")
 		return
-	for child in clouds.get_children():
-		var cloud_layer := child as MeshInstance3D
-		if cloud_layer == null or cloud_layer.mesh == null or cloud_layer.material_override == null:
-			_fail("Cada capa de nubes debe tener malla y shader material.")
+	for legacy_name in [
+		"MovingCloudDome",
+		"CloudLayer01",
+		"CloudLayer02",
+		"CloudLayer03",
+		"ShadowCumulus",
+		"DistantCumulus",
+	]:
+		if clouds.get_node_or_null(legacy_name) != null:
+			_fail("El cielo conserva el nodo de nubes antiguo %s." % legacy_name)
 			return
-		if not cloud_layer.mesh is PlaneMesh or not bool(cloud_layer.get_meta("seam_free_plane", false)):
-			_fail("Las nubes deben usar planos sin costura en lugar de una esfera UV.")
+	for removed_cloud_name in [
+		"IllustratedCloudNear",
+		"IllustratedCloudMid",
+		"IllustratedCloudHorizon",
+		"CloudShadowMasks",
+	]:
+		if clouds.get_node_or_null(removed_cloud_name) != null:
+			_fail("Se reactivó una capa de nubes dibujadas: %s." % removed_cloud_name)
 			return
-		if not bool(cloud_layer.get_meta("geometric_motion", false)):
-			_fail("Las nubes deben desplazarse físicamente además de animar su textura.")
-			return
-		var material := cloud_layer.material_override as ShaderMaterial
-		if material == null or material.shader == null or not material.shader.code.contains("TIME"):
-			_fail("Las nubes deben animarse con TIME en el shader.")
-			return
-		if not material.shader.code.contains("warp") or not material.shader.code.contains("fade_x"):
-			_fail("Las nubes deben deformarse y desvanecer sus bordes por shader.")
-			return
+	var procedural_veil := clouds.get_node_or_null("ProceduralCloudVeil") as MeshInstance3D
+	var procedural_dome_count := 0
+	for cloud_child in clouds.get_children():
+		var cloud_mesh_instance := cloud_child as MeshInstance3D
+		if cloud_mesh_instance != null and cloud_mesh_instance.mesh is SphereMesh:
+			procedural_dome_count += 1
+	if (
+		procedural_veil == null
+		or not procedural_veil.mesh is SphereMesh
+		or procedural_dome_count != 1
+		or _mesh_triangle_count(procedural_veil.mesh) <= 0
+		or _mesh_triangle_count(procedural_veil.mesh) > 2048
+	):
+		_fail("El cielo procedural debe usar una única SphereMesh interior de hasta 2048 triángulos.")
+		return
+	var veil_material := procedural_veil.material_override as ShaderMaterial
+	if veil_material == null and procedural_veil.mesh.get_surface_count() > 0:
+		veil_material = procedural_veil.mesh.surface_get_material(0) as ShaderMaterial
+	var veil_shader_code := "" if veil_material == null or veil_material.shader == null else veil_material.shader.code
+	var veil_shader_lower := veil_shader_code.to_lower()
+	if (
+		veil_shader_code.is_empty()
+		or not veil_shader_code.contains("TIME")
+		or veil_shader_code.contains("UV")
+		or (not veil_shader_lower.contains("fbm") and not veil_shader_lower.contains("noise"))
+		or (not veil_shader_lower.contains("sky_direction") and not veil_shader_lower.contains("dome_direction"))
+		or not veil_shader_lower.contains("horizon_blend")
+		or not veil_shader_lower.contains("cloud_region")
+		or not veil_shader_lower.contains("region_field")
+	):
+		_fail("El cielo debe usar ruido direccional animado y bancos separados por huecos azules.")
+		return
 
 	var terrain_assets := load("res://terrain/data/assets.tres") as Terrain3DAssets
 	if terrain_assets == null or terrain_assets.get_texture_count() != 7:
@@ -258,6 +316,12 @@ func _run_test() -> void:
 	):
 		_fail("La retícula anti-calvas no cubre de forma verificable las praderas verdes.")
 		return
+	if (
+		not bool(scatter.get_meta("vegetation_layout_cached", false))
+		or not ResourceLoader.exists("res://generated/vegetation_layout_cache.res")
+	):
+		_fail("El arranque ha vuelto a recalcular la vegetación en vez de usar el layout horneado.")
+		return
 
 	var count_specs: Array[Array] = [
 		["árboles", scatter.tree_count, scatter.generated_tree_count, EXPECTED_TREE_COUNT],
@@ -297,6 +361,7 @@ func _run_test() -> void:
 		["MossRockCells", scatter.generated_moss_rock_count],
 		["CactusCells", scatter.generated_cactus_count],
 		["GrassCells", scatter.generated_grass_count],
+		["GrassMidLODCells", scatter.generated_grass_count],
 		["FernCells", scatter.generated_fern_count],
 		["ShrubCells", scatter.generated_shrub_count],
 		["FlowerCells", scatter.generated_flower_count],
@@ -313,7 +378,7 @@ func _run_test() -> void:
 		if category == null:
 			_fail("Falta la raíz de celdas %s." % root_name)
 			return
-		if category.get_child_count() == 0:
+		if expected_instances > 0 and category.get_child_count() == 0:
 			_fail("La raíz %s no contiene ninguna celda." % root_name)
 			return
 		var instance_total := 0
@@ -330,7 +395,10 @@ func _run_test() -> void:
 				return
 			instance_total += cell.multimesh.instance_count
 			counted_cells += 1
-		if instance_total != expected_instances:
+		if root_name.begins_with("Grass") and (instance_total <= 0 or instance_total >= expected_instances):
+			_fail("%s no contiene una ventana acotada: %d instancias." % [root_name, instance_total])
+			return
+		if not root_name.begins_with("Grass") and instance_total != expected_instances:
 			_fail("%s contiene %d instancias; se esperaban %d." % [root_name, instance_total, expected_instances])
 			return
 	if scatter.get_node_or_null("StoneRoadGround") != null:
@@ -376,14 +444,14 @@ func _run_test() -> void:
 	if (
 		grass_lod_cells == null
 		or not bool(scatter.get_meta("dense_static_grass_lod", false))
-		or not bool(scatter.get_meta("exclusive_lod_pairs", false))
-		or String(grass_lod_cells.get_meta("exclusive_with", "")) != "GrassCells"
+		or not bool(scatter.get_meta("grass_lod_crossfade", false))
+		or String(grass_lod_cells.get_meta("crossfades_with", "")) != "GrassCells"
 		or scatter.generated_grass_lod_instances != EXPECTED_GRASS_COUNT
 		or scatter.generated_grass_lod_cells <= 0
 		or String(grass_cells.get_meta("source_model", "")) != "Grass_Common_Short.gltf"
 		or grass_cells.get_meta("excluded_biomes", PackedStringArray()) != PackedStringArray(["snow", "desert", "mystery_forest"])
 	):
-		_fail("La hierba densa no conserva su modelo, exclusiones de bioma y reemplazo LOD exclusivo.")
+		_fail("La hierba densa no conserva su modelo, exclusiones y fundido LOD estable.")
 		return
 	for rock_root_name in ["RockCells", "MossRockCells"]:
 		var rock_root := scatter.get_node(rock_root_name) as Node3D
@@ -391,11 +459,20 @@ func _run_test() -> void:
 			_fail("%s no declara su confinamiento al desierto llano." % rock_root_name)
 			return
 	if (
-		int(scatter.get_meta("grass_patch_clumps", 0)) != 20
-		or int(grass_cells.get_meta("effective_clump_count", 0)) != EXPECTED_GRASS_COUNT * 20
-		or int(grass_lod_cells.get_meta("effective_clump_count", 0)) != EXPECTED_GRASS_COUNT * 20
+		int(scatter.get_meta("grass_patch_clumps", 0)) != EXPECTED_GRASS_CLUMPS_PER_PATCH
+		or int(grass_cells.get_meta("effective_clump_count", 0)) != EXPECTED_GRASS_COUNT * EXPECTED_GRASS_CLUMPS_PER_PATCH
+		or int(grass_lod_cells.get_meta("effective_clump_count", 0)) != EXPECTED_GRASS_COUNT * EXPECTED_GRASS_CLUMPS_PER_PATCH
 	):
-		_fail("Los parches densos no representan 4,4 millones de macollas mediante MultiMesh.")
+		_fail("Los parches no representan la nueva alfombra densa mediante MultiMesh.")
+		return
+	var first_grass_patch := (grass_cells.get_child(0) as MultiMeshInstance3D).multimesh.mesh
+	var grass_patch_aabb := first_grass_patch.get_aabb()
+	if (
+		_mesh_triangle_count(first_grass_patch) > MAX_GRASS_FULL_TRIANGLES_PER_PATCH
+		or grass_patch_aabb.size.x < 17.0
+		or grass_patch_aabb.size.z < 17.0
+	):
+		_fail("La hierba cercana no combina cobertura continua con una malla GPU barata.")
 		return
 	var counted_grass_lod_instances := 0
 	for grass_lod_node in grass_lod_cells.get_children():
@@ -410,7 +487,7 @@ func _run_test() -> void:
 			or grass_lod_cell.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 			or grass_lod_cell.multimesh.custom_aabb.size.length_squared() <= 0.0
 			or not _cell_is_spatially_anchored(grass_lod_cell)
-			or _mesh_triangle_count(grass_lod_cell.multimesh.mesh) > 4
+			or _mesh_triangle_count(grass_lod_cell.multimesh.mesh) > MAX_GRASS_LOD_TRIANGLES_PER_PATCH
 		):
 			_fail("Una celda proxy de hierba no es barata, local o exclusivamente gobernada.")
 			return
@@ -422,8 +499,32 @@ func _run_test() -> void:
 		_fail("El decorado continúa saltándose el importador y sus LOD automáticos.")
 		return
 	scatter.call("_update_explicit_lod_visibility", true)
-	if not _lod_pair_is_exclusive(grass_cells, grass_lod_cells):
-		_fail("La hierba completa y su proxy aparecen simultáneamente en una misma celda.")
+	if vegetation_cache != null and vegetation_cache.grass_records.size() >= 3:
+		scatter.call(
+			"_update_grass_near_field",
+			Vector2(vegetation_cache.grass_records[0], vegetation_cache.grass_records[2]),
+			true
+		)
+	var near_field := grass_cells.get_node_or_null("FixedNearField") as MultiMeshInstance3D
+	var mid_cells := scatter.get_node_or_null("GrassMidLODCells") as Node3D
+	var mid_field := mid_cells.get_node_or_null("FixedMidField") as MultiMeshInstance3D if mid_cells != null else null
+	if (
+		near_field == null
+		or near_field.multimesh == null
+		or near_field.multimesh.instance_count <= 0
+		or not bool(grass_cells.get_meta("fixed_world_layout", false))
+		or not bool(grass_cells.get_meta("gpu_window_faded", false))
+	):
+		_fail("El campo cercano no conserva posiciones fijas con precarga invisible.")
+		return
+	if (
+		mid_field == null
+		or mid_field.multimesh == null
+		or mid_field.multimesh.instance_count <= near_field.multimesh.instance_count
+		or _mesh_triangle_count(mid_field.multimesh.mesh) > MAX_GRASS_MID_TRIANGLES_PER_PATCH
+		or not bool(mid_cells.get_meta("fixed_world_layout", false))
+	):
+		_fail("La corona intermedia no amplía la profundidad con una malla económica.")
 		return
 
 	var tree_cells := scatter.get_node("TreeCells") as Node3D
@@ -466,8 +567,8 @@ func _run_test() -> void:
 		_fail("Los árboles completos y sus proxies aparecen simultáneamente en una misma celda.")
 		return
 	scatter.set_lod_switch_distance(600.0)
-	if absf(scatter.lod_switch_distance - 600.0) > 0.01 or not _lod_pair_is_exclusive(tree_cells, tree_lod_cells) or not _lod_pair_is_exclusive(grass_cells, grass_lod_cells):
-		_fail("Cambiar la distancia LOD rompe la exclusividad entre representaciones.")
+	if absf(scatter.lod_switch_distance - 600.0) > 0.01 or not _lod_pair_is_exclusive(tree_cells, tree_lod_cells):
+		_fail("Cambiar la distancia LOD rompe la exclusividad de los árboles.")
 		return
 	scatter.set_lod_switch_distance(340.0)
 	for child in tree_cells.get_children():
@@ -486,12 +587,169 @@ func _run_test() -> void:
 					return
 
 	var collision_body := scatter.get_node_or_null("DecorCollisions") as StaticBody3D
-	var expected_collisions := scatter.generated_tree_collision_count + scatter.generated_rock_collision_count
+	var expected_collisions := 1 + scatter.generated_rock_collision_count
 	if collision_body == null or collision_body.get_child_count() != expected_collisions:
-		_fail("Las %d colisiones selectivas del arbolado y las rocas no coinciden." % expected_collisions)
+		_fail("La colisión forestal unificada y las colisiones de roca no coinciden.")
 		return
-	if scatter.generated_tree_collision_count < 4000 or scatter.generated_rock_collision_count < 900:
-		_fail("El corredor jugable no conserva suficiente colisión entre árboles y rocas.")
+	var forest_collision := collision_body.get_node_or_null("ForestTreeCollisionMesh") as CollisionShape3D
+	if (
+		forest_collision == null
+		or not forest_collision.shape is ConcavePolygonShape3D
+		or int(forest_collision.get_meta("source_tree_count", 0)) != scatter.generated_tree_collision_count
+	):
+		_fail("Los troncos seleccionados no están incluidos en la malla física forestal.")
+		return
+	if scatter.generated_tree_collision_count < 4000:
+		_fail("El corredor jugable no conserva suficiente colisión entre árboles.")
+		return
+	var breakable_root := scatter.get_node_or_null("BreakableResources") as Node3D
+	var expected_breakables := scatter.generated_rock_count + scatter.generated_cactus_count
+	if (
+		breakable_root == null
+		or breakable_root.get_child_count() != expected_breakables
+		or scatter.generated_breakable_resource_count != expected_breakables
+	):
+		_fail("Cada roca y cactus del desierto debe tener una colisión rompible individual.")
+		return
+	for child in breakable_root.get_children():
+		var resource := child as AdventureResource
+		if resource == null or resource.kind not in ["rock", "cactus"] or resource.get_child_count() != 1:
+			_fail("Una roca o cactus no está conectado al sistema rompible.")
+			return
+	var persistence_probe := breakable_root.get_child(0) as AdventureResource
+	var probe_id := persistence_probe.zone_id
+	scatter.apply_save_state({"destroyed_resource_ids": [probe_id]})
+	var saved_resources := scatter.get_save_state().get("destroyed_resource_ids", []) as Array
+	if not persistence_probe.broken or probe_id not in saved_resources:
+		_fail("El estado roto de una roca o cactus no entra en el guardado.")
+		return
+	scatter.apply_save_state({"destroyed_resource_ids": []})
+	if persistence_probe.broken:
+		_fail("Cargar otra ranura no restaura los recursos que siguen enteros en ella.")
+		return
+	var save_manager := root.get_node_or_null("SaveGameManager")
+	if save_manager != null:
+		save_manager.call("bind_world", null)
+	var adventure_system := world.get_node("AdventureSystem")
+	for wanted_kind in ["rock", "cactus"]:
+		var breakable: AdventureResource = null
+		for child in breakable_root.get_children():
+			var candidate := child as AdventureResource
+			if candidate != null and candidate.kind == wanted_kind:
+				breakable = candidate
+				break
+		if breakable == null:
+			_fail("No existe un %s de prueba en el desierto." % wanted_kind)
+			return
+		var multimesh_key := String(breakable.get_meta("multimesh_key", ""))
+		var visual_multimesh := scatter.get("_installed_multimeshes").get(multimesh_key) as MultiMeshInstance3D
+		var visual_index := int(breakable.get_meta("multimesh_instance_index", -1))
+		var visible_before := visual_multimesh.multimesh.get_instance_transform(visual_index)
+		var drops_before := int(adventure_system.get("generated_pickup_count"))
+		breakable.receive_tool_hit("axe", "Axe_Small", breakable.global_position, player)
+		await create_timer(0.10).timeout
+		var visible_during_hit := visual_multimesh.multimesh.get_instance_transform(visual_index)
+		# El renderer dummy de --headless no conserva el buffer MultiMesh tras
+		# instalarlo en el árbol. En ejecución normal comprobamos la transformación
+		# real; sin pantalla comprobamos que el tween produjo una pose visible.
+		var visible_wobble_computed := float(
+			breakable.get_meta("computed_visible_wobble_delta", 0.0)
+		) > 0.0001
+		var renderer_keeps_multimesh_buffer := DisplayServer.get_name().to_lower() != "headless"
+		if (
+			not visible_wobble_computed
+			or (
+				renderer_keeps_multimesh_buffer
+				and visible_during_hit.basis.is_equal_approx(visible_before.basis)
+			)
+		):
+			_fail("Golpear un %s no hace vibrar su malla visible." % wanted_kind)
+			return
+		breakable.receive_tool_hit("axe", "Axe_Small", breakable.global_position, player)
+		breakable.receive_tool_hit("axe", "Axe_Small", breakable.global_position, player)
+		await create_timer(0.62).timeout
+		var broken_state := scatter.get_save_state().get("destroyed_resource_ids", []) as Array
+		var spawned_arrow := false
+		for pickup_node in adventure_system.get_children():
+			var pickup := pickup_node as AdventurePickup
+			if pickup != null and pickup.item_id == "Arrow" and pickup.get_instance_id() != 0:
+				spawned_arrow = true
+				break
+		if (
+			breakable.zone_id not in broken_state
+			or int(adventure_system.get("generated_pickup_count")) <= drops_before
+			or (wanted_kind == "rock" and not spawned_arrow)
+		):
+			_fail("Romper un %s no persiste o no deja el botín físico esperado." % wanted_kind)
+			return
+		scatter.apply_save_state({"destroyed_resource_ids": []})
+		await process_frame
+	var expected_harvestable_trees := (
+		scatter.generated_tree_count
+		+ scatter.forest_detail_count
+		+ scatter.generated_mystery_dead_tree_count
+	)
+	if (
+		not bool(scatter.get_meta("all_trees_harvestable", false))
+		or scatter.generated_harvestable_tree_count != expected_harvestable_trees
+		or int(scatter.get_meta("harvestable_tree_count", 0)) != expected_harvestable_trees
+	):
+		_fail("Todos los árboles normales y secos deben estar indexados para tala persistente.")
+		return
+	# Tres golpes independientes deben tumbar una instancia MultiMesh, crear su
+	# tocón y expulsar dos troncos sin haber creado 80.000 nodos físicos.
+	var harvest_position := scatter.tree_positions[0]
+	var harvest_player_position := harvest_position + Vector3(0.0, 0.0, 2.4)
+	var harvest_forward := (harvest_position - harvest_player_position).normalized()
+	var pickup_count_before := int(world.get_node("AdventureSystem").get("generated_pickup_count"))
+	for attack_serial in range(1, 4):
+		player.attacks_performed = attack_serial
+		if not bool(scatter.call(
+			"try_hit_nearest_tree",
+			"axe",
+			"Axe_Small",
+			harvest_player_position,
+			harvest_forward,
+			2.0,
+			player
+		)):
+			_fail("El índice forestal no encontró un árbol cercano durante la tala.")
+			return
+		for _frame in 5:
+			await process_frame
+	await create_timer(0.95).timeout
+	var harvest_id := String(scatter.call(
+		"_stable_scatter_resource_id",
+		"forest_tree",
+		Vector2(harvest_position.x, harvest_position.z)
+	))
+	var expected_arrow_bonus := int(scatter.call("_tree_bonus_arrow_amount", harvest_id))
+	var harvest_state := scatter.get_save_state().get("destroyed_resource_ids", []) as Array
+	var stump_root := scatter.get_node_or_null("HarvestedTreeStumps") as Node3D
+	if (
+		harvest_id not in harvest_state
+		or stump_root == null
+		or stump_root.get_child_count() <= 0
+		or int(world.get_node("AdventureSystem").get("generated_pickup_count"))
+			< pickup_count_before + 2 + (1 if expected_arrow_bonus > 0 else 0)
+	):
+		_fail("Talar un árbol no persiste o no expulsa sus troncos y flechas visibles.")
+		return
+	var trees_with_arrows := 0
+	var trees_without_arrows := 0
+	var harvest_ids: PackedStringArray = scatter.get("_harvest_tree_ids")
+	for sample_index in mini(harvest_ids.size(), 1000):
+		if int(scatter.call("_tree_bonus_arrow_amount", harvest_ids[sample_index])) > 0:
+			trees_with_arrows += 1
+		else:
+			trees_without_arrows += 1
+	if trees_with_arrows <= 0 or trees_without_arrows <= 0:
+		_fail("Las flechas de los árboles deben ser una recompensa aleatoria, no universal.")
+		return
+	scatter.apply_save_state({"destroyed_resource_ids": []})
+	await process_frame
+	if scatter.get_save_state().get("destroyed_resource_ids", []).has(harvest_id):
+		_fail("Cambiar de ranura no restaura correctamente un árbol talado.")
 		return
 	var first_grass_cell := scatter.get_node("GrassCells").get_child(0) as MultiMeshInstance3D
 	var grass_material := first_grass_cell.multimesh.mesh.surface_get_material(0) as ShaderMaterial
@@ -499,10 +757,20 @@ func _run_test() -> void:
 		grass_material == null
 		or grass_material.shader == null
 		or not grass_material.shader.code.contains("TIME")
-		or not grass_material.shader.code.contains("gust_envelope")
-		or not grass_material.shader.code.contains("local_phase")
+		or not grass_material.shader.code.contains("soft_gust")
+		or not grass_material.shader.code.contains("strong_gust")
+		or not grass_material.shader.code.contains("travelling_wave")
+		or not grass_material.shader.code.contains("grass_world_position")
+		or not grass_material.shader.code.contains("player_position")
+		or not grass_material.shader.code.contains("local_outward")
 	):
-		_fail("La hierba Quaternius no tiene el shader de brisa y ráfagas ocasionales.")
+		_fail("La alfombra no combina viento coordinado y apertura alrededor del personaje.")
+		return
+	scatter.call("_update_grass_interaction")
+	var shader_player_position: Vector3 = grass_material.get_shader_parameter("player_position")
+	var interaction_player := world.get_node("Player") as Node3D
+	if shader_player_position.distance_to(interaction_player.global_position) > 0.01:
+		_fail("La deformación de la alfombra no sigue la posición real del personaje.")
 		return
 
 	var horse_model_root := horse.get_node_or_null("Visual/ModelRoot") as Node3D
@@ -566,7 +834,7 @@ func _run_test() -> void:
 	for _frame in range(8):
 		await process_frame
 	print(
-		"QUATERNIUS TEST OK: %d árboles + %d proxies (%.1f%% lejos de rutas), %d hierbas dispersas + proxy exclusivo, %d celdas base, %d elementos y %d personajes."
+		"QUATERNIUS TEST OK: %d árboles + %d proxies (%.1f%% lejos de rutas), %d hierbas fijas con fundido LOD, %d celdas base, %d elementos y %d personajes."
 		% [EXPECTED_TREE_COUNT, tree_lod_instance_total, float(far_from_route_count) * 100.0 / float(EXPECTED_TREE_COUNT), grass_lod_instance_total, generated_cell_total, EXPECTED_TREE_COUNT + EXPECTED_ROCK_COUNT + EXPECTED_MOSS_ROCK_COUNT + EXPECTED_CACTUS_COUNT + EXPECTED_MYSTERY_DEAD_TREE_COUNT + EXPECTED_GRASS_COUNT + EXPECTED_FERN_COUNT + EXPECTED_SHRUB_COUNT + EXPECTED_FLOWER_COUNT + EXPECTED_MUSHROOM_COUNT + EXPECTED_PATH_PEBBLE_COUNT, EXPECTED_CHARACTER_COUNT]
 	)
 	quit(0)
@@ -638,6 +906,38 @@ func _lod_pair_is_exclusive(full_root: Node3D, proxy_root: Node3D) -> bool:
 func _mesh_triangle_count(mesh: Mesh) -> int:
 	var triangle_count := 0
 	for surface_index in mesh.get_surface_count():
-		var index_count: int = mesh.surface_get_array_index_len(surface_index)
-		triangle_count += index_count / 3 if index_count > 0 else mesh.surface_get_array_len(surface_index) / 3
+		var arrays := mesh.surface_get_arrays(surface_index)
+		if arrays.is_empty():
+			continue
+		var indices: Variant = arrays[Mesh.ARRAY_INDEX]
+		if indices is PackedInt32Array and not indices.is_empty():
+			triangle_count += indices.size() / 3
+		else:
+			var vertices: Variant = arrays[Mesh.ARRAY_VERTEX]
+			if vertices is PackedVector3Array:
+				triangle_count += vertices.size() / 3
 	return triangle_count
+
+
+func _illustrated_cloud_field_is_valid(
+	field: MultiMeshInstance3D,
+	expected_count: int,
+	shadows_only: bool
+) -> bool:
+	if (
+		field == null
+		or field.multimesh == null
+		or field.multimesh.mesh == null
+		or expected_count <= 0
+		or field.multimesh.instance_count != expected_count
+		or not field.multimesh.use_custom_data
+		or field.multimesh.custom_aabb.size.length_squared() <= 0.0
+		or _mesh_triangle_count(field.multimesh.mesh) != 2
+	):
+		return false
+	var expected_shadow_mode := (
+		GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		if shadows_only
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	)
+	return field.cast_shadow == expected_shadow_mode

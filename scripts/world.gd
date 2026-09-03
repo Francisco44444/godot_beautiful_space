@@ -10,6 +10,12 @@ const FAST_TRAVEL_POINTS: Array[Dictionary] = [
 	{"name": "Bosque Umbrío", "position": Vector2(-2180.0, 1650.0)},
 	{"name": "Bosque Tenebroso", "position": Vector2(4620.0, -1260.0)},
 ]
+const BOSS_TRAVEL_POINTS: Array[Dictionary] = [
+	{"name": "Guardián del Corazón de Roble", "position": Vector2(-2518.0, 1102.0)},
+	{"name": "Guardián de la Corona de Escarcha", "position": Vector2(702.0, -3358.0)},
+	{"name": "Guardián del Santuario Solar", "position": Vector2(3178.0, 2302.0)},
+	{"name": "Vaelor, Señor del Silencio", "position": Vector2(4958.0, -1498.0)},
+]
 const PLAYER_SCENE: PackedScene = preload("res://scenes/player.tscn")
 const SEA_BOUNDARY_SEGMENTS := 112
 const CLIFF_BARRIER_SAMPLES := 512
@@ -46,6 +52,7 @@ var time_of_day := "Día"
 var day_duration_seconds := 320.0
 var night_duration_seconds := 160.0
 var last_fast_travel_slot := 0
+var last_boss_travel_index := -1
 var sea_boundary: StaticBody3D
 var sea_boundary_segment_count := 0
 var blocked_sea_entries := 0
@@ -76,6 +83,9 @@ func _ready() -> void:
 	_apply_lod_distance(GameSettings.lod_distance_metres)
 	_setup_network_players()
 	NetworkSession.world_state_received.connect(_on_network_world_state_received)
+	NetworkSession.world_resource_break_requested.connect(
+		_on_network_world_resource_break_requested
+	)
 	SaveGameManager.bind_world(self)
 	var exploration := get_node_or_null("/root/ExplorationManager")
 	if exploration != null:
@@ -118,6 +128,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	var pressed_key := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
 	var slot := 0
 	match pressed_key:
+		KEY_0:
+			if fast_travel_to_next_boss():
+				get_viewport().set_input_as_handled()
+			return
 		KEY_5:
 			slot = 1
 		KEY_6:
@@ -162,6 +176,48 @@ func get_fast_travel_position(slot: int) -> Vector2:
 	if slot < 1 or slot > FAST_TRAVEL_POINTS.size():
 		return Vector2(INF, INF)
 	return FAST_TRAVEL_POINTS[slot - 1].position
+
+
+func fast_travel_to_next_boss() -> bool:
+	if BOSS_TRAVEL_POINTS.is_empty():
+		return false
+	var next_index := (last_boss_travel_index + 1) % BOSS_TRAVEL_POINTS.size()
+	if not _travel_player_to_point(BOSS_TRAVEL_POINTS[next_index].position):
+		return false
+	last_boss_travel_index = next_index
+	player.action_feedback.emit("0 · Jefe %d/%d: %s" % [
+		next_index + 1,
+		BOSS_TRAVEL_POINTS.size(),
+		String(BOSS_TRAVEL_POINTS[next_index].name),
+	])
+	return true
+
+
+func get_boss_travel_count() -> int:
+	return BOSS_TRAVEL_POINTS.size()
+
+
+func get_boss_travel_position(index: int) -> Vector2:
+	if index < 0 or index >= BOSS_TRAVEL_POINTS.size():
+		return Vector2(INF, INF)
+	return BOSS_TRAVEL_POINTS[index].position
+
+
+func _travel_player_to_point(point: Vector2) -> bool:
+	if terrain.data == null:
+		return false
+	var height := terrain.data.get_height(Vector3(point.x, 0.0, point.y))
+	if is_nan(height):
+		return false
+	if player.is_mounted():
+		player.dismount()
+	player.global_position = Vector3(point.x, height + 0.18, point.y)
+	player.velocity = Vector3.ZERO
+	player.spawn_position = player.global_position
+	_last_dry_player_position = player.global_position
+	if camera_rig != null:
+		camera_rig.snap_to_target()
+	return true
 
 
 func _setup_network_players() -> void:
@@ -284,11 +340,15 @@ func apply_local_player_save_state(state: Dictionary) -> bool:
 
 func get_shared_world_save_state() -> Dictionary:
 	var story := get_node_or_null("RPGStoryRuntime")
+	var vegetation := get_node_or_null("VegetationScatter")
+	var adventure := get_node_or_null("AdventureSystem")
 	return {
 		"sun_cycle_radians": sun_cycle_radians,
 		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
 		"horse_position": [horse.global_position.x, horse.global_position.y, horse.global_position.z],
 		"story": story.call("get_save_state") if story != null else {},
+		"vegetation_resources": vegetation.call("get_save_state") if vegetation != null else {},
+		"adventure_resources": adventure.call("get_save_state") if adventure != null else {},
 	}
 
 
@@ -304,16 +364,26 @@ func apply_shared_world_save_state(state: Dictionary) -> void:
 	var story := get_node_or_null("RPGStoryRuntime")
 	if story != null:
 		story.call_deferred("apply_save_state", state.get("story", {}))
+	var vegetation := get_node_or_null("VegetationScatter")
+	if vegetation != null:
+		vegetation.call("apply_save_state", state.get("vegetation_resources", {}))
+	var adventure := get_node_or_null("AdventureSystem")
+	if adventure != null:
+		adventure.call("apply_save_state", state.get("adventure_resources", {}))
 
 
 func get_network_world_state() -> Dictionary:
 	var wildlife := get_node_or_null("QuaterniusWildlife")
 	var story := get_node_or_null("RPGStoryRuntime")
+	var vegetation := get_node_or_null("VegetationScatter")
+	var adventure := get_node_or_null("AdventureSystem")
 	return {
 		"sun_cycle_radians": sun_cycle_radians,
 		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
 		"wildlife": wildlife.call("get_network_state") if wildlife != null else [],
 		"enemies": story.call("get_network_enemy_state") if story != null else [],
+		"vegetation_resources": vegetation.call("get_save_state") if vegetation != null else {},
+		"adventure_resources": adventure.call("get_save_state") if adventure != null else {},
 	}
 
 
@@ -330,6 +400,51 @@ func _on_network_world_state_received(state: Dictionary) -> void:
 	var story := get_node_or_null("RPGStoryRuntime")
 	if story != null:
 		story.call("apply_network_enemy_state", state.get("enemies", []))
+	var vegetation := get_node_or_null("VegetationScatter")
+	if vegetation != null:
+		vegetation.call("apply_save_state", state.get("vegetation_resources", {}))
+	var adventure := get_node_or_null("AdventureSystem")
+	if adventure != null:
+		adventure.call("apply_save_state", state.get("adventure_resources", {}))
+
+
+func _on_network_world_resource_break_requested(
+	peer_id: int,
+	domain: String,
+	resource_id: String
+) -> bool:
+	## Solo se ejecuta en el anfitrión. La réplica contiene la última posición y
+	## ranura de equipo recibidas de ese peer; los sistemas de recursos vuelven a
+	## comprobar distancia, existencia y que la ranura 2 sea realmente el hacha.
+	if (
+		NetworkSession.session_mode != NetworkSession.SessionMode.HOST
+		or not multiplayer.is_server()
+		or network_players == null
+	):
+		return false
+	var remote_player := network_players.get_node_or_null("Peer_%d" % peer_id) as Player
+	if remote_player == null or remote_player.equipped_slot != 2:
+		return false
+	var accepted := false
+	if domain == "vegetation":
+		var vegetation := get_node_or_null("VegetationScatter")
+		if vegetation != null and vegetation.has_method("network_break_resource"):
+			accepted = bool(vegetation.call(
+				"network_break_resource", resource_id, remote_player
+			))
+	elif domain == "adventure":
+		var adventure := get_node_or_null("AdventureSystem")
+		if adventure != null and adventure.has_method("network_break_resource"):
+			accepted = bool(adventure.call(
+				"network_break_resource", resource_id, remote_player
+			))
+	if not accepted:
+		return false
+	NetworkSession.broadcast_world_state_now()
+	# El autoguardado periódico sigue activo, pero una alteración permanente del
+	# mundo autorizada por un invitado se escribe también en este mismo instante.
+	SaveGameManager.save_current_game("recurso cooperativo roto")
+	return true
 
 
 func _apply_lod_distance(distance_metres: float) -> void:
