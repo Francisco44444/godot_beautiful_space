@@ -4,6 +4,29 @@ extends SceneTree
 ## monstruos, grutas, diálogo y pista persistente deben estar conectados.
 
 
+## 180 de patrullas, guaridas y guarniciones, más 4 centinelas por arena en la
+## única cuesta subible: sin ellos llegar al jefe es andar mucho, no costar.
+const APPROACH_GUARDS_PER_ARENA := 4
+## Derivado del bestiario, no a mano: sembrar una guarida para que un encargo
+## pueda cumplirse no puede obligar a venir aquí a cambiar un número, ni —peor—
+## dejar el aserto pasando por casualidad.
+var expected_enemies := _roaming_enemies() \
+	+ RPGBestiary.ARENAS.size() * APPROACH_GUARDS_PER_ARENA
+
+
+func _roaming_enemies() -> int:
+	var total := RPGBestiary.patrol_points(VegetationScatter.ROAD_NETWORK, 150.0, 11.0).size()
+	for lair in RPGBestiary.LAIRS:
+		total += int(lair["count"])
+	for garrison in RPGBestiary.GARRISONS:
+		total += int(garrison["count"])
+	return total
+const EXPECTED_BOSSES := 5
+const EXPECTED_FORGES := 6
+## Ningún bioma puede quedarse sin criaturas que peleen a su manera.
+const MIN_PER_STYLE := 10
+
+
 func _init() -> void:
 	call_deferred("_run_test")
 
@@ -53,13 +76,72 @@ func _run_test() -> void:
 
 	var npcs := get_nodes_in_group("rpg_npc")
 	var enemies := get_nodes_in_group("rpg_enemy")
+	var bosses := get_nodes_in_group("rpg_boss")
+	var anvils := get_nodes_in_group("rpg_anvil")
 	var gates := get_nodes_in_group("rpg_cave_gate")
-	if npcs.size() != 24 or enemies.size() != 48 or gates.size() != 4:
-		_fail("El mundo narrativo debe materializar 24 NPC, 48 enemigos y 4 puertas: %d/%d/%d." % [npcs.size(), enemies.size(), gates.size()])
+	# El bestiario pasó de 48 criaturas clavadas en doce puntos fijos —todas a
+	# más de 300 m del héroe y ninguna junto a un camino— a un reparto por las
+	# diez rutas, guaridas de bosque y guarniciones de castillo.
+	if npcs.size() != 24 or enemies.size() != expected_enemies or gates.size() != 4:
+		_fail("El mundo narrativo debe materializar 24 NPC, %d enemigos y 4 puertas: %d/%d/%d." % [
+			expected_enemies, npcs.size(), enemies.size(), gates.size()])
+		return
+	if bosses.size() != EXPECTED_BOSSES or anvils.size() != EXPECTED_FORGES:
+		_fail("Deben existir %d jefes de acto y %d herrerías: %d/%d." % [
+			EXPECTED_BOSSES, EXPECTED_FORGES, bosses.size(), anvils.size()])
+		return
+
+	# Los cinco estilos de combate tienen que estar vivos. Antes los diez modelos
+	# compartían una única conducta y la nieve se jugaba igual que el desierto.
+	var styles := {}
+	for creature in enemies:
+		styles[int(creature.style)] = int(styles.get(int(creature.style), 0)) + 1
+	if styles.size() != 5:
+		_fail("Sólo hay %d estilos de combate de los cinco que definen los biomas: %s." % [
+			styles.size(), styles])
+		return
+	for style in 5:
+		if int(styles.get(style, 0)) < MIN_PER_STYLE:
+			_fail("El estilo %d sólo lo usan %d criaturas; hacen falta al menos %d." % [
+				style, int(styles.get(style, 0)), MIN_PER_STYLE])
+			return
+
+	# Y ninguna criatura puede estar cayéndose. Terrain3D no genera colisión de
+	# suelo lejos del jugador y con gravedad los 48 originales se desplomaban:
+	# medido, los 48 caídos a los diez segundos, el peor 513,6 m.
+	var terrain := world.get_node("Terrain3D") as Terrain3D
+	for creature in enemies:
+		var here: Vector3 = (creature as Node3D).global_position
+		var ground: float = terrain.data.get_height(Vector3(here.x, 0.0, here.z))
+		if is_nan(ground):
+			continue
+		if absf(here.y - ground) > 1.2:
+			_fail("%s está a %.1f m de la cota del terreno: se está cayendo." % [
+				creature.name, absf(here.y - ground)])
+			return
+
+	# Sólo el jefe del acto en curso está despierto. Sin este cerrojo se podía ir
+	# derecho al último con la espada de partida.
+	var awake := 0
+	for boss in bosses:
+		if not bool(boss.sealed):
+			awake += 1
+	if awake != 1:
+		_fail("Debe haber exactamente un jefe despierto y hay %d." % awake)
 		return
 	if runtime.generated_cave_count != 4 or runtime.generated_gate_count != 4:
 		_fail("Las cuatro puertas no están integradas en cuatro grutas físicas.")
 		return
+	for gate_id in ["roots", "frost", "sun", "echo"]:
+		var cave := runtime.get_node_or_null("Cave_%s" % gate_id) as StaticBody3D
+		var cave_rock_collisions := 0
+		if cave != null:
+			for cave_part in cave.get_children():
+				if cave_part is CollisionShape3D and cave_part.name.begins_with("CaveRockCollision"):
+					cave_rock_collisions += 1
+		if cave == null or cave_rock_collisions != 16:
+			_fail("Una gruta conserva rocas visibles atravesables.")
+			return
 	var character_variants := {}
 	for npc_value in npcs:
 		var npc := npc_value as Node
@@ -101,15 +183,18 @@ func _run_test() -> void:
 		_fail("Las puertas y la vida no quedan incluidas en el guardado de campaña.")
 		return
 	var network_enemies: Array = runtime.call("get_network_enemy_state") as Array
-	if network_enemies.size() != 48:
-		_fail("El anfitrión no puede sincronizar los 48 enemigos.")
+	# Los jefes también se sincronizan: en cooperativo los dos jugadores tienen
+	# que ver la misma barra de vida y el mismo sello.
+	if network_enemies.size() != expected_enemies + EXPECTED_BOSSES:
+		_fail("El anfitrión sincroniza %d criaturas y deberían ser %d." % [
+			network_enemies.size(), expected_enemies + EXPECTED_BOSSES])
 		return
 
 	world.get_node("AmbientAudio").call("_exit_tree")
 	world.queue_free()
 	for _frame in 5:
 		await process_frame
-	print("RPG STORY TEST OK: 8 capítulos, 200 objetivos, 24 NPC, 48 monstruos, 4 grutas, diálogo, pistas y guardado.")
+	print("RPG STORY TEST OK: 8 capítulos, 200 objetivos, 24 NPC, %d monstruos en cinco estilos, %d jefes sellados salvo el del acto en curso, %d herrerías, 4 grutas, diálogo, pistas y guardado." % [expected_enemies, EXPECTED_BOSSES, EXPECTED_FORGES])
 	quit(0)
 
 

@@ -72,7 +72,7 @@ const CITADEL_ZONES: Array[String] = [
 
 const VILLAGES: Array = [
 	{"name": "Puerto Alba", "center": Vector2(0, 190), "yaw": 0.08, "castle": false},
-	{"name": "Villa Robledal", "center": Vector2(-1450, 650), "yaw": 0.42, "castle": true},
+	{"name": "Villa Robledal", "center": Vector2(-1450, 650), "yaw": 0.42, "castle": true, "grand": true},
 	{"name": "Aldea de la Bruma", "center": Vector2(-2200, -900), "yaw": -0.36, "castle": false},
 	{"name": "Bastion del Este", "center": Vector2(2260, -980), "yaw": 0.72, "castle": true},
 	{"name": "Oasis Dorado", "center": Vector2(2180, 1880), "yaw": -0.25, "castle": false},
@@ -102,6 +102,9 @@ var generated_light_count := 0
 var generated_enterable_house_count := 0
 var generated_hamlet_count := 0
 var generated_three_storey_count := 0
+var generated_folk_count := 0
+var generated_tower_roof_count := 0
+var _tower_roof_material: StandardMaterial3D = null
 var generated_roof_facade_count := 0
 var generated_upper_floor_count := 0
 var generated_stair_count := 0
@@ -120,7 +123,22 @@ func _ready() -> void:
 	for hamlet in RURAL_HAMLETS:
 		_build_hamlet(hamlet)
 	_build_starting_props()
-	print("MEDIEVAL WORLD READY: %d villas, %d caseríos, %d casas accesibles (%d de tres pisos), %d castillos, %d piezas y %d colisiones." % [generated_village_count, generated_hamlet_count, generated_house_count, generated_three_storey_count, generated_castle_count, generated_prop_count, generated_collision_count])
+	print("MEDIEVAL WORLD READY: %d villas, %d caseríos, %d casas accesibles (%d de tres pisos), %d castillos, %d vecinos, %d piezas y %d colisiones." % [generated_village_count, generated_hamlet_count, generated_house_count, generated_three_storey_count, generated_castle_count, generated_folk_count, generated_prop_count, generated_collision_count])
+
+
+## Radio del casco de la villa grande, en metros. Tiene que caber dentro del
+## claro de vegetación de su villa o los pinos brotan dentro de las casas.
+const GRAND_VILLAGE_RADIUS := VillageLayout.RADIUS
+## Paso entre parcelas a lo largo de la calle. La receta más ancha mide 31 m, así
+## que con 40 quedan nueve metros de aire entre vecinas.
+const GRAND_PLOT_PITCH := VillageLayout.PITCH
+## Cuánto se retira la fachada del eje de la calle.
+const GRAND_STREET_SETBACK := VillageLayout.SETBACK
+## Fondo de la segunda hilera. La receta más profunda mide 27,9 m, así que con
+## 40 m de separación entre hileras quedan doce metros de patio entre traseras.
+const GRAND_SECOND_RANK := VillageLayout.SECOND_RANK
+## Cuadrado reservado por parcela: 31 m de la receta más ancha más 5 de patio.
+const GRAND_PLOT_RESERVE := VillageLayout.RESERVE
 
 
 func _build_village(spec: Dictionary) -> void:
@@ -128,6 +146,18 @@ func _build_village(spec: Dictionary) -> void:
 	var yaw: float = spec.yaw
 	var village_name: String = spec.name
 	generated_village_count += 1
+	if bool(spec.get("grand", false)):
+		# La fortaleza ocupa 126 x 100 m al este del centro. Sin vetar esa zona,
+		# la calle transversal entra dentro del recinto y algunas parcelas caen
+		# sobre él: un vecino acababa caminando dentro de la muralla.
+		var keep_out := Rect2()
+		if bool(spec.castle):
+			keep_out = Rect2(125.0 - 68.0, 3.0 - 56.0, 136.0, 112.0)
+		_build_grand_village(center, yaw, village_name, keep_out)
+		if bool(spec.castle):
+			var grand_castle := Vector2(125, 3).rotated(yaw)
+			_build_castle(center + grand_castle, yaw, village_name)
+		return
 	var layout: Array[Vector3] = [
 		Vector3(-45, -30, -0.42), Vector3(45, -30, 0.38),
 		Vector3(-50, 30, -0.12), Vector3(50, 32, 0.18),
@@ -152,12 +182,91 @@ func _build_village(spec: Dictionary) -> void:
 		_build_castle(center + castle_offset, yaw, village_name)
 
 
+func _build_grand_village(
+	center: Vector2, yaw: float, village_name: String, keep_out: Rect2
+) -> void:
+	## Villa de calle, no de corro. Las casas se alinean a los dos lados de dos
+	## ejes cruzados y MIRAN a la calle: la puerta de cada receta cae en su cara
+	## +Z, así que el giro de cada hilera se deriva del lado que ocupa y no se
+	## escribe a mano casa por casa.
+	var slug := village_name.validate_node_name()
+	var index := 0
+	for plot in _grand_village_plots():
+		var local: Vector2 = plot["offset"]
+		if _blocked(keep_out, local):
+			continue
+		var house_center := center + local.rotated(yaw)
+		# Vector2.rotated y la rotación Y de Node3D tienen signos opuestos en XZ.
+		var house_yaw := -yaw + float(plot["facing"])
+		if bool(plot["hall"]):
+			_build_hall(house_center, house_yaw, "%sHall%02d" % [slug, index])
+		else:
+			_build_cottage(house_center, house_yaw, "%sHouse%02d" % [slug, index])
+		index += 1
+	_build_grand_streets(center, yaw, keep_out)
+	# La cerca y el carro del corro pequeño caen justo en medio de la calzada de
+	# la villa grande: aquí el carro se arrima a la plaza y la cerca no va.
+	# El carro va al patio ENTRE las dos hileras, no junto a la plaza: por la
+	# plaza pasan los vecinos y uno acabó metido dentro del carro.
+	var wagon_point := center + Vector2(56.0, 20.0).rotated(yaw)
+	_spawn_solid(
+		WAGON, _terrain_position(wagon_point), yaw + 0.25,
+		Vector3(2.0, 1.55, 4.05), Vector3(0.0, 0.75, -1.1)
+	)
+	_add_village_lights(center, yaw)
+	_populate_village(center, yaw, slug, keep_out)
+
+
+func _populate_village(center: Vector2, yaw: float, slug: String, keep_out: Rect2) -> void:
+	## Vecinos que caminan la villa y hacen cosas. Los umbrales de las casas ya
+	## existen como nodos "Doorway", así que se reutilizan como destinos y un
+	## porteador va de verdad a una puerta y no a un punto inventado.
+	var folk := VillageFolk.new()
+	folk.name = "%sVecinos" % slug
+	# Un vecino y medio por casa: con dieciocho para veintisiete casas la villa
+	# se veía vacía. Se deriva del reparto, así que si la villa crece, crece la
+	# gente sin tocar un número.
+	folk.folk_count = int(round(float(_grand_village_plots().size()) * 1.5))
+	add_child(folk)
+	folk.build(terrain, center, yaw, GRAND_VILLAGE_RADIUS, keep_out)
+	folk.collect_doors(self)
+	generated_folk_count += folk.generated_folk_count
+
+
+static func _blocked(keep_out: Rect2, local: Vector2) -> bool:
+	return keep_out.size.x > 0.0 and keep_out.has_point(local)
+
+
+func _build_grand_streets(center: Vector2, yaw: float, keep_out: Rect2) -> void:
+	var roads := VillageLayout.street_segments()
+	for child in get_children():
+		if not String(child.name).begins_with("Villa Robledal"):
+			continue
+		var approach := child.get_node_or_null("ApproachPoint") as Node3D
+		if approach != null:
+			var local := (Vector2(approach.global_position.x, approach.global_position.z) - center).rotated(-yaw)
+			roads.append([local, VillageLayout.nearest_street(local), 2.0])
+	var node := MeshInstance3D.new()
+	node.name = "CalleEmpedrada%02d" % generated_village_count
+	node.mesh = VillageStreet.build(terrain, center, yaw, GRAND_VILLAGE_RADIUS, keep_out, roads)
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.set_meta("terrain_following", true)
+	node.set_meta("street_width", float(VillageStreet.HALF_WIDTH * 2))
+	add_child(node)
+	generated_prop_count += 1
+
+
+func _grand_village_plots() -> Array[Dictionary]:
+	return VillageLayout.plots()
+
 func _build_cottage(center: Vector2, yaw: float, house_name: String) -> void:
-	_build_large_house(center, yaw, house_name, false, 2)
+	var floors := 3 + generated_house_count % 3 if house_name.begins_with("VillaRobledal") or house_name.begins_with("Villa Robledal") else 2
+	_build_large_house(center, yaw, house_name, false, floors)
 
 
 func _build_hall(center: Vector2, yaw: float, house_name: String) -> void:
-	_build_large_house(center, yaw, house_name, true, 3)
+	var floors := 5 if "Robledal" in house_name else 3
+	_build_large_house(center, yaw, house_name, true, floors)
 
 
 func _build_hamlet(spec: Dictionary) -> void:
@@ -185,73 +294,147 @@ func _build_hamlet(spec: Dictionary) -> void:
 
 
 func _build_large_house(center: Vector2, yaw: float, house_name: String, is_hall: bool, floors: int) -> void:
+	## Casa generada por BuildingSolver: la geometría se resuelve en celdas
+	## enteras ANTES de instanciar nada, así que no puede haber cuerpos que se
+	## pisen ni muros duplicados en la cara compartida. El generador anterior
+	## levantaba una única caja cerrada con una sola escalera por planta, en el
+	## extremo contrario cada vez.
 	var body := _create_building_body(center, yaw, house_name)
-	body.scale = HOUSE_SCALE
-	# El suelo interior se alinea con la cota real justo delante de la puerta,
-	# no con el centro de la parcela: se entra andando, sin salto ni escalón.
-	var door_world := body.to_global(Vector3(-1.0, 0.0, 7.65))
-	var door_ground := _height_at(Vector2(door_world.x, door_world.z))
-	body.position.y = door_ground - 0.34 * HOUSE_SCALE.y
-	body.set_meta("enterable", true)
-	body.set_meta("footprint", Vector2(8.0 * HOUSE_SCALE.x, 14.0 * HOUSE_SCALE.z))
-	body.set_meta("door_width", 2.0 * HOUSE_SCALE.x)
-	body.set_meta("floor_count", floors)
-	body.set_meta("upper_floor_count", floors - 1)
-	body.set_meta("stair_count", floors - 1)
-	body.set_meta("storey_clearance", STOREY_HEIGHT * HOUSE_SCALE.y)
-	body.set_meta("stairs_traversable", true)
-	body.set_meta("stair_guardrails_per_floor", 3)
-	body.set_meta("stair_layout", "alternating_side_switchback")
-	body.set_meta("stair_column_spacing", 6.0 * HOUSE_SCALE.x)
-	body.set_meta("stair_transition_is_flush", true)
-	body.set_meta("stair_visual", "Stair_Interior_Simple")
-	body.set_meta("threshold_height", 0.0)
-	_add_foundation(body, Vector3(8.5, 0.34, 14.5), true)
+	body.scale = VillageLayout.SCALE if house_name.begins_with("Villa Robledal") else HOUSE_SCALE
+	var variant := generated_house_count + (1 if is_hall else 0)
+	var recipe := BuildingRecipes.for_house(floors, variant)
+	var solver := BuildingSolver.new()
+	if not solver.solve(recipe, BuildingCatalog.roof_metrics()):
+		push_error(
+			"La receta '%s' no resuelve limpia: %s"
+			% [recipe["display_name"], solver.errors]
+		)
+		body.queue_free()
+		return
+	var assembler := BuildingAssembler.new()
+	assembler.assemble(solver, recipe, BuildingCatalog.families(), body)
+	generated_prop_count += assembler.mesh_count
+	generated_collision_count += assembler.collision_count
 
-	# Pavimento Quaternius continuo: 28 losas de 2 x 2 m dentro de la casa.
-	for x in [-3.0, -1.0, 1.0, 3.0]:
-		for z in [-6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0]:
-			_add_part(body, FLOOR_BRICK, Vector3(x, 0.35, z), 0.0)
-	_build_interior_storeys(body, floors)
+	# Toda la planta queda encima del terreno, incluidos los rincones del ala.
+	# Mirar sólo la cota de la puerta dejaba lomas dentro y bloqueaba la salida.
+	_fit_house_to_terrain(body, solver)
 
-	# Dos o tres pisos de módulos de tres metros. La pieza de puerta se renderiza, pero
-	# deliberadamente no recibe BoxShape: el hueco puede cruzarse de verdad.
-	for level in floors:
-		var base_y := 0.25 + level * STOREY_HEIGHT
-		for z in [-6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0]:
-			var left_scene := WALL_STONE if is_hall and level == 0 else (WALL_TIMBER if int(z) % 4 == 0 else WALL)
-			_add_wall_part(body, left_scene, Vector3(-4.0, base_y, z), PI * 0.5)
-			_add_wall_part(body, WALL_WINDOW if level == 1 or int(z) % 4 == 0 else WALL, Vector3(4.0, base_y, z), -PI * 0.5)
-		for x in [-3.0, -1.0, 1.0, 3.0]:
-			if level == 0 and x == -1.0:
-				_add_wall_part(body, WALL_DOOR, Vector3(x, base_y, 7.0), PI, false)
-			else:
-				_add_wall_part(body, WALL_WINDOW if level == 1 or absf(x) == 1.0 else WALL, Vector3(x, base_y, 7.0), PI)
-			_add_wall_part(body, WALL_TIMBER if level == 1 else WALL_STONE, Vector3(x, base_y, -7.0), 0.0)
+	var box := solver.footprint()
+	_add_house_markers(body, solver, box)
+	_add_house_entrance_ramp(body, solver)
+	_publish_house_metrics(body, solver, recipe, box, floors)
+	HouseInterior.decorate(body, solver, variant)
+	generated_house_count += 1
+	if floors >= 3:
+		generated_three_storey_count += 1
 
-	var roof_y := 0.38 + floors * STOREY_HEIGHT
-	_add_part(body, ROOF_8X14, Vector3(0.0, roof_y, 0.0), 0.0)
-	# Los hastiales específicos de 8 m cierran la fachada triangular que antes
-	# quedaba abierta bajo las dos vertientes del tejado.
-	_add_part(body, ROOF_FRONT_8, Vector3(0.0, roof_y, 7.0), PI)
-	_add_part(body, ROOF_FRONT_8, Vector3(0.0, roof_y, -7.0), 0.0)
-	generated_roof_facade_count += 2
-	_add_part(body, CHIMNEY, Vector3(-2.6, roof_y + 0.06, -3.4), 0.0)
-	_add_part(body, VINE, Vector3(4.06, 0.42, 2.4), -PI * 0.5)
-	for x in [1.0, 3.0]:
-		_add_part(body, BALCONY, Vector3(x, 3.42, 7.12), PI)
 
+func _fit_house_to_terrain(body: StaticBody3D, solver: BuildingSolver) -> void:
+	var highest := -INF
+	var lowest := INF
+	var shift := solver.centre_offset()
+	for entry in solver.floors_plan:
+		if int(entry["level"]) != 0:
+			continue
+		var origin: Vector2i = entry["origin"]
+		var size: Vector2i = entry["size"]
+		for x in range(size.x * 2 + 1):
+			for z in range(size.y * 2 + 1):
+				var point := body.to_global(Vector3(origin.x * BuildingSolver.CELL + x,
+					0.0, origin.y * BuildingSolver.CELL + z) + shift)
+				var ground := _height_at(Vector2(point.x, point.z))
+				highest = maxf(highest, ground)
+				lowest = minf(lowest, ground)
+	body.position.y = highest + 0.16
+	var depth := maxf((body.position.y - lowest + 0.35) / body.scale.y, 0.34)
+	body.set_meta("foundation_depth", depth)
+	body.set_meta("terrain_max_height", highest)
+	for child in body.get_children():
+		if child is CollisionShape3D and String(child.name).begins_with("Cimiento"):
+			var shape := (child as CollisionShape3D).shape as BoxShape3D
+			shape.size.y = depth
+			child.position.y = -depth * 0.5
+
+
+func _add_house_entrance_ramp(body: StaticBody3D, solver: BuildingSolver) -> void:
+	var door := solver.door_position()
+	var outward := solver.door_outward()
+	var reach := 3.0
+	var outside := door + outward * reach
+	var ground := 0.0
+	for _attempt in 4:
+		outside = door + outward * reach
+		var point := body.to_global(outside)
+		ground = _height_at(Vector2(point.x, point.z))
+		var rise := maxf((body.position.y - ground) / body.scale.y, 0.0)
+		if rise / reach < 0.24:
+			break
+		reach = maxf(reach + 1.0, rise / 0.24)
+	outside.y = (ground - body.position.y) / body.scale.y - 0.025
+	var inside := door - outward * 0.26
+	var side := outward.cross(Vector3.UP).normalized() * 1.12
+	var thickness := maxf(0.3, -outside.y + 0.18)
+	var points := PackedVector3Array([
+		outside - side, outside + side, inside - side, inside + side,
+		outside - side - Vector3.UP * 0.18, outside + side - Vector3.UP * 0.18,
+		inside - side - Vector3.UP * thickness, inside + side - Vector3.UP * thickness,
+	])
+	var ramp := CollisionShape3D.new()
+	ramp.name = "EntranceRamp"
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = points
+	ramp.shape = shape
+	body.add_child(ramp)
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for triangle in [[0, 2, 3], [0, 3, 1], [0, 4, 6], [0, 6, 2], [1, 3, 7],
+		[1, 7, 5], [4, 5, 7], [4, 7, 6], [0, 1, 5], [0, 5, 4], [2, 6, 7], [2, 7, 3]]:
+		for index in triangle:
+			surface.add_vertex(points[index])
+	surface.generate_normals()
+	var mesh := surface.commit()
+	mesh.surface_set_material(0, _foundation_material)
+	var visual := MeshInstance3D.new()
+	visual.name = "StoneEntranceRamp"
+	visual.mesh = mesh
+	body.add_child(visual)
+	var marker := Marker3D.new()
+	marker.name = "ApproachPoint"
+	marker.position = outside + Vector3.UP * 0.025
+	body.add_child(marker)
+	body.set_meta("entrance_ramp_length", reach * body.scale.z)
+	body.set_meta("entrance_ramp_width", 2.24 * body.scale.x)
+	generated_prop_count += 1
+	generated_collision_count += 1
+
+
+func _add_house_markers(body: StaticBody3D, solver: BuildingSolver, box: Rect2) -> void:
+	## Losa, umbral, punto interior y luz cálida. El umbral y el punto interior no
+	## son adorno: son las dos referencias con las que un habitante sabe por dónde
+	## se entra y hacia dónde ir una vez dentro.
+	# Una losa por cuerpo, no una sola de toda la huella: con planta en L, la
+	# caja envolvente asomaba como una acera gris en las esquinas vacías.
+	var foundation := MeshInstance3D.new()
+	foundation.name = "StoneFoundation"
+	foundation.mesh = _foundation_mesh(solver, float(body.get_meta("foundation_depth", 0.34)))
+	body.add_child(foundation)
+	generated_prop_count += 1
+
+	var door_local := solver.door_position()
+	var outward := solver.door_outward()
 	var doorway := Node3D.new()
 	doorway.name = "Doorway"
-	doorway.position = Vector3(-1.0, 1.15, 7.65)
+	doorway.position = door_local + outward * 0.6 + Vector3.UP * 1.1
 	body.add_child(doorway)
 	var interior := Node3D.new()
 	interior.name = "InteriorPoint"
-	interior.position = Vector3(-1.0, 1.15, 4.25)
+	interior.position = door_local - outward * 2.4 + Vector3.UP * 1.1
 	body.add_child(interior)
+
 	var interior_light := OmniLight3D.new()
 	interior_light.name = "InteriorWarmLight"
-	interior_light.position = Vector3(0.0, 3.0, 0.0)
+	interior_light.position = Vector3(0.0, 2.4, 0.0)
 	interior_light.light_color = Color(1.0, 0.48, 0.17)
 	interior_light.light_energy = 0.18
 	interior_light.omni_range = 16.0
@@ -259,10 +442,99 @@ func _build_large_house(center: Vector2, yaw: float, house_name: String, is_hall
 	interior_light.add_to_group("night_lantern")
 	body.add_child(interior_light)
 	generated_light_count += 1
-	generated_house_count += 1
-	generated_enterable_house_count += 1
-	if floors == 3:
-		generated_three_storey_count += 1
+
+
+func _foundation_mesh(solver: BuildingSolver, slab: float = 0.34) -> ArrayMesh:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var shift := solver.centre_offset()
+	for entry in solver.floors_plan:
+		if int(entry["level"]) != 0:
+			continue
+		var origin: Vector2i = entry["origin"]
+		var size: Vector2i = entry["size"]
+		var centre := Vector3(
+			(float(origin.x) + float(size.x) * 0.5) * BuildingSolver.CELL,
+			-slab * 0.5 - 0.04,
+			(float(origin.y) + float(size.y) * 0.5) * BuildingSolver.CELL
+		) + shift
+		# Un pelo más ancha que el muro, para que se lea como zócalo.
+		_append_box(
+			tool,
+			centre,
+			Vector3(
+				float(size.x) * BuildingSolver.CELL + 0.24,
+				slab,
+				float(size.y) * BuildingSolver.CELL + 0.24
+			)
+		)
+	tool.generate_normals()
+	var mesh: ArrayMesh = tool.commit()
+	mesh.surface_set_material(0, _foundation_material)
+	return mesh
+
+
+func _append_box(tool: SurfaceTool, centre: Vector3, size: Vector3) -> void:
+	var half := size * 0.5
+	var corners: Array[Vector3] = []
+	for index in 8:
+		corners.append(centre + Vector3(
+			half.x if index & 1 else -half.x,
+			half.y if index & 2 else -half.y,
+			half.z if index & 4 else -half.z
+		))
+	var faces: Array = [
+		[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4],
+		[2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5],
+	]
+	for face in faces:
+		tool.add_vertex(corners[face[0]])
+		tool.add_vertex(corners[face[1]])
+		tool.add_vertex(corners[face[2]])
+		tool.add_vertex(corners[face[0]])
+		tool.add_vertex(corners[face[2]])
+		tool.add_vertex(corners[face[3]])
+
+
+func _publish_house_metrics(
+	body: StaticBody3D,
+	solver: BuildingSolver,
+	recipe: Dictionary,
+	box: Rect2,
+	floors: int
+) -> void:
+	## El propio generador publica lo que ha comprobado. Si alguna de estas cifras
+	## deja de ser cero, la casa está mal construida y la prueba lo caza sin tener
+	## que volver a medir la geometría desde fuera.
+	var report: Dictionary = solver.report
+	body.set_meta("enterable", true)
+	body.set_meta("recipe", String(recipe["display_name"]))
+	body.set_meta("footprint", Vector2(box.size.x * body.scale.x, box.size.y * body.scale.z))
+	body.set_meta("floor_count", floors)
+	body.set_meta("upper_floor_count", floors - 1)
+	body.set_meta("volume_count", (recipe["volumes"] as Array).size())
+	body.set_meta("storey_clearance", BuildingSolver.STOREY * body.scale.y)
+	body.set_meta("stairs_traversable", true)
+	body.set_meta("stairs_per_transition", 2)
+	body.set_meta("stair_layout", "double_opposed_switchback")
+	body.set_meta("stair_count", int(report["stair_count"]))
+	body.set_meta("stair_pitch_degrees", _first_stair_pitch(solver))
+	body.set_meta("door_count", int(report["door_count"]))
+	body.set_meta("arch_count", int(report["arch_count"]))
+	body.set_meta("wall_count", int(report["wall_count"]))
+	body.set_meta("cell_conflicts", int(report["cell_conflicts"]))
+	body.set_meta("duplicate_edges", int(report["duplicate_edges"]))
+	body.set_meta("roof_below_eave_count", int(report["roof_below_eave_count"]))
+	body.set_meta("worst_roof_dip", float(report["worst_roof_dip"]))
+	body.set_meta("unreachable_cells", int(report["unreachable_cells"]))
+	body.set_meta("unsupported_cells", int(report["unsupported_cells"]))
+
+
+func _first_stair_pitch(solver: BuildingSolver) -> float:
+	for stair in solver.stairs:
+		if String(stair.get("kind", "straight")) == "straight":
+			return float(stair["pitch_degrees"])
+	return 0.0
 
 
 func _build_interior_storeys(body: StaticBody3D, floors: int) -> void:
@@ -404,7 +676,7 @@ func _build_castle(center: Vector2, yaw: float, village_name: String) -> void:
 	# de nueve metros, pero la entrada adquiere el volumen propio de un castillo.
 	for gate_z in [-43.0, 43.0]:
 		for gate_x in [-10.0, 10.0]:
-			_add_castle_mesh(root, CASTLE_WATCHTOWER, Vector3(gate_x, CASTLE_COURTYARD_Y, gate_z), 0.0, Vector3(7.0, 7.0, 7.0), "GatehouseTower")
+			_paint_tower_roof(_add_castle_mesh(root, CASTLE_WATCHTOWER, Vector3(gate_x, CASTLE_COURTYARD_Y, gate_z), 0.0, Vector3(7.0, 7.0, 7.0), "GatehouseTower"))
 			_add_castle_trimesh_collision(root, CASTLE_WATCHTOWER, Vector3(gate_x, CASTLE_COURTYARD_Y, gate_z), 0.0, Vector3(7.0, 7.0, 7.0), "GatehouseTowerMeshCollision")
 	generated_castle_gate_count += 2
 
@@ -554,11 +826,11 @@ func _build_castle_keep(parent: Node3D) -> void:
 
 	# Tres torres propias convierten el edificio en una ciudadela, no en una casa.
 	for tower_x in [-31.0, 31.0]:
-		_add_castle_mesh(parent, CASTLE_SQUARE_TOWER, Vector3(tower_x, CASTLE_COURTYARD_Y, keep_origin.z), 0.0, Vector3(15.0, 15.0, 15.0), "CitadelFlankTower")
+		_paint_tower_roof(_add_castle_mesh(parent, CASTLE_SQUARE_TOWER, Vector3(tower_x, CASTLE_COURTYARD_Y, keep_origin.z), 0.0, Vector3(15.0, 15.0, 15.0), "CitadelFlankTower"))
 		_add_castle_trimesh_collision(parent, CASTLE_SQUARE_TOWER, Vector3(tower_x, CASTLE_COURTYARD_Y, keep_origin.z), 0.0, Vector3(15.0, 15.0, 15.0), "CitadelFlankTowerMeshCollision")
 	# Desplazada del eje para mantener expedito el postigo trasero y hacer visible
 	# su cubierta roja por detrás de los hastiales del palacio.
-	_add_castle_mesh(parent, CASTLE_POINTY_TOWER, Vector3(-14.0, CASTLE_COURTYARD_Y, -31.0), 0.0, Vector3(13.0, 13.0, 13.0), "CitadelCrownTower")
+	_paint_tower_roof(_add_castle_mesh(parent, CASTLE_POINTY_TOWER, Vector3(-14.0, CASTLE_COURTYARD_Y, -31.0), 0.0, Vector3(13.0, 13.0, 13.0), "CitadelCrownTower"))
 	_add_castle_trimesh_collision(parent, CASTLE_POINTY_TOWER, Vector3(-14.0, CASTLE_COURTYARD_Y, -31.0), 0.0, Vector3(13.0, 13.0, 13.0), "CitadelCrownTowerMeshCollision")
 	for banner_x in [-14.0, 14.0]:
 		_add_castle_mesh(parent, CASTLE_BANNER, Vector3(banner_x, 15.0, keep_origin.z + 12.0), PI, Vector3(5.5, 5.5, 5.5), "CitadelBanner")
@@ -656,9 +928,41 @@ func _add_castle_access_stair(parent: StaticBody3D, gate_direction: float) -> vo
 	generated_escape_stair_count += 1
 
 
+## Remate de teja roja de los torreones. La malla del pack llama "Celing" (así,
+## mal escrito) a la superficie del chapitel, y es la única que hay que teñir.
+const TOWER_ROOF_SURFACE := "Celing"
+const TOWER_ROOF_COLOUR := Color(0.32, 0.055, 0.035)
+
+
 func _build_tower(parent: Node3D, local_position: Vector3) -> void:
-	_add_castle_mesh(parent, CASTLE_LARGE_TOWER, local_position, 0.0, Vector3(8.5, 8.5, 8.5), "CornerTower")
-	_add_castle_trimesh_collision(parent, CASTLE_LARGE_TOWER, local_position, 0.0, Vector3(8.5, 8.5, 8.5), "CornerTowerMeshCollision")
+	## Chapitel octogonal y puntiagudo en las cuatro esquinas, no la torre maciza
+	## de antes: es la silueta del recinto del taller, que es la que se quería.
+	var tower_scale := Vector3(8.5, 8.5, 8.5)
+	var visual := _add_castle_mesh(
+		parent, CASTLE_POINTY_TOWER, local_position, 0.0, tower_scale, "CornerTower"
+	)
+	_paint_tower_roof(visual)
+	visual.set_meta("pointed_tower", true)
+	_add_castle_trimesh_collision(
+		parent, CASTLE_POINTY_TOWER, local_position, 0.0, tower_scale, "CornerTowerMeshCollision"
+	)
+
+
+func _paint_tower_roof(visual: MeshInstance3D) -> void:
+	if visual == null or visual.mesh == null:
+		return
+	if _tower_roof_material == null:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = TOWER_ROOF_COLOUR
+		material.roughness = 0.94
+		_tower_roof_material = material
+	for surface in visual.mesh.get_surface_count():
+		var existing := visual.mesh.surface_get_material(surface)
+		if existing == null:
+			continue
+		if TOWER_ROOF_SURFACE in existing.resource_name:
+			visual.set_surface_override_material(surface, _tower_roof_material)
+			generated_tower_roof_count += 1
 
 
 func _add_castle_mesh(parent: Node3D, mesh: Mesh, local_position: Vector3, yaw: float, mesh_scale: Vector3, node_name: String) -> MeshInstance3D:

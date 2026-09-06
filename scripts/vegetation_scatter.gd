@@ -60,8 +60,12 @@ uniform vec4 grass_tint : source_color = vec4(0.55, 0.82, 0.20, 1.0);
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic;
 uniform float breeze_strength = 0.055;
 uniform float gust_strength = 0.19;
+uniform float storm_bend = 0.0;
 uniform vec3 player_position = vec3(0.0, -10000.0, 0.0);
 uniform float interaction_radius = 1.35;
+uniform vec3 shockwave_position = vec3(0.0, -10000.0, 0.0);
+uniform float shockwave_radius = 0.0;
+uniform float shockwave_strength = 0.0;
 uniform float lod_role = 0.0;
 uniform float full_fade_start = 32.0;
 uniform float full_fade_end = 55.0;
@@ -137,10 +141,19 @@ void vertex() {
 	float gust_amplitude = breeze_strength
 		+ gust_strength * (soft_gust * 0.38 + strong_gust * 1.08);
 	float bend = gust_amplitude * (travelling_wave * 0.78 + fine_wave * 0.22) * height_mask;
+	// El vendaval de la fuerza especial necesita su propio termino. Subir
+	// `gust_strength` no movia nada durante la carga porque solo actua cuando el
+	// ciclo natural de rachas esta en su cresta, y eso ocurre una vez por minuto.
+	// Este empuje va aparte: siempre activo, rapido y con una componente
+	// constante que deja la hierba tumbada hacia el viento.
+	float storm_wave = sin(wave_position * 0.11 - TIME * 5.2) * 0.5
+		+ sin(wave_position * 0.27 - TIME * 8.9) * 0.5;
+	bend += storm_bend * (0.62 + storm_wave * 0.38) * height_mask;
 	vec3 local_wind_direction = normalize(
 		inverse_model_basis * vec3(wind_direction.x, 0.0, wind_direction.y)
 	);
 	VERTEX += local_wind_direction * bend;
+	VERTEX.y -= storm_bend * 0.34 * height_mask;
 	vec2 player_delta = world_position.xz - player_position.xz;
 	float player_distance = length(player_delta);
 	float interaction = 1.0 - smoothstep(interaction_radius * 0.28, interaction_radius, player_distance);
@@ -150,6 +163,16 @@ void vertex() {
 	);
 	VERTEX += local_outward * interaction * 0.52 * height_mask;
 	VERTEX.y -= interaction * 0.13 * height_mask;
+	vec2 blast_delta = world_position.xz - shockwave_position.xz;
+	float blast_distance = length(blast_delta);
+	float blast = shockwave_strength
+		* (1.0 - smoothstep(max(shockwave_radius, 0.01) * 0.30, max(shockwave_radius, 0.01), blast_distance));
+	vec2 blast_outward = blast_delta / max(blast_distance, 0.001);
+	vec3 local_blast = normalize(
+		inverse_model_basis * vec3(blast_outward.x, 0.0, blast_outward.y)
+	);
+	VERTEX += local_blast * blast * 1.15 * height_mask;
+	VERTEX.y -= blast * 0.62 * height_mask;
 	grass_world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float camera_distance = distance(CAMERA_POSITION_WORLD.xz, grass_world_position.xz);
 	if (lod_role < 0.5) {
@@ -253,6 +276,8 @@ render_mode cull_disabled;
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic;
 uniform float tint_mode = 0.0;
 uniform float leaf_factor = 0.0;
+uniform float storm_strength = 0.0;
+uniform float storm_bend = 0.0;
 
 varying vec3 tree_world_position;
 
@@ -268,13 +293,22 @@ void vertex() {
 	float broad_wave = sin(TIME * (0.58 + strong_gust * 0.18) + tree_phase);
 	float secondary_wave = sin(TIME * 1.31 + tree_phase * 1.73 + VERTEX.y * 0.31);
 	float height_mask = smoothstep(1.15, 6.65, VERTEX.y);
-	float gust_amplitude = 0.012 + soft_gust * 0.030 + strong_gust * 0.085;
+	float gust_amplitude = (0.012 + soft_gust * 0.030 + strong_gust * 0.085)
+		* (1.0 + storm_strength * 6.0);
 	float branch_bend = gust_amplitude
 		* (broad_wave * 0.82 + secondary_wave * 0.18)
 		* height_mask;
+	// Mismo problema que en la hierba: `storm_strength` multiplicaba un ciclo de
+	// rachas que pasa casi todo el tiempo a cero, asi que la copa se movia ocho
+	// centimetros y no se veia nada. La tormenta empuja ahora por su cuenta y
+	// desde mas abajo del tronco, para que el arbol entero se incline.
+	float storm_mask = smoothstep(0.25, 4.20, VERTEX.y);
+	float storm_wave = sin(TIME * 4.6 + tree_phase * 1.4) * 0.62
+		+ sin(TIME * 8.3 + tree_phase * 2.7) * 0.38;
+	float storm_lean = storm_bend * (0.55 + storm_wave * 0.45) * storm_mask;
 	float surface_strength = mix(0.72, 1.0, leaf_factor);
-	VERTEX.x += branch_bend * surface_strength;
-	VERTEX.z += branch_bend * 0.58 * surface_strength;
+	VERTEX.x += (branch_bend + storm_lean) * surface_strength;
+	VERTEX.z += (branch_bend * 0.58 + storm_lean * 0.42) * surface_strength;
 	if (leaf_factor > 0.5) {
 		float leaf_flutter = sin(TIME * 2.35 + tree_phase * 2.1 + VERTEX.x * 1.7)
 			* (0.006 + soft_gust * 0.010 + strong_gust * 0.017) * height_mask;
@@ -364,6 +398,7 @@ const ROAD_NETWORK: Array = [
 	[Vector2(2260, -980), Vector2(2860, -1120), Vector2(3480, -1320), Vector2(4140, -1260), Vector2(4920, -1080)],
 ]
 const ALL_ROAD_INDICES: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+const START_VILLAGE_ROAD_INDICES: Array[int] = [1]
 const STONE_VILLAGES: Array[Vector3] = [
 	Vector3(0.0, 190.0, 0.08), Vector3(-1450.0, 650.0, 0.42),
 	Vector3(-2200.0, -900.0, -0.36), Vector3(2260.0, -980.0, 0.72),
@@ -373,6 +408,11 @@ const ROUTE: Array[Vector2] = [Vector2(0, 190), Vector2(80, -240), Vector2(320, 
 const LOOKOUT := Vector2(98.0, -110.0)
 const PLAYER_START := Vector2(0.0, 190.0)
 const HORSE_START := Vector2(4.0, 180.0)
+## Villas de casco grande: su claro tiene que cubrir toda la retícula de calles,
+## o los pinos brotan dentro de las casas nuevas. El índice es el de
+## STONE_VILLAGES; Villa Robledal es la 1.
+const GRAND_VILLAGE_INDICES: Array[int] = [1]
+const GRAND_VILLAGE_CLEARING := 206.0
 const VILLAGE_CLEARINGS: Array[Vector3] = [
 	Vector3(0.0, 190.0, 95.0), Vector3(-1450.0, 650.0, 190.0),
 	Vector3(-2200.0, -900.0, 105.0), Vector3(2260.0, -980.0, 190.0),
@@ -398,11 +438,27 @@ const TREE_CELL_SIZE := 340.0
 const TREE_LOD_CELL_SIZE := TREE_CELL_SIZE
 const TREE_COVERAGE_CELL_SIZE := 34.0
 const TREE_COVERAGE_TARGET_RATIO := 0.55
+const TREE_ROUTE_DISTRIBUTION_RATIO := 0.297
+const ROUTE_REDISTRIBUTED_TREE_REMOVAL_COUNT := 1742
+const ROUTE_TREE_DENSITY_TARGET := 1.12
+const ROUTE_DENSITY_TREE_REMOVAL_COUNT := 17410
+const START_ROUTE_TREE_BONUS_RATIO := 0.05
+const START_ROUTE_TREE_BONUS_COUNT := 94
+const MYSTERY_TREE_RETENTION_RATIO := 0.80
 const TREE_HARVEST_CELL_SIZE := 18.0
 const TREE_HARVEST_HEALTH := 3
+const TREE_COLLISION_STREAM_RADIUS := 44.0
+const TREE_COLLISION_STREAM_REFRESH_DISTANCE := 3.0
+const TREE_COLLISION_STREAM_POOL_SIZE := 320
 const TREE_LOD_SWITCH_DISTANCE := 340.0
 const TREE_LOD_VISIBILITY_END := 5200.0
 const TREE_LOD_HYSTERESIS := 18.0
+const DEFAULT_IMPORTED_LOD_BIAS := 0.75
+const QUATERNIUS_VEGETATION_LOD_BIAS := 0.25
+const REDUCED_VEGETATION_LOD_CATEGORIES := [
+	"TreeCells", "FernCells", "ShrubCells", "FlowerCells",
+	"MushroomCells", "ForestDetailCells", "MysteryDeadTreeCells",
+]
 const GRASS_CELL_SIZE := 96.0
 const GRASS_FULL_FADE_START := 50.0
 const GRASS_FULL_FADE_END := 80.0
@@ -424,23 +480,23 @@ const DENSE_GRASS_CLUSTER_COPIES := 1550
 const DENSE_GRASS_PATCH_RADIUS := 11.0
 const GRASS_MID_CLUSTER_COPIES := 220
 const GRASS_LOD_CLUSTER_COPIES := 96
-const MYSTERY_DEAD_TREE_COUNT := 4200
+const MYSTERY_DEAD_TREE_COUNT := 3360
 const LAYOUT_CACHE_PATH := "res://generated/vegetation_layout_cache.res"
-const LAYOUT_CACHE_SCHEMA := 4
+const LAYOUT_CACHE_SCHEMA := 12
 const FOREST_CACHE_STRIDE := 9
 const GRASS_CACHE_STRIDE := 9
 
 @export var terrain_path: NodePath = NodePath("../Terrain3D")
 @export_category("Claro y bosque Quaternius")
-@export var tree_count := 80000
+@export var tree_count := 59312
 @export_range(0.0, 0.15, 0.001) var autumn_tree_ratio := 0.004
-@export var rock_count := 504
+@export var rock_count := 101
 @export var moss_rock_count := 0
-@export var cactus_count := 173
+@export var cactus_count := 0
 @export var grass_count := 220000
-@export var fern_count := 10000
-@export var shrub_count := 10000
-@export var flower_count := 8000
+@export var fern_count := 800
+@export var shrub_count := 700
+@export var flower_count := 500
 @export var mushroom_count := 2200
 @export var path_pebble_count := 12000
 @export var forest_detail_count := 1200
@@ -530,6 +586,8 @@ var _harvest_tree_proxy_keys := PackedStringArray()
 var _harvest_tree_proxy_indices := PackedInt32Array()
 var _harvest_tree_full_originals: Array[Transform3D] = []
 var _harvest_tree_proxy_originals: Array[Transform3D] = []
+var _harvest_tree_collision_radii := PackedFloat32Array()
+var _harvest_tree_collision_heights := PackedFloat32Array()
 var _harvest_tree_cells: Dictionary = {}
 var _harvest_tree_index_by_id: Dictionary = {}
 var _harvest_tree_health: Dictionary = {}
@@ -550,9 +608,30 @@ var _tree_collision_records := PackedFloat32Array()
 var _tree_collision_resource_ids := PackedStringArray()
 var _forest_collision_shape: ConcavePolygonShape3D
 var _forest_collision_node: CollisionShape3D
+var _streamed_tree_collision_root: StaticBody3D
+var _streamed_tree_collision_shapes: Array[CollisionShape3D] = []
+var _streamed_tree_collision_last_focus := Vector2(INF, INF)
+var _streamed_tree_collision_elapsed := 0.0
+var _streamed_tree_collision_active := 0
 var _grass_wind_materials: Array[ShaderMaterial] = []
+var _tree_wind_materials: Array[ShaderMaterial] = []
 var _tree_wind_material_count := 0
+var _storm_strength := 0.0
 var _grass_interaction_target: Node3D
+const GRASS_BASE_GUST := 0.19
+const GRASS_STORM_GUST := 1.25
+const GRASS_BASE_BREEZE := 0.055
+const GRASS_STORM_BREEZE := 0.24
+## Barrido lateral que la tormenta imprime por su cuenta, en metros y a plena
+## intensidad. Va aparte de `gust_strength` porque aquel solo tiene efecto en la
+## cresta del ciclo natural de rachas, que llega una vez por minuto: mientras
+## dura una carga de dos segundos no movia ni la hierba ni las copas.
+const GRASS_STORM_BEND := 0.52
+const TREE_STORM_BEND := 0.88
+var _grass_blast_center := Vector3(0.0, -10000.0, 0.0)
+var _grass_blast_radius := 0.0
+var _grass_blast_time := 0.0
+var _grass_blast_duration := 0.0
 
 
 func _ready() -> void:
@@ -642,6 +721,7 @@ func _ready() -> void:
 	startup_stage = _startup_checkpoint("detalle de bosque", startup_stage)
 	_scatter_mystery_dead_trees()
 	_finalize_harvest_tree_registry()
+	_build_streamed_tree_collision_pool()
 	_startup_checkpoint("árboles secos", startup_stage)
 	_finalize_tree_collision_mesh()
 	call_deferred("_update_explicit_lod_visibility", true)
@@ -661,13 +741,21 @@ func _startup_checkpoint(label: String, started_msec: int) -> int:
 func _layout_cache_signature() -> String:
 	# Incrementar LAYOUT_CACHE_SCHEMA cuando cambien filtros, alturas, escalas o
 	# materiales que afecten al reparto de árbol/hierba.
-	return "v%d|seed=%d|trees=%d|grass=%d|tc=%.2f|gc=%.2f|scale=2.20-4.00" % [
+	return "v%d|seed=%d|trees=%d|grass=%d|tc=%.2f|gc=%.2f|tr=%.3f|rr=%d|rd=%.3f|rdr=%d|sr=%.3f|sra=%d|mr=%.3f|scale=2.20-4.00|arenas=%s" % [
 		LAYOUT_CACHE_SCHEMA,
 		random_seed,
 		tree_count,
 		grass_count,
 		TREE_COVERAGE_CELL_SIZE,
 		GRASS_COVERAGE_SPACING,
+		TREE_ROUTE_DISTRIBUTION_RATIO,
+		ROUTE_REDISTRIBUTED_TREE_REMOVAL_COUNT,
+		ROUTE_TREE_DENSITY_TARGET,
+		ROUTE_DENSITY_TREE_REMOVAL_COUNT,
+		START_ROUTE_TREE_BONUS_RATIO,
+		START_ROUTE_TREE_BONUS_COUNT,
+		MYSTERY_TREE_RETENTION_RATIO,
+		_arena_clearing_signature(),
 	]
 
 
@@ -714,7 +802,11 @@ func _save_layout_cache() -> void:
 
 
 func _process(delta: float) -> void:
-	_update_grass_interaction()
+	_update_grass_interaction(delta)
+	_streamed_tree_collision_elapsed += delta
+	if _streamed_tree_collision_elapsed >= 0.10:
+		_streamed_tree_collision_elapsed = 0.0
+		_update_streamed_tree_collisions(false)
 	_explicit_lod_refresh_elapsed += delta
 	if _explicit_lod_refresh_elapsed < EXPLICIT_LOD_REFRESH_SECONDS:
 		return
@@ -722,14 +814,31 @@ func _process(delta: float) -> void:
 	_update_explicit_lod_visibility(false)
 
 
-func _update_grass_interaction() -> void:
+func flatten_grass_burst(center: Vector3, radius: float, duration: float = 1.5) -> void:
+	## Onda que tumba la hierba en un área amplia. La usa el ataque giratorio
+	## cargado: la fuerza especial tiene que dejar huella en el prado.
+	_grass_blast_center = center
+	_grass_blast_radius = maxf(radius, 0.5)
+	_grass_blast_duration = maxf(duration, 0.1)
+	_grass_blast_time = _grass_blast_duration
+
+
+func _update_grass_interaction(delta: float) -> void:
 	if _grass_interaction_target == null:
 		_grass_interaction_target = get_node_or_null("../Player") as Node3D
 	var target_position := Vector3(0.0, -10000.0, 0.0)
 	if _grass_interaction_target != null:
 		target_position = _grass_interaction_target.global_position
+	_grass_blast_time = maxf(_grass_blast_time - delta, 0.0)
+	# La hierba cae de golpe y se recupera despacio, que es como se lee un
+	# golpe de fuerza y no una ráfaga de viento.
+	var blast_ratio := _grass_blast_time / _grass_blast_duration if _grass_blast_duration > 0.0 else 0.0
+	var blast_strength := pow(clampf(blast_ratio, 0.0, 1.0), 0.55)
 	for material in _grass_wind_materials:
 		material.set_shader_parameter("player_position", target_position)
+		material.set_shader_parameter("shockwave_position", _grass_blast_center)
+		material.set_shader_parameter("shockwave_radius", _grass_blast_radius)
+		material.set_shader_parameter("shockwave_strength", blast_strength)
 
 
 func _scatter_forest() -> void:
@@ -746,7 +855,8 @@ func _scatter_forest() -> void:
 	profile_stage = _startup_checkpoint("bosque/retícula", profile_stage)
 	var coverage_index := 0
 	var attempts := 0
-	while generated_tree_count < tree_count and attempts < tree_count * 34:
+	var base_tree_target := tree_count - START_ROUTE_TREE_BONUS_COUNT
+	while generated_tree_count < base_tree_target and attempts < base_tree_target * 34:
 		attempts += 1
 		var uses_coverage_point := coverage_index < coverage_points.size()
 		var point: Vector2
@@ -762,6 +872,11 @@ func _scatter_forest() -> void:
 		# Dentro del bioma tenebroso no se permite que el azar vuelva a introducir
 		# árboles verdes o nevados: el límite irregular decide el bioma completo.
 		var mystery := mystery_strength > 0.26
+		# Uno de cada cinco candidatos del Bosque Tenebroso desaparece de verdad:
+		# no se recoloca dentro ni fuera del bioma. El presupuesto total ya descuenta
+		# esos 1.630 árboles rojos retirados del layout anterior.
+		if mystery and _random.randf() > MYSTERY_TREE_RETENTION_RATIO:
+			continue
 		var snow_probability := _snow_probability(point, height)
 		# La retícula anti-calvas también alcanza la nieve, pero allí se aclara de
 		# forma gradual hasta conservar aproximadamente el 80 % en las cumbres. Los
@@ -816,7 +931,9 @@ func _scatter_forest() -> void:
 			"TreeCells|%s" % String(full_reference.bucket_key),
 			int(full_reference.instance_index),
 			"TreeLODCells|%s" % String(proxy_reference.bucket_key),
-			int(proxy_reference.instance_index)
+			int(proxy_reference.instance_index),
+			_tree_meshes[variant].get_aabb(),
+			scale_value
 		)
 		if uses_coverage_point:
 			generated_coverage_tree_count += 1
@@ -836,6 +953,7 @@ func _scatter_forest() -> void:
 			]:
 				_forest_cache_records.append(float(value))
 		generated_tree_count += 1
+	_scatter_start_route_tree_bonus(buckets, lod_buckets)
 	_forest_cache_rng_state = _random.state
 	_forest_cache_counts = {
 		"green": generated_green_tree_count,
@@ -854,8 +972,75 @@ func _scatter_forest() -> void:
 	full_tree_root.set_meta("coverage_cell_size", TREE_COVERAGE_CELL_SIZE)
 	full_tree_root.set_meta("coverage_tree_count", generated_coverage_tree_count)
 	full_tree_root.set_meta("coverage_primary_tree_count", generated_coverage_primary_tree_count)
+	full_tree_root.set_meta("route_distribution_ratio", TREE_ROUTE_DISTRIBUTION_RATIO)
+	full_tree_root.set_meta("removed_route_replacements", ROUTE_REDISTRIBUTED_TREE_REMOVAL_COUNT)
+	full_tree_root.set_meta("route_density_target", ROUTE_TREE_DENSITY_TARGET)
+	full_tree_root.set_meta("route_density_removed", ROUTE_DENSITY_TREE_REMOVAL_COUNT)
+	full_tree_root.set_meta("start_route_tree_bonus_ratio", START_ROUTE_TREE_BONUS_RATIO)
+	full_tree_root.set_meta("start_route_tree_bonus_count", START_ROUTE_TREE_BONUS_COUNT)
 	_install_tree_lod_buckets(lod_buckets)
 	_startup_checkpoint("bosque/multimesh LOD", profile_stage)
+
+
+func _scatter_start_route_tree_bonus(buckets: Dictionary, lod_buckets: Dictionary) -> void:
+	var created := 0
+	var attempts := 0
+	while created < START_ROUTE_TREE_BONUS_COUNT and attempts < START_ROUTE_TREE_BONUS_COUNT * 80:
+		attempts += 1
+		var sample := _indexed_route_sample(START_VILLAGE_ROAD_INDICES)
+		var point: Vector2 = sample[0]
+		var normal: Vector2 = sample[1]
+		var side := -1.0 if _random.randf() < 0.5 else 1.0
+		point += normal * lerpf(13.0, 180.0, sqrt(_random.randf())) * side
+		if not _tree_point_allowed(point):
+			continue
+		var height := _height_at(point)
+		if is_nan(height):
+			continue
+		# Los refuerzos del pueblo son únicamente los pinos verdes más bonitos del
+		# pack, sin introducir árboles secos ni modificar ninguna otra carretera.
+		var local_tree_variant := _random.randi_range(5, GREEN_TREE_FILES.size() - 1)
+		var scale_value := _random.randf_range(2.20, 4.00) * _random.randf_range(1.05, 1.30)
+		var position := Vector3(point.x, height + 0.10, point.y)
+		var yaw := _random.randf_range(0.0, TAU)
+		var transform := _make_transform(position, yaw, Vector3.ONE * scale_value)
+		var full_reference := _bucket_transform_reference(
+			buckets, local_tree_variant, point, TREE_CELL_SIZE, transform
+		)
+		var lod_variant := _tree_lod_variant(false, false, false, local_tree_variant)
+		var proxy_reference := _bucket_transform_reference(
+			lod_buckets, lod_variant, point, TREE_LOD_CELL_SIZE, transform
+		)
+		tree_positions.append(position)
+		var tree_resource_id := _stable_scatter_resource_id("forest_tree", point)
+		_register_harvest_tree_reference(
+			position,
+			tree_resource_id,
+			"TreeCells|%s" % String(full_reference.bucket_key),
+			int(full_reference.instance_index),
+			"TreeLODCells|%s" % String(proxy_reference.bucket_key),
+			int(proxy_reference.instance_index),
+			_tree_meshes[local_tree_variant].get_aabb(),
+			scale_value
+		)
+		var has_collision := distance_to_route(point) < 34.0 or generated_tree_count % 16 == 0
+		if has_collision:
+			_add_tree_collision(
+				position, _tree_meshes[local_tree_variant].get_aabb(), scale_value, tree_resource_id
+			)
+			generated_tree_collision_count += 1
+		if _bake_layout_cache:
+			for value in [
+				position.x, position.y, position.z, yaw, scale_value,
+				float(local_tree_variant), float(lod_variant),
+				1.0 if has_collision else 0.0, 0.0,
+			]:
+				_forest_cache_records.append(float(value))
+		generated_green_tree_count += 1
+		generated_tree_count += 1
+		created += 1
+	if created != START_ROUTE_TREE_BONUS_COUNT:
+		push_warning("Sólo se pudieron añadir %d de %d pinos al camino inicial." % [created, START_ROUTE_TREE_BONUS_COUNT])
 
 
 func _scatter_forest_from_cache(cache: VegetationLayoutCache) -> void:
@@ -864,12 +1049,22 @@ func _scatter_forest_from_cache(cache: VegetationLayoutCache) -> void:
 	var buckets: Dictionary = {}
 	var lod_buckets: Dictionary = {}
 	var records := cache.forest_records
+	var removed := {"green": 0, "snow": 0, "mystery": 0, "autumn": 0, "coverage": 0}
+	var urban_near_route := 0
 	for offset in range(0, records.size(), FOREST_CACHE_STRIDE):
 		var position := Vector3(records[offset], records[offset + 1], records[offset + 2])
 		var point := Vector2(position.x, position.z)
 		var yaw := records[offset + 3]
 		var scale_value := records[offset + 4]
 		var variant := roundi(records[offset + 5])
+		# Enmascarar sólo las nuevas parcelas/calles: no redistribuir el bosque
+		# ni cambiar los IDs persistentes de los árboles que siguen fuera.
+		if VillageLayout.occupies(point):
+			var kind := "mystery" if variant >= _mystery_tree_offset else ("snow" if variant >= _snow_tree_offset else ("autumn" if variant >= GREEN_TREE_FILES.size() else "green"))
+			removed[kind] += 1
+			removed.coverage += int(records[offset + 8] > 0.5)
+			urban_near_route += int(distance_to_route(point) <= 180.0)
+			continue
 		var lod_variant := roundi(records[offset + 6])
 		var transform := _make_transform(position, yaw, Vector3.ONE * scale_value)
 		var full_reference := _bucket_transform_reference(
@@ -886,7 +1081,9 @@ func _scatter_forest_from_cache(cache: VegetationLayoutCache) -> void:
 			"TreeCells|%s" % String(full_reference.bucket_key),
 			int(full_reference.instance_index),
 			"TreeLODCells|%s" % String(proxy_reference.bucket_key),
-			int(proxy_reference.instance_index)
+			int(proxy_reference.instance_index),
+			_tree_meshes[variant].get_aabb(),
+			scale_value
 		)
 		if records[offset + 7] > 0.5:
 			_add_tree_collision(
@@ -895,11 +1092,13 @@ func _scatter_forest_from_cache(cache: VegetationLayoutCache) -> void:
 			generated_tree_collision_count += 1
 		generated_tree_count += 1
 	profile_stage = _startup_checkpoint("bosque horneado/instancias y colisiones (%d)" % generated_tree_collision_count, profile_stage)
-	generated_green_tree_count = int(cache.forest_counts.get("green", 0))
-	generated_snow_tree_count = int(cache.forest_counts.get("snow", 0))
-	generated_mystery_tree_count = int(cache.forest_counts.get("mystery", 0))
-	generated_autumn_tree_count = int(cache.forest_counts.get("autumn", 0))
-	generated_coverage_tree_count = int(cache.forest_counts.get("coverage", 0))
+	set_meta("urban_trees_removed", records.size() / FOREST_CACHE_STRIDE - generated_tree_count)
+	set_meta("urban_near_route_trees_removed", urban_near_route)
+	generated_green_tree_count = int(cache.forest_counts.get("green", 0)) - int(removed.green)
+	generated_snow_tree_count = int(cache.forest_counts.get("snow", 0)) - int(removed.snow)
+	generated_mystery_tree_count = int(cache.forest_counts.get("mystery", 0)) - int(removed.mystery)
+	generated_autumn_tree_count = int(cache.forest_counts.get("autumn", 0)) - int(removed.autumn)
+	generated_coverage_tree_count = int(cache.forest_counts.get("coverage", 0)) - int(removed.coverage)
 	generated_coverage_primary_tree_count = int(cache.forest_counts.get("coverage_primary", 0))
 	_install_cell_buckets("TreeCells", buckets, _tree_meshes, 0.0, true)
 	profile_stage = _startup_checkpoint("bosque horneado/multimesh cercano", profile_stage)
@@ -909,6 +1108,12 @@ func _scatter_forest_from_cache(cache: VegetationLayoutCache) -> void:
 	full_tree_root.set_meta("coverage_cell_size", TREE_COVERAGE_CELL_SIZE)
 	full_tree_root.set_meta("coverage_tree_count", generated_coverage_tree_count)
 	full_tree_root.set_meta("coverage_primary_tree_count", generated_coverage_primary_tree_count)
+	full_tree_root.set_meta("route_distribution_ratio", TREE_ROUTE_DISTRIBUTION_RATIO)
+	full_tree_root.set_meta("removed_route_replacements", ROUTE_REDISTRIBUTED_TREE_REMOVAL_COUNT)
+	full_tree_root.set_meta("route_density_target", ROUTE_TREE_DENSITY_TARGET)
+	full_tree_root.set_meta("route_density_removed", ROUTE_DENSITY_TREE_REMOVAL_COUNT)
+	full_tree_root.set_meta("start_route_tree_bonus_ratio", START_ROUTE_TREE_BONUS_RATIO)
+	full_tree_root.set_meta("start_route_tree_bonus_count", START_ROUTE_TREE_BONUS_COUNT)
 	_install_tree_lod_buckets(lod_buckets)
 	_startup_checkpoint("bosque horneado/multimesh LOD", profile_stage)
 	_random.state = cache.forest_rng_state
@@ -1077,6 +1282,11 @@ func _scatter_ground_cover() -> void:
 		for offset in range(0, records.size(), GRASS_CACHE_STRIDE):
 			var position := Vector3(records[offset], records[offset + 1], records[offset + 2])
 			var point := Vector2(position.x, position.z)
+			# Excluir la extensión de la mata, no sólo su centro: mide 11 m
+			# de radio y puede atravesar una pared desde una parcela vecina.
+			if VillageLayout.occupies(point, DENSE_GRASS_PATCH_RADIUS * maxf(records[offset + 4], records[offset + 6]) + 1.0):
+				set_meta("urban_grass_removed", int(get_meta("urban_grass_removed", 0)) + 1)
+				continue
 			var transform := _make_ground_aligned_transform(
 				position,
 				records[offset + 3],
@@ -1143,6 +1353,7 @@ func _scatter_ground_cover() -> void:
 		var scale_value := _random.randf_range(0.30, 0.62) if variant == 0 else _random.randf_range(0.52, 1.10)
 		_bucket_transform(fern_buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.03, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		generated_fern_count += 1
+	generated_fern_count -= _mask_urban_buckets(fern_buckets, "urban_ferns_removed")
 	_install_cell_buckets("FernCells", fern_buckets, _fern_meshes, 245.0, true)
 
 	var shrub_buckets: Dictionary = {}
@@ -1162,6 +1373,7 @@ func _scatter_ground_cover() -> void:
 		var scale_value := _random.randf_range(0.82, 1.62)
 		_bucket_transform(shrub_buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.04, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		generated_shrub_count += 1
+	generated_shrub_count -= _mask_urban_buckets(shrub_buckets, "urban_shrubs_removed")
 	_install_cell_buckets("ShrubCells", shrub_buckets, _shrub_meshes, 270.0, true)
 
 
@@ -1182,6 +1394,7 @@ func _scatter_color_details() -> void:
 		var scale_value := _random.randf_range(0.40, 0.82)
 		_bucket_transform(flower_buckets, variant, point, GROUND_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.025, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		generated_flower_count += 1
+	generated_flower_count -= _mask_urban_buckets(flower_buckets, "urban_flowers_removed")
 	_install_cell_buckets("FlowerCells", flower_buckets, _flower_meshes, 185.0, false)
 
 	var mushroom_buckets: Dictionary = {}
@@ -1200,7 +1413,44 @@ func _scatter_color_details() -> void:
 		var scale_value := _random.randf_range(0.72, 1.42)
 		_bucket_transform(mushroom_buckets, variant, point, GROUND_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.02, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
 		generated_mushroom_count += 1
+	# Retirar las setas del casco urbano después del sorteo conserva la secuencia
+	# aleatoria de los demás adornos. No se recolocan ni se toca la hierba densa.
+	var urban_mushrooms_removed := 0
+	for key in mushroom_buckets.keys():
+		var bucket: Dictionary = mushroom_buckets[key]
+		var outdoors: Array = []
+		for transform_value in bucket["transforms"]:
+			var placement: Transform3D = transform_value
+			if _inside_village_clearing(Vector2(placement.origin.x, placement.origin.z), 3.0) or VillageLayout.occupies(Vector2(placement.origin.x, placement.origin.z)):
+				generated_mushroom_count -= 1
+				urban_mushrooms_removed += 1
+			else:
+				outdoors.append(placement)
+		if outdoors.is_empty():
+			mushroom_buckets.erase(key)
+		else:
+			bucket["transforms"] = outdoors
+	set_meta("urban_mushrooms_removed", urban_mushrooms_removed)
 	_install_cell_buckets("MushroomCells", mushroom_buckets, _mushroom_meshes, 150.0, false)
+
+
+func _mask_urban_buckets(buckets: Dictionary, metric: String) -> int:
+	var removed := 0
+	for key in buckets.keys():
+		var bucket: Dictionary = buckets[key]
+		var kept: Array = []
+		for transform_value in bucket.transforms:
+			var placement: Transform3D = transform_value
+			if VillageLayout.occupies(Vector2(placement.origin.x, placement.origin.z)):
+				removed += 1
+			else:
+				kept.append(placement)
+		if kept.is_empty():
+			buckets.erase(key)
+		else:
+			bucket.transforms = kept
+	set_meta(metric, removed)
+	return removed
 
 
 func _scatter_path_pebbles() -> void:
@@ -1230,22 +1480,28 @@ func _scatter_path_pebbles() -> void:
 
 
 func _scatter_forest_details() -> void:
+	var pine_meshes: Array[Mesh] = []
+	for source_index in range(5, mini(10, _tree_meshes.size())):
+		pine_meshes.append(_tree_meshes[source_index])
+	if pine_meshes.is_empty():
+		push_error("No hay pinos Quaternius disponibles para el detalle forestal.")
+		return
 	var buckets: Dictionary = {}
 	var attempts := 0
 	var created := 0
 	while created < forest_detail_count and attempts < forest_detail_count * 24:
 		attempts += 1
 		var point := _corridor_point(8.0, 142.0, 0.64)
-		# Los troncos secos son parte del bosque, nunca del interior de una casa,
-		# patio o ciudadela. El resto del arbolado ya respetaba estas reservas,
-		# pero este pase de detalle podía atravesar edificios completos.
+		# Los pinos de detalle son parte del bosque, nunca del interior de una casa,
+		# patio o ciudadela. Los únicos árboles secos que permanecen pertenecen al
+		# Bosque Tenebroso, que se genera en el pase independiente siguiente.
 		if distance_to_route(point) < 5.2 or _inside_clearing(point, 9.5, 15.5) or _inside_village_clearing(point, 8.0) or _inside_desert(point) or _inside_mystery_forest(point):
 			continue
 		var height := _height_at(point)
 		if is_nan(height):
 			continue
-		var variant := _random.randi_range(0, _dead_tree_meshes.size() - 1)
-		var scale_value := _random.randf_range(1.30, 2.42)
+		var variant := _random.randi_range(0, pine_meshes.size() - 1)
+		var scale_value := _random.randf_range(2.10, 3.40)
 		var position := Vector3(point.x, height + 0.08, point.y)
 		var reference := _bucket_transform_reference(
 			buckets,
@@ -1260,10 +1516,15 @@ func _scatter_forest_details() -> void:
 			"ForestDetailCells|%s" % String(reference.bucket_key),
 			int(reference.instance_index),
 			"",
-			-1
+			-1,
+			pine_meshes[variant].get_aabb(),
+			scale_value
 		)
 		created += 1
-	_install_cell_buckets("ForestDetailCells", buckets, _dead_tree_meshes, 245.0, true)
+	_install_cell_buckets("ForestDetailCells", buckets, pine_meshes, 245.0, true)
+	var root := get_node("ForestDetailCells") as Node3D
+	root.set_meta("tree_style", "green_pines")
+	root.set_meta("dry_trees_exclusive_to_mystery_forest", true)
 
 
 func _scatter_mystery_dead_trees() -> void:
@@ -1303,7 +1564,9 @@ func _scatter_mystery_dead_trees() -> void:
 			"MysteryDeadTreeCells|%s" % String(reference.bucket_key),
 			int(reference.instance_index),
 			"",
-			-1
+			-1,
+			_dead_tree_meshes[variant].get_aabb(),
+			scale_value
 		)
 		if distance_to_route(point) < 30.0 or generated_mystery_dead_tree_count % 18 == 0:
 			_add_tree_collision(
@@ -1776,10 +2039,60 @@ func _tree_lod_variant(snowy: bool, mystery: bool, autumn: bool, local_tree_vari
 	return 1 if local_tree_variant >= 5 else 0
 
 
+func set_storm_strength(value: float) -> void:
+	## Ventarrón sobre toda la vegetación. Lo usa la carga de la fuerza especial:
+	## la hierba y las copas se doblan mientras el héroe acumula energía.
+	_storm_strength = clampf(value, 0.0, 1.0)
+	# La curva acelera al principio: en cuanto el heroe empieza a acumular ya se
+	# nota que el aire se mueve, sin esperar a la carga completa.
+	var ramp := pow(_storm_strength, 0.65)
+	for material in _grass_wind_materials:
+		material.set_shader_parameter("gust_strength", lerpf(GRASS_BASE_GUST, GRASS_STORM_GUST, _storm_strength))
+		material.set_shader_parameter("breeze_strength", lerpf(GRASS_BASE_BREEZE, GRASS_STORM_BREEZE, _storm_strength))
+		material.set_shader_parameter("storm_bend", GRASS_STORM_BEND * ramp)
+	for material in _tree_wind_materials:
+		material.set_shader_parameter("storm_strength", _storm_strength)
+		material.set_shader_parameter("storm_bend", TREE_STORM_BEND * ramp)
+
+
+func get_storm_strength() -> float:
+	return _storm_strength
+
+
+func get_grass_storm_bend() -> float:
+	## Metros de barrido que la tormenta imprime ahora mismo en la hierba. Lo
+	## consultan las pruebas: es el numero que delata si el viento se ve o no.
+	return GRASS_STORM_BEND * pow(_storm_strength, 0.65)
+
+
+func get_tree_storm_bend() -> float:
+	return TREE_STORM_BEND * pow(_storm_strength, 0.65)
+
+
+func biome_at(world_position: Vector3) -> String:
+	## Bioma dominante en un punto, con los mismos criterios que reparten la
+	## vegetacion. Es la fuente unica: los efectos de tormenta y de ambiente
+	## preguntan aqui en vez de repetir las gaussianas.
+	var point := Vector2(world_position.x, world_position.z)
+	if _mystery_forest_strength(point) > 0.26:
+		return "dark_forest"
+	if _inside_desert(point):
+		return "desert"
+	var height := world_position.y
+	if terrain != null and terrain.data != null:
+		var terrain_height := terrain.data.get_height(Vector3(point.x, 0.0, point.y))
+		if not is_nan(terrain_height):
+			height = terrain_height
+	if _snow_probability(point, height) > 0.32:
+		return "snow"
+	return "valley"
+
+
 func _apply_tree_wind_materials() -> void:
 	var shader := Shader.new()
 	shader.code = TREE_WIND_SHADER
 	_tree_wind_material_count = 0
+	_tree_wind_materials.clear()
 	for mesh_index in _tree_meshes.size():
 		var tree_mesh := _tree_meshes[mesh_index]
 		var tint_mode := 0.0
@@ -1815,6 +2128,7 @@ func _apply_tree_wind_materials() -> void:
 			wind_material.set_shader_parameter("leaf_factor", 1.0 if is_leaf else 0.0)
 			tree_mesh.surface_set_material(surface_index, wind_material)
 			_tree_wind_material_count += 1
+			_tree_wind_materials.append(wind_material)
 	set_meta("tree_wind_materials", _tree_wind_material_count)
 	set_meta("tree_wind_gust_levels", PackedStringArray(["breeze", "soft", "strong"]))
 
@@ -2026,6 +2340,18 @@ func _bucket_transform_reference(buckets: Dictionary, variant: int, point: Vecto
 func _install_cell_buckets(root_name: String, buckets: Dictionary, meshes: Array[Mesh], visibility_distance: float, shadows: bool) -> void:
 	var category := Node3D.new()
 	category.name = root_name
+	var cell_lod_bias := (
+		QUATERNIUS_VEGETATION_LOD_BIAS
+		if root_name in REDUCED_VEGETATION_LOD_CATEGORIES
+		else DEFAULT_IMPORTED_LOD_BIAS
+	)
+	category.set_meta("cell_lod_bias", cell_lod_bias)
+	category.set_meta(
+		"polygon_reduction_scope",
+		"quaternius_vegetation_without_dense_grass"
+		if root_name in REDUCED_VEGETATION_LOD_CATEGORIES
+		else "default"
+	)
 	add_child(category)
 	var keys := buckets.keys()
 	keys.sort()
@@ -2051,9 +2377,12 @@ func _install_cell_buckets(root_name: String, buckets: Dictionary, meshes: Array
 		instance.visibility_range_end = visibility_distance
 		instance.visibility_range_end_margin = 0.0
 		instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-		instance.lod_bias = 0.75
+		# Los árboles y adornos vegetales pueden entrar antes en los LOD que ya
+		# genera el importador de Godot. La alfombra densa usa otro sistema y queda
+		# expresamente fuera de esta reducción.
+		instance.lod_bias = cell_lod_bias
 		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		instance.set_meta("imported_mesh_lod_bias", 0.75)
+		instance.set_meta("imported_mesh_lod_bias", cell_lod_bias)
 		instance.set_meta("cell", cell)
 		instance.set_meta("cell_size", cell_size)
 		instance.set_meta("base_visibility_end", visibility_distance)
@@ -2125,7 +2454,7 @@ func _install_grass_lod_buckets(buckets: Dictionary) -> void:
 	category.name = "GrassLODCells"
 	category.set_meta("lod_tier", "dense_patch_proxy")
 	category.set_meta("source_grass_count", grass_count)
-	category.set_meta("effective_clump_count", grass_count * DENSE_GRASS_CLUSTER_COPIES)
+	category.set_meta("effective_clump_count", generated_grass_count * DENSE_GRASS_CLUSTER_COPIES)
 	category.set_meta("crossfade_start", GRASS_PROXY_FADE_START)
 	category.set_meta("crossfade_end", GRASS_PROXY_FADE_END)
 	category.set_meta("visibility_end", GRASS_LOD_VISIBILITY_END)
@@ -2469,10 +2798,12 @@ func _tree_distribution_point() -> Vector2:
 	# participan de forma equilibrada; el filtro de material posterior descarta
 	# agua, arena, caminos y paredes.
 	var distribution := _random.randf()
-	# El 33 % sólo se aplica al presupuesto sobrante después de la retícula. Al
-	# ampliar ésta a pradera y nieve, la cantidad junto a caminos se conserva y
-	# los nuevos ejemplares se concentran en las superficies interiores vacías.
-	if distribution < 0.33:
+	# El 29,7 % sólo se aplica al presupuesto sobrante después de la retícula: es
+	# un 10 % menos que el 33 % anterior alrededor de los caminos. Al
+	# ampliar ésta a pradera y nieve, la cantidad junto a caminos se conserva.
+	# El presupuesto total descuenta además los 1.742 ejemplares que antes se
+	# compensaban en el interior: ya no se recolocan en ninguna parte del mapa.
+	if distribution < TREE_ROUTE_DISTRIBUTION_RATIO:
 		var sample := _route_sample()
 		var point: Vector2 = sample[0]
 		var normal: Vector2 = sample[1]
@@ -2733,7 +3064,8 @@ func _inside_village_clearing(point: Vector2, padding: float = 0.0) -> bool:
 		# Ajustamos por separado el caserío y la fortaleza desplazada para recuperar
 		# pradera arbolada sin atravesar casas, murallas ni patios.
 		if clearing.z >= 180.0:
-			if point.distance_to(center) < 88.0 + padding:
+			var hull := GRAND_VILLAGE_CLEARING if index in GRAND_VILLAGE_INDICES else 88.0
+			if point.distance_to(center) < hull + padding:
 				return true
 			var yaw := STONE_VILLAGES[index].z
 			var castle_center := center + Vector2(125.0, 3.0).rotated(yaw)
@@ -2745,7 +3077,30 @@ func _inside_village_clearing(point: Vector2, padding: float = 0.0) -> bool:
 	for clearing in RURAL_CLEARINGS:
 		if point.distance_to(Vector2(clearing.x, clearing.y)) < clearing.z + padding:
 			return true
+	return _inside_arena_clearing(point, padding)
+
+
+## Las arenas de jefe también despejan. Medido antes de esto: 5 árboles DENTRO
+## del suelo de piedra y 14 más en el borde, atravesando losas y monolitos.
+## El claro sale del bestiario en vez de estar copiado aquí, y su firma entra en
+## el caché, así que mover un jefe rehornea en vez de dejar árboles dentro.
+const ARENA_CLEARING_MARGIN := 12.0
+
+
+func _inside_arena_clearing(point: Vector2, padding: float) -> bool:
+	for arena in RPGBestiary.ARENAS:
+		var centre: Vector2 = arena["centre"]
+		if point.distance_to(centre) < float(arena["radius"]) + ARENA_CLEARING_MARGIN + padding:
+			return true
 	return false
+
+
+func _arena_clearing_signature() -> String:
+	var parts := PackedStringArray()
+	for arena in RPGBestiary.ARENAS:
+		var centre: Vector2 = arena["centre"]
+		parts.append("%.0f,%.0f,%.0f" % [centre.x, centre.y, float(arena["radius"])])
+	return ":".join(parts)
 
 
 func _inside_stone_village_street(point: Vector2, padding: float = 0.0) -> bool:
@@ -2859,7 +3214,9 @@ func _register_harvest_tree_reference(
 	full_key: String,
 	full_index: int,
 	proxy_key: String,
-	proxy_index: int
+	proxy_index: int,
+	bounds: AABB,
+	tree_scale: float
 ) -> void:
 	var tree_index := _harvest_tree_positions.size()
 	_harvest_tree_positions.append(position)
@@ -2870,6 +3227,8 @@ func _register_harvest_tree_reference(
 	_harvest_tree_proxy_indices.append(proxy_index)
 	_harvest_tree_full_originals.append(Transform3D.IDENTITY)
 	_harvest_tree_proxy_originals.append(Transform3D.IDENTITY)
+	_harvest_tree_collision_radii.append(clampf(tree_scale * 0.34, 0.38, 1.42))
+	_harvest_tree_collision_heights.append(maxf(bounds.size.y * tree_scale * 0.76, 4.0))
 	_harvest_tree_index_by_id[resource_id] = tree_index
 
 
@@ -2912,8 +3271,91 @@ func _finalize_harvest_tree_registry() -> void:
 		_harvest_tree_cells[cell] = indices
 	generated_harvestable_tree_count = _harvest_tree_positions.size()
 	set_meta("all_trees_harvestable", true)
+	set_meta("all_trees_collidable", true)
 	set_meta("harvestable_tree_count", generated_harvestable_tree_count)
 	set_meta("harvest_tree_spatial_cell_size", TREE_HARVEST_CELL_SIZE)
+
+
+func _build_streamed_tree_collision_pool() -> void:
+	_streamed_tree_collision_root = StaticBody3D.new()
+	_streamed_tree_collision_root.name = "StreamedTreeCollisions"
+	_streamed_tree_collision_root.collision_layer = 1
+	_streamed_tree_collision_root.collision_mask = 0
+	add_child(_streamed_tree_collision_root)
+	for slot in TREE_COLLISION_STREAM_POOL_SIZE:
+		var collision := CollisionShape3D.new()
+		collision.name = "NearbyTree%03d" % slot
+		collision.shape = CylinderShape3D.new()
+		collision.disabled = true
+		_streamed_tree_collision_root.add_child(collision)
+		_streamed_tree_collision_shapes.append(collision)
+	_streamed_tree_collision_root.set_meta("covers_every_tree", true)
+	_streamed_tree_collision_root.set_meta("registered_tree_count", _harvest_tree_positions.size())
+	_streamed_tree_collision_root.set_meta("stream_radius", TREE_COLLISION_STREAM_RADIUS)
+	_update_streamed_tree_collisions(true)
+
+
+func _update_streamed_tree_collisions(force: bool = false) -> void:
+	if _streamed_tree_collision_shapes.is_empty():
+		return
+	if _grass_interaction_target == null:
+		_grass_interaction_target = get_node_or_null("../Player") as Node3D
+	if _grass_interaction_target == null:
+		return
+	var focus := Vector2(
+		_grass_interaction_target.global_position.x,
+		_grass_interaction_target.global_position.z
+	)
+	if (
+		not force
+		and focus.distance_to(_streamed_tree_collision_last_focus)
+		< TREE_COLLISION_STREAM_REFRESH_DISTANCE
+	):
+		return
+	_streamed_tree_collision_last_focus = focus
+	var candidates: Array[Dictionary] = []
+	var center_cell := Vector2i(
+		floori(focus.x / TREE_HARVEST_CELL_SIZE),
+		floori(focus.y / TREE_HARVEST_CELL_SIZE)
+	)
+	var cell_radius := ceili(TREE_COLLISION_STREAM_RADIUS / TREE_HARVEST_CELL_SIZE)
+	var radius_squared := TREE_COLLISION_STREAM_RADIUS * TREE_COLLISION_STREAM_RADIUS
+	for cell_y in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
+		for cell_x in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
+			for index_value in _harvest_tree_cells.get(Vector2i(cell_x, cell_y), []):
+				var tree_index := int(index_value)
+				var resource_id := _harvest_tree_ids[tree_index]
+				if _destroyed_resource_ids.has(resource_id):
+					continue
+				var tree_position := _harvest_tree_positions[tree_index]
+				var distance_squared := focus.distance_squared_to(
+					Vector2(tree_position.x, tree_position.z)
+				)
+				if distance_squared <= radius_squared:
+					candidates.append({"index": tree_index, "distance": distance_squared})
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.distance) < float(b.distance)
+	)
+	_streamed_tree_collision_active = mini(
+		candidates.size(), _streamed_tree_collision_shapes.size()
+	)
+	for slot in _streamed_tree_collision_shapes.size():
+		var collision := _streamed_tree_collision_shapes[slot]
+		if slot >= _streamed_tree_collision_active:
+			collision.disabled = true
+			collision.set_meta("tree_index", -1)
+			continue
+		var tree_index := int(candidates[slot].index)
+		var height := _harvest_tree_collision_heights[tree_index]
+		var cylinder := collision.shape as CylinderShape3D
+		cylinder.radius = _harvest_tree_collision_radii[tree_index]
+		cylinder.height = height
+		collision.position = _harvest_tree_positions[tree_index] + Vector3.UP * height * 0.5
+		collision.disabled = false
+		collision.set_meta("tree_index", tree_index)
+	_streamed_tree_collision_root.set_meta(
+		"active_tree_collision_count", _streamed_tree_collision_active
+	)
 
 
 func try_hit_nearest_tree(
@@ -3023,6 +3465,7 @@ func _break_harvest_tree(tree_index: int, player_forward: Vector2, player: Playe
 	tween.tween_callback(func() -> void:
 		_set_harvest_tree_hidden(tree_index, true)
 		_refresh_tree_collision_mesh()
+		_update_streamed_tree_collisions(true)
 		_ensure_tree_stump(tree_index)
 		_spawn_tree_loot(tree_index, player)
 		_tree_hit_tweens.erase(tree_index)
@@ -3513,6 +3956,7 @@ func apply_save_state(state: Dictionary) -> void:
 		_set_harvest_tree_hidden(tree_index, true)
 		_ensure_tree_stump(tree_index)
 	_refresh_tree_collision_mesh()
+	_update_streamed_tree_collisions(true)
 
 
 func _restore_scatter_resource(resource: AdventureResource) -> void:

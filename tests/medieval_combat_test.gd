@@ -18,6 +18,11 @@ func _run_test() -> void:
 		await physics_frame
 
 	var player := world.get_node("Player") as Player
+	# El inventario es persistente: sin reponer flechas la prueba mediría un arco
+	# que ni siquiera puede tensarse.
+	var inventory := root.get_node_or_null("/root/InventoryManager")
+	if inventory != null:
+		inventory.call("add_item", "Arrow", 30, false)
 	var model_root := player.get_node_or_null("Visual/ModelRoot") as Node3D
 	if model_root == null or not model_root.is_visible_in_tree():
 		_fail("El protagonista Quaternius no está visible en el árbol.")
@@ -53,9 +58,18 @@ func _run_test() -> void:
 	if player.equipped_slot != 0 or player.get_equipped_mesh() != null or equipment_grip.get_child_count() != 0:
 		_fail("El protagonista debe comenzar con las manos vacías y sin objetos enfundados.")
 		return
-	if player.start_attack():
-		_fail("No debe iniciarse un golpe de arma mientras las manos están vacías.")
+	# Con las manos vacías sí se golpea —es el gancho de la biblioteca—, pero no
+	# hay filo en el que acumular la fuerza especial.
+	if not player.start_attack():
+		_fail("A mano desnuda debería salir el gancho.")
 		return
+	if player.start_charge() or player.start_spin_attack():
+		_fail("Sin arma no debe poder acumularse ni soltarse la fuerza especial.")
+		return
+	while player.is_attacking:
+		await physics_frame
+	for _frame in 20:
+		await physics_frame
 
 	var expected_nodes := ["EquippedSword", "EquippedAxe", "EquippedBow", "EquippedTorch"]
 	var equip_key := InputEventKey.new()
@@ -93,24 +107,79 @@ func _run_test() -> void:
 		if _brightest_surface_luminance(equipped) < 0.32:
 			_fail("El objeto %d vuelve a quedar ilegible por materiales demasiado oscuros." % slot)
 			return
-		var world_up := (equipment_grip.global_basis * Vector3.UP).normalized()
-		var local_direction := equipped.get_meta("rest_direction", Vector3.UP) as Vector3
-		var expected_direction := (
-			player.visual.global_basis.x.normalized() * local_direction.x
-			+ Vector3.UP * local_direction.y
-			- player.visual.global_basis.z.normalized() * local_direction.z
-		).normalized()
-		if world_up.dot(expected_direction) < 0.985:
-			_fail("El objeto %d no conserva su dirección de agarre calibrada (%.3f)." % [slot, world_up.dot(expected_direction)])
+		# El puño debe cerrarse sobre el punto de empuñadura de la malla, no sobre
+		# su origen de exportación: es lo que evita que el hacha se sujete por
+		# media caña o la espada por debajo del pomo.
+		var grip_point := equipped.get_meta("grip_point", Vector3.ZERO) as Vector3
+		var grip_error := equipped.to_global(grip_point).distance_to(equipment_grip.global_position)
+		if grip_error > 0.02:
+			_fail("El objeto %d no se sujeta por su empuñadura (%.3f m de desvío)." % [slot, grip_error])
 			return
-		if slot in [2, 4] and absf(world_up.dot(Vector3.UP)) > 0.93:
-			_fail("El objeto %d vuelve a quedar paralelo al brazo en vez de inclinarse hacia fuera." % slot)
+		var reach_from_hand := 0.0
+		for corner in 8:
+			var aabb := equipped.mesh.get_aabb()
+			var point := aabb.position + aabb.size * Vector3(
+				float(corner & 1), float((corner >> 1) & 1), float((corner >> 2) & 1)
+			)
+			reach_from_hand = maxf(reach_from_hand, equipped.to_global(point).distance_to(equipment_grip.global_position))
+		# La espada mandoble es deliberadamente aparatosa, así que el tope solo
+		# vigila que ningún objeto crezca hasta lo absurdo.
+		if reach_from_hand > 2.1:
+			_fail("El objeto %d alcanza un tamaño absurdo (%.2f m desde la mano)." % [slot, reach_from_hand])
 			return
+		if slot == 3:
+			# Ejes de Bow_Wooden: +Y recorre las palas y la cuerda vive en +X, que
+			# debe mirar al arquero para que la flecha salga por el centro.
+			var bow_basis := equipped.global_basis.orthonormalized()
+			var aim := player.get_aim_direction()
+			# En reposo el arco se lleva ladeado para no rozar el suelo; la
+			# verticalidad exacta solo hace falta al apuntar.
+			var upright := bow_basis.y.dot(Vector3.UP)
+			var rest_limit := cos(deg_to_rad(player.bow_rest_tilt_degrees + 12.0))
+			if upright < rest_limit:
+				_fail("El arco en reposo queda demasiado tumbado (%.3f)." % upright)
+				return
+			if (-bow_basis.x).dot(aim) < 0.6:
+				_fail("El arco no orienta la cuerda hacia el arquero: la flecha no saldría por su centro.")
+				return
+			# El ladeo de legibilidad: con el plano del arco alineado al milímetro
+			# con la puntería, en tercera persona solo se veía su canto.
+			var cant := absf(bow_basis.z.dot(aim))
+			if cant < 0.25:
+				_fail("El arco queda de canto a la cámara y resulta invisible (%.3f)." % cant)
+				return
+		else:
+			# El agarre vive en el sistema del hueso: si coincide con el calibrado
+			# es que el arma hereda la rotación de la mano en vez de recalcularse
+			# contra los ejes del mundo.
+			var calibrated := Basis.from_euler(equipped.get_meta("grip_euler", Vector3.ZERO) as Vector3)
+			if not equipment_grip.basis.orthonormalized().is_equal_approx(calibrated.orthonormalized()):
+				_fail("El objeto %d no conserva su agarre calibrado dentro del hueso de la mano." % slot)
+				return
 		if slot == 4 and equipped.get_node_or_null("TorchLight") == null:
 			_fail("La antorcha equipada no emite luz.")
 			return
 	player.equip_item(1)
 	var sword := player.get_equipped_mesh()
+
+	# La prueba de que el arma va en la mano y no atada al mundo: al cambiar de
+	# fotograma de animación el arma se mueve con el puño, pero su agarre dentro
+	# del hueso no varía ni un grado.
+	var grip_before := equipment_grip.basis.orthonormalized()
+	var sword_axis_before := (sword.global_basis.orthonormalized().y)
+	animator.play("SwordSlash", 0.0)
+	animator.seek(0.35, true)
+	await process_frame
+	await process_frame
+	var sword_axis_after := (sword.global_basis.orthonormalized().y)
+	if sword_axis_before.dot(sword_axis_after) > 0.9:
+		_fail("La espada no acompaña la rotación de la mano entre fotogramas.")
+		return
+	if not equipment_grip.basis.orthonormalized().is_equal_approx(grip_before):
+		_fail("El agarre de la espada se recalcula contra el mundo en vez de vivir en el hueso.")
+		return
+	animator.play("Idle", 0.0)
+	await process_frame
 
 	var crate := BreakableProp.new()
 	crate.name = "CombatTestTarget"
@@ -151,6 +220,15 @@ func _run_test() -> void:
 	for _frame in 32:
 		await physics_frame
 	player.equip_item(2)
+	# Cambiar de arma ya no es instantáneo: la que estaba en la mano viaja a la
+	# espalda y la nueva se desenvaina desde allí. Hay que esperar la maniobra.
+	var draw_frames := 0
+	while player.is_drawing_equipment() and draw_frames < 90:
+		draw_frames += 1
+		await physics_frame
+	if draw_frames == 0:
+		_fail("El cambio de arma no pasa por la espalda: no hubo maniobra de desenvainado.")
+		return
 	if not player.start_attack():
 		_fail("No se pudo atacar con el hacha tras cambiar de objeto.")
 		return
@@ -163,7 +241,7 @@ func _run_test() -> void:
 	world.queue_free()
 	for _frame in 8:
 		await process_frame
-	print("MEDIEVAL COMBAT TEST OK: agarres inclinados visibles, arco en Fist.L, armas en Fist.R y ataques físicos operativos.")
+	print("MEDIEVAL COMBAT TEST OK: empuñaduras sujetas al hueso de la mano, arco orientado a la puntería y ataques físicos operativos.")
 	quit(0)
 
 

@@ -36,6 +36,9 @@ var lobby_open := false
 var exploration_progress_panel: PanelContainer
 var exploration_progress_bar: ProgressBar
 var exploration_progress_label: Label
+var campaign_progress_label: Label
+var quest_tracker_panel: PanelContainer
+var quest_tracker_rows: VBoxContainer
 var exploration_prompt: Label
 var exploration_journal_overlay: ColorRect
 var exploration_journal_list: ItemList
@@ -51,23 +54,45 @@ var inventory_open := false
 var quickbar_panel: PanelContainer
 var quickbar_buttons: Array[Button] = []
 var arrow_counter: Label
+## Marca de impacto del arco, creada la primera vez que se tensa.
+var arrow_impact_marker: Label
 var horse_call_button: Button
 var bow_power_bar: ProgressBar
+var _spin_hint_shown := false
 var adventure_action_hint: Label
 var action_feedback_label: Label
 var action_feedback_seconds := 0.0
 var story_hint_panel: PanelContainer
 var story_hint_label: Label
 var story_hint_expanded := false
+var story_hint_index := 0
+var _pending_choices: Array = []
 var story_current_objective: Dictionary = {}
 var story_dialogue_overlay: ColorRect
 var story_dialogue_title: Label
 var story_dialogue_body: RichTextLabel
+var story_dialogue_choices: VBoxContainer
+var story_dialogue_close: Button
 var story_dialogue_open := false
 var player_health_bar: ProgressBar
+var vitals_panel: PanelContainer
+var vitals_health_bar: UiVitalBar
+var vitals_stamina_bar: UiVitalBar
 var inventory_manager: Node
 var pause_menu: PauseMenu
 var fps_counter: Label
+var chronicle_view: RichTextLabel = null
+var journal_title: Label = null
+var journal_help: Label = null
+var journal_page := 0
+var ally_strip: PanelContainer = null
+var ally_strip_rows: VBoxContainer = null
+var boss_banner: PanelContainer = null
+var boss_banner_name: Label = null
+var boss_banner_bar: UiVitalBar = null
+var boss_banner_demand: Label = null
+var boss_banner_site: Label = null
+var boss_banner_elapsed := 0.0
 var fps_refresh_elapsed := 0.0
 
 
@@ -112,6 +137,7 @@ func _ready() -> void:
 	player.action_feedback.connect(_on_player_action_feedback)
 	player.bow_draw_changed.connect(_on_bow_draw_changed)
 	player.arrow_fired.connect(_on_arrow_fired)
+	player.charge_changed.connect(_on_charge_changed)
 	player.equipment_changed.connect(_on_player_quickslot_changed)
 	_on_inventory_changed(inventory_manager.call("get_inventory_entries") as Array if inventory_manager != null else [])
 	var exploration := get_node_or_null("/root/ExplorationManager")
@@ -132,10 +158,17 @@ func _ready() -> void:
 	if story_runtime != null:
 		story_runtime.connect("dialogue_requested", Callable(self, "_on_story_dialogue_requested"))
 		story_runtime.connect("player_health_changed", Callable(self, "_on_player_health_changed"))
-	if DisplayServer.get_name().to_lower() != "headless":
-		_set_lobby_open(true)
-	else:
-		mini_map.visible = mini_map_open
+		if story_runtime.has_signal("dialogue_with_choices"):
+			story_runtime.connect("dialogue_with_choices", Callable(self, "_on_dialogue_with_choices"))
+	var hero := get_tree().root.find_child("Player", true, false)
+	if hero != null and hero.has_signal("stamina_changed"):
+		hero.connect("stamina_changed", Callable(self, "_on_player_stamina_changed"))
+	# El mundo arranca siempre como partida individual. El vestíbulo cooperativo
+	# solo se abre cuando el jugador lo solicita desde ESC → Multijugador.
+	lobby_open = false
+	lobby_overlay.visible = false
+	mini_map.visible = mini_map_open
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -148,6 +181,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if pause_menu != null and pause_menu.visible:
 		return
 	if story_dialogue_open:
+		# Contestar con el teclado tiene que resolverse aquí, antes del corte:
+		# más abajo el diálogo abierto ya ha descartado el evento.
+		if not _pending_choices.is_empty() and event is InputEventKey:
+			var reply := event as InputEventKey
+			if reply.pressed and not reply.echo:
+				var slot := int(reply.keycode) - int(KEY_1)
+				if slot >= 0 and slot < _pending_choices.size():
+					_answer_dialogue(slot)
+					get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("settings"):
 		_set_settings_open(not settings_open)
@@ -162,8 +204,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			_set_inventory_open(not inventory_open)
 			get_viewport().set_input_as_handled()
 			return
+		if exploration_journal_open and journal_key.pressed and not journal_key.echo \
+				and journal_code == KEY_TAB:
+			_flip_journal_page()
+			get_viewport().set_input_as_handled()
+			return
 		if journal_key.pressed and not journal_key.echo and journal_code == KEY_L:
 			_set_exploration_journal_open(not exploration_journal_open)
+			get_viewport().set_input_as_handled()
+			return
+		if journal_key.pressed and not journal_key.echo and journal_code == KEY_C:
+			_call_companions()
 			get_viewport().set_input_as_handled()
 			return
 		if journal_key.pressed and not journal_key.echo and journal_code == KEY_H:
@@ -171,7 +222,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if journal_key.pressed and not journal_key.echo and journal_code == KEY_P:
-			_set_story_hint_expanded(not story_hint_expanded)
+			_cycle_story_hint()
 			get_viewport().set_input_as_handled()
 			return
 	if exploration_journal_open:
@@ -233,6 +284,15 @@ func _handle_cancel() -> void:
 	elif pause_menu != null:
 		pause_menu.set_open(true)
 		mini_map.visible = false
+
+
+func _call_companions() -> void:
+	var world := get_tree().get_first_node_in_group("world")
+	if world == null or not world.has_method("call_companions_to_player"):
+		return
+	var notice := String(world.call("call_companions_to_player"))
+	if notice != "":
+		_on_player_action_feedback(notice)
 
 
 func _call_horse() -> void:
@@ -303,6 +363,11 @@ func _process(delta: float) -> void:
 	if fps_counter != null and fps_refresh_elapsed >= 0.20:
 		fps_refresh_elapsed = 0.0
 		fps_counter.text = str(Engine.get_frames_per_second())
+	boss_banner_elapsed += delta
+	if boss_banner_elapsed >= 0.25:
+		boss_banner_elapsed = 0.0
+		refresh_boss_banner()
+		refresh_ally_strip()
 	if exploration_notice_seconds > 0.0:
 		exploration_notice_seconds = maxf(exploration_notice_seconds - delta, 0.0)
 		if exploration_notice_seconds <= 0.0:
@@ -311,6 +376,7 @@ func _process(delta: float) -> void:
 		action_feedback_seconds = maxf(action_feedback_seconds - delta, 0.0)
 		if action_feedback_seconds <= 0.0 and action_feedback_label != null:
 			action_feedback_label.visible = false
+	_update_arrow_marker()
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		hint.text = "Esc abre el menú"
 	else:
@@ -324,11 +390,11 @@ func _process(delta: float) -> void:
 		if not adventure_prompt.is_empty() and exploration_notice_seconds <= 0.0 and exploration_prompt != null:
 			exploration_prompt.visible = false
 	if player.is_mounted():
-		controls.text = "WASD / flechas · guiar   Mayús · galopar   E · explorar / desmontar\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   H · llamar caballo   I · inventario\nM · mapa   L · 200 retos   Esc · menú" % equipped
+		controls.text = "WASD / flechas · guiar   Mayús · galopar   E · explorar / desmontar\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   H · caballo   C · aliados   I · inventario\nM · mapa   L · 200 retos   Esc · menú" % equipped
 		mount_hint.text = "E · Desmontar de %s" % player.current_mount.horse_name
 		mount_hint.visible = true
 	else:
-		controls.text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   Clic · atacar / tensar   H · llamar caballo\nE · interactuar   I · inventario   M · mapa   Esc · menú" % equipped
+		controls.text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   Clic · tajo · mantener · giro   H · caballo   C · aliados\nE · interactuar   I · inventario   M · mapa   Esc · menú" % equipped
 		var nearby_horse := player.get_nearby_mount()
 		mount_hint.visible = nearby_horse != null
 		if nearby_horse != null:
@@ -362,18 +428,15 @@ func _build_story_hud() -> void:
 	story_hint_panel.name = "PersistentStoryHint"
 	story_hint_panel.z_index = 78
 	story_hint_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	story_hint_panel.position = Vector2(-448.0, 218.0)
+	# Debajo del seguidor de misiones, no encima: antes ambos se dibujaban en
+	# (-448, 218) y se tapaban el uno al otro.
+	story_hint_panel.position = Vector2(-448.0, 430.0)
 	story_hint_panel.size = Vector2(428.0, 132.0)
 	story_hint_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	story_hint_panel.visible = false
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.035, 0.045, 0.055, 0.88)
-	style.border_color = Color(0.82, 0.58, 0.25, 0.90)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(12)
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.48)
-	style.shadow_size = 7
-	story_hint_panel.add_theme_stylebox_override("panel", style)
+	story_hint_panel.add_theme_stylebox_override(
+		"panel", UiTheme.panel(UiTheme.INK_SOFT, UiTheme.AMBER_DIM, UiTheme.RADIUS_CHIP, 12.0, 8.0)
+	)
 	add_child(story_hint_panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 15)
@@ -402,6 +465,11 @@ func _build_story_hud() -> void:
 	player_health_bar.tooltip_text = "Vida"
 	content.add_child(player_health_bar)
 
+	_build_vitals_panel()
+	_build_boss_banner()
+	_build_ally_strip()
+	_build_quest_tracker()
+
 	story_dialogue_overlay = ColorRect.new()
 	story_dialogue_overlay.name = "StoryDialogue"
 	story_dialogue_overlay.z_index = 292
@@ -414,12 +482,7 @@ func _build_story_hud() -> void:
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(-430.0, -235.0)
 	panel.size = Vector2(860.0, 470.0)
-	var dialogue_style := StyleBoxFlat.new()
-	dialogue_style.bg_color = Color(0.055, 0.045, 0.038, 0.98)
-	dialogue_style.border_color = Color(0.88, 0.65, 0.31)
-	dialogue_style.set_border_width_all(3)
-	dialogue_style.set_corner_radius_all(16)
-	panel.add_theme_stylebox_override("panel", dialogue_style)
+	panel.add_theme_stylebox_override("panel", UiTheme.panel(UiTheme.INK, UiTheme.AMBER, 18))
 	story_dialogue_overlay.add_child(panel)
 	var dialogue_margin := MarginContainer.new()
 	dialogue_margin.add_theme_constant_override("margin_left", 34)
@@ -442,11 +505,18 @@ func _build_story_hud() -> void:
 	story_dialogue_body.add_theme_font_size_override("normal_font_size", 18)
 	story_dialogue_body.add_theme_color_override("default_color", Color(0.94, 0.91, 0.82))
 	dialogue_content.add_child(story_dialogue_body)
-	var close_button := Button.new()
-	close_button.text = "Continuar  ·  Esc"
-	close_button.custom_minimum_size = Vector2(0.0, 42.0)
-	close_button.pressed.connect(func() -> void: _set_story_dialogue_open(false))
-	dialogue_content.add_child(close_button)
+	# Las respuestas. Van en su propia caja porque una conversación con opciones
+	# y otra sin ellas usan el mismo panel: se enseña una u otra.
+	story_dialogue_choices = VBoxContainer.new()
+	story_dialogue_choices.name = "StoryDialogueChoices"
+	story_dialogue_choices.add_theme_constant_override("separation", 6)
+	story_dialogue_choices.visible = false
+	dialogue_content.add_child(story_dialogue_choices)
+	story_dialogue_close = Button.new()
+	story_dialogue_close.text = "Continuar  ·  Esc"
+	story_dialogue_close.custom_minimum_size = Vector2(0.0, 42.0)
+	story_dialogue_close.pressed.connect(func() -> void: _set_story_dialogue_open(false))
+	dialogue_content.add_child(story_dialogue_close)
 
 
 func _on_story_objective_changed(objective: Dictionary) -> void:
@@ -455,41 +525,201 @@ func _on_story_objective_changed(objective: Dictionary) -> void:
 
 
 func _refresh_story_hint() -> void:
+	## La pista ya no habla de las 200 zonas de exploración —eso es el diario—:
+	## habla de LO QUE ESTÁS SIGUIENDO. Con P se rota entre la historia y cada
+	## encargo aceptado, y cada ficha dice rumbo y distancia reales, porque en
+	## una isla de 12 x 12 km "busca las marcas del Eco" no es una pista.
 	if story_hint_label == null:
 		return
-	if story_current_objective.is_empty():
-		story_hint_label.text = "LA VOZ DE AELORIA\nLa isla recuerda tu viaje completo."
+	var cards := _hint_cards()
+	if cards.is_empty():
+		story_hint_label.text = "SIN RASTRO QUE SEGUIR\n\nHabla con los habitantes para\nque te encarguen algo."
 		return
-	var order := int(story_current_objective.get("story_order", 1))
-	var step := posmod(order - 1, 25) + 1
-	var compact := "%s  ·  %d/25\n◆ %s" % [
-		String(story_current_objective.get("chapter_title", "AVENTURA")),
-		step,
-		String(story_current_objective.get("name", "Sigue el sendero")),
-	]
-	if story_hint_expanded:
-		compact = "%s\n\n%s\n\nRECOMPENSA: %s\nP · ocultar pista" % [
-		compact.get_slice("\n", 0) + "\n◆ " + String(story_current_objective.get("name", "Sigue el sendero")),
-		String(story_current_objective.get("description", "Busca las marcas del Eco.")),
-		String(story_current_objective.get("reward_preview", "Progreso de historia")),
-		]
-	story_hint_label.text = compact
+	var card: Dictionary = cards[posmod(story_hint_index, cards.size())]
+	var lines := PackedStringArray()
+	lines.append(String(card["kicker"]))
+	lines.append("◆ %s" % String(card["title"]))
+	lines.append("")
+	lines.append(String(card["body"]))
+	if not String(card.get("where", "")).is_empty():
+		lines.append("")
+		lines.append(String(card["where"]))
+	var bearing := String(card.get("bearing", ""))
+	if not bearing.is_empty():
+		lines.append("")
+		lines.append(bearing)
+	if not String(card.get("tail", "")).is_empty():
+		lines.append("")
+		lines.append(String(card["tail"]))
+	lines.append("")
+	lines.append("P · %s" % ("siguiente pista (%d/%d)" % [
+		posmod(story_hint_index, cards.size()) + 1, cards.size()] if cards.size() > 1 else "ocultar"))
+	story_hint_label.text = "\n".join(lines)
+
+
+func _hint_cards() -> Array[Dictionary]:
+	var cards: Array[Dictionary] = []
+	var runtime := get_tree().root.find_child("RPGStoryRuntime", true, false)
+	if runtime == null:
+		return cards
+	var hero := get_tree().root.find_child("Player", true, false) as Node3D
+	var campaign = runtime.get("campaign")
+	if campaign != null:
+		for raw in (campaign.call("open_acts") as Array):
+			var act: Dictionary = raw
+			cards.append({
+				"kicker": "HISTORIA",
+				"title": "Acto %s · %s" % [String(act["numeral"]), String(act["title"])],
+				"body": String(act["goal"]),
+				"where": String(act["hint"]),
+				"bearing": _bearing_line(hero, RPGCampaign.where_of(act)),
+				"tail": "Te enseñará: %s." % String(act["teaches"]),
+			})
+	var quests = runtime.get("sidequests")
+	if quests != null:
+		for quest in RPGSideQuests.QUESTS:
+			if not bool(quests.call("is_taken", quest)) or bool(quests.call("is_done", quest)):
+				continue
+			var have: int = quests.call("progress_of", quest)
+			var need := int(quest["needed"])
+			cards.append({
+				"kicker": "ENCARGO",
+				"title": String(quest["title"]),
+				"body": String(quest["brief"]),
+				"where": String(quest.get("where", "")),
+				"bearing": _quest_bearing(hero, quest, quests),
+				"tail": "Llevas %d de %d." % [mini(have, need), need],
+			})
+	return cards
+
+
+func _quest_bearing(hero: Node3D, quest: Dictionary, quests: Node = null) -> String:
+	## Para una cacería el rumbo apunta a la criatura viva más cercana QUE
+	## CUENTE. Desde que cada cacería tiene comarca, apuntar a la más cercana a
+	## secas mandaba al jugador a matar bichos que no suman: peor que no decir
+	## nada. Si no queda ninguna a la vista, apunta a la comarca.
+	if hero == null or int(quest["kind"]) != RPGSideQuests.Kind.HUNT:
+		return ""
+	var target := String(quest["target"])
+	var best := INF
+	var spot := Vector2.ZERO
+	for node in get_tree().get_nodes_in_group("rpg_enemy"):
+		var creature := node as Node3D
+		if creature == null or not String(creature.get("enemy_id")).begins_with(target):
+			continue
+		if bool(creature.get("dead")):
+			continue
+		var here := Vector2(creature.global_position.x, creature.global_position.z)
+		if quests != null and not bool(quests.call("counts_here", quest, here)):
+			continue
+		var distance := here.distance_to(Vector2(hero.global_position.x, hero.global_position.z))
+		if distance < best:
+			best = distance
+			spot = here
+	if best == INF:
+		if float(quest.get("zone", 0.0)) > 0.0:
+			return _bearing_line(hero, quest.get("at", Vector2.ZERO))
+		return ""
+	return _bearing_line(hero, spot)
+
+
+func _bearing_line(hero: Node3D, target) -> String:
+	if hero == null or target == null:
+		return ""
+	var spot: Vector2 = target
+	var here := Vector2(hero.global_position.x, hero.global_position.z)
+	var delta := spot - here
+	var distance := delta.length()
+	if distance < 1.0:
+		return "Estás encima."
+	var compass := PackedStringArray(["N", "NE", "E", "SE", "S", "SO", "O", "NO"])
+	# El norte del mundo es -Z; el ángulo se mide desde ahí en sentido horario.
+	var angle := rad_to_deg(atan2(delta.x, -delta.y))
+	var facing: String = compass[int(round(posmod(angle, 360.0) / 45.0)) % 8]
+	if distance >= 1000.0:
+		return "Rumbo %s · a %.1f km" % [facing, distance / 1000.0]
+	return "Rumbo %s · a %d m" % [facing, roundi(distance)]
+
+
+func _cycle_story_hint() -> void:
+	## P abre la primera ficha, luego pasa a la siguiente, y al llegar al final
+	## se cierra. Un solo botón para "¿dónde voy?" y para "¿y lo otro?".
+	var total := _hint_cards().size()
+	if not story_hint_expanded:
+		story_hint_index = 0
+		_set_story_hint_expanded(true)
+		return
+	story_hint_index += 1
+	if total <= 0 or story_hint_index >= total:
+		_set_story_hint_expanded(false)
+		return
+	_refresh_story_hint()
 
 
 func _set_story_hint_expanded(open: bool) -> void:
 	story_hint_expanded = open
 	if story_hint_panel != null:
 		story_hint_panel.visible = open
-		story_hint_panel.position.y = 218.0
-		story_hint_panel.size.y = 288.0
+		story_hint_panel.position.y = 430.0
+		story_hint_panel.size.y = 306.0
 		story_hint_panel.set_meta("expanded", open)
 	_refresh_story_hint()
 
 
 func _on_story_dialogue_requested(speaker: String, role: String, title: String, body: String) -> void:
+	_show_dialogue(speaker, role, title, body, [])
+
+
+func _on_dialogue_with_choices(speaker: String, role: String, title: String, body: String, choices: Array) -> void:
+	_show_dialogue(speaker, role, title, body, choices)
+
+
+func _show_dialogue(speaker: String, role: String, title: String, body: String, choices: Array) -> void:
 	story_dialogue_title.text = "%s · %s\n%s" % [speaker, role, title]
 	story_dialogue_body.text = body
+	for old in story_dialogue_choices.get_children():
+		old.queue_free()
+	var offered := not choices.is_empty()
+	story_dialogue_choices.visible = offered
+	story_dialogue_close.visible = not offered
+	if offered:
+		var index := 0
+		for raw in choices:
+			var choice: Dictionary = raw
+			var button := Button.new()
+			# El número delante permite contestar con el teclado, que es como se
+			# contesta en un juego con las manos ocupadas.
+			button.text = "%d.  %s" % [index + 1, String(choice["line"])]
+			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.custom_minimum_size = Vector2(0.0, 38.0)
+			button.add_theme_font_size_override("font_size", 16)
+			button.tooltip_text = _tone_hint(String(choice["tone"]))
+			var picked := index
+			button.pressed.connect(func() -> void: _answer_dialogue(picked))
+			story_dialogue_choices.add_child(button)
+			index += 1
+		_pending_choices = choices.duplicate(true)
+	else:
+		_pending_choices.clear()
 	_set_story_dialogue_open(true)
+
+
+func _tone_hint(tone: String) -> String:
+	match tone:
+		"humilde":
+			return "Piden menos y te lo cuentan todo. Pagan menos."
+		"altivo":
+			return "Piden más y pagan mucho más. No te dirán dónde buscar."
+		_:
+			return "El trato tal cual."
+
+
+func _answer_dialogue(index: int) -> void:
+	var runtime := get_tree().root.find_child("RPGStoryRuntime", true, false)
+	if runtime != null and runtime.has_method("answer_dialogue") and index < _pending_choices.size():
+		runtime.call("answer_dialogue", _pending_choices[index])
+	_pending_choices.clear()
+	_set_story_dialogue_open(false)
 
 
 func _set_story_dialogue_open(open: bool) -> void:
@@ -506,12 +736,346 @@ func _set_story_dialogue_open(open: bool) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+func _build_quest_tracker() -> void:
+	## Seguidor de misiones, a la derecha y bajo el minimapa. La historia y los
+	## encargos van en BLOQUES SEPARADOS: son dos cosas distintas y el jugador
+	## decide a cuál atender. Antes todo iba junto en una línea de arriba con las
+	## 200 zonas de exploración de por medio, y no se entendía qué contaba qué.
+	quest_tracker_panel = PanelContainer.new()
+	quest_tracker_panel.name = "QuestTracker"
+	quest_tracker_panel.z_index = 74
+	quest_tracker_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	quest_tracker_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	quest_tracker_panel.position = Vector2(-336.0, 208.0)
+	quest_tracker_panel.custom_minimum_size = Vector2(316.0, 0.0)
+	var frame := StyleBoxFlat.new()
+	frame.bg_color = Color(0.035, 0.032, 0.042, 0.86)
+	frame.set_corner_radius_all(10)
+	frame.set_border_width_all(1)
+	frame.border_color = Color(0.62, 0.48, 0.26, 0.50)
+	frame.shadow_color = Color(0.0, 0.0, 0.0, 0.40)
+	frame.shadow_size = 6
+	frame.set_content_margin_all(13)
+	quest_tracker_panel.add_theme_stylebox_override("panel", frame)
+	add_child(quest_tracker_panel)
+	quest_tracker_rows = VBoxContainer.new()
+	quest_tracker_rows.add_theme_constant_override("separation", 3)
+	quest_tracker_panel.add_child(quest_tracker_rows)
+
+
+## Estandarte de jefe. Antes entrabas a una arena y no sabías ni en qué fase
+## iba, ni qué mecánica te exigía, ni que el sitio iba a pelear contigo: te
+## enterabas cuando ya te había mordido. Las tres cosas caben en cuatro líneas.
+const BOSS_BANNER_REACH := 62.0
+const DEMAND_NAMES := ["escudo", "arco", "carga", "esquiva", "las cuatro"]
+
+
+func _build_boss_banner() -> void:
+	boss_banner = PanelContainer.new()
+	boss_banner.name = "BossBanner"
+	boss_banner.z_index = 78
+	boss_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	boss_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	# Debajo de la línea de avisos (y=90): puesto a la misma altura, el aviso
+	# «Acto III · La corona de invierno · Coloso de Escarcha» quedaba escrito
+	# por detrás del estandarte y se leían los dos a la vez.
+	boss_banner.position = Vector2(-232.0, 124.0)
+	boss_banner.custom_minimum_size = Vector2(464.0, 0.0)
+	boss_banner.visible = false
+	var frame := StyleBoxFlat.new()
+	frame.bg_color = Color(0.05, 0.022, 0.026, 0.88)
+	frame.set_corner_radius_all(12)
+	frame.set_border_width_all(1)
+	frame.border_color = Color(0.78, 0.28, 0.22, 0.62)
+	frame.shadow_color = Color(0.0, 0.0, 0.0, 0.45)
+	frame.shadow_size = 7
+	frame.set_content_margin_all(12)
+	boss_banner.add_theme_stylebox_override("panel", frame)
+	add_child(boss_banner)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 4)
+	boss_banner.add_child(rows)
+	boss_banner_name = Label.new()
+	boss_banner_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_banner_name.add_theme_font_size_override("font_size", 19)
+	boss_banner_name.add_theme_color_override("font_color", Color(0.97, 0.86, 0.72))
+	rows.add_child(boss_banner_name)
+	boss_banner_bar = UiVitalBar.new()
+	boss_banner_bar.custom_minimum_size = Vector2(0.0, 17.0)
+	boss_banner_bar.bright = Color(0.90, 0.30, 0.24)
+	boss_banner_bar.deep = Color(0.30, 0.05, 0.06)
+	boss_banner_bar.icon = "heart"
+	boss_banner_bar.warn_below = 0.34
+	rows.add_child(boss_banner_bar)
+	boss_banner_demand = Label.new()
+	boss_banner_demand.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_banner_demand.add_theme_font_size_override("font_size", 14)
+	boss_banner_demand.add_theme_color_override("font_color", Color(0.92, 0.78, 0.44))
+	rows.add_child(boss_banner_demand)
+	boss_banner_site = Label.new()
+	boss_banner_site.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_banner_site.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	boss_banner_site.add_theme_font_size_override("font_size", 13)
+	boss_banner_site.add_theme_color_override("font_color", Color(0.72, 0.78, 0.86))
+	rows.add_child(boss_banner_site)
+
+
+func refresh_boss_banner() -> void:
+	if boss_banner == null:
+		return
+	var hero := get_tree().get_first_node_in_group("local_player") as Node3D
+	var near: Node = null
+	var best := BOSS_BANNER_REACH
+	if hero != null:
+		for node in get_tree().get_nodes_in_group("rpg_boss"):
+			var boss := node as Node3D
+			if boss == null or bool(boss.get("dead")) or bool(boss.get("sealed")):
+				continue
+			var span := hero.global_position.distance_to(boss.global_position)
+			if span < best:
+				best = span
+				near = boss
+	for node in get_tree().get_nodes_in_group("rpg_boss"):
+		if node != near and node.has_method("set_banner_shown"):
+			node.call("set_banner_shown", false)
+	if near == null:
+		boss_banner.visible = false
+		return
+	boss_banner.visible = true
+	if near.has_method("set_banner_shown"):
+		near.call("set_banner_shown", true)
+	var phases := 3
+	boss_banner_name.text = "%s · fase %d de %d" % [
+		String(near.get("display_name")).to_upper(), int(near.get("phase")), phases]
+	boss_banner_bar.set_values(float(near.get("health")), float(near.get("max_health")))
+	var demand := int(near.get("demand"))
+	var line := "Exige: %s" % DEMAND_NAMES[clampi(demand, 0, DEMAND_NAMES.size() - 1)]
+	var ward := int(near.get("_ward"))
+	if ward > 0:
+		# Rombos llenos: lo que le queda de coraza. Es la única lectura de si
+		# estás resolviendo la mecánica o pegando en balde.
+		line += "   coraza %s" % "◆".repeat(ward)
+	elif int(near.get("stance")) == RPGBoss.Stance.OPEN:
+		line += "   ¡EXPUESTO!"
+	boss_banner_demand.text = line
+	var site: Node = near.get("hazard")
+	boss_banner_site.text = String(site.call("_rule")) if site != null else ""
+
+
+## Tira de aliados, encima de las barras del héroe. Sólo se ve si has ganado a
+## alguien, así que la mayor parte de la partida no ocupa nada.
+func _build_ally_strip() -> void:
+	ally_strip = PanelContainer.new()
+	ally_strip.name = "AllyStrip"
+	ally_strip.z_index = 74
+	ally_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ally_strip.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	ally_strip.position = Vector2(20.0, -224.0)
+	ally_strip.custom_minimum_size = Vector2(292.0, 0.0)
+	ally_strip.visible = false
+	var frame := StyleBoxFlat.new()
+	frame.bg_color = Color(0.035, 0.032, 0.042, 0.82)
+	frame.set_corner_radius_all(10)
+	frame.set_border_width_all(1)
+	frame.border_color = Color(0.40, 0.56, 0.72, 0.46)
+	frame.set_content_margin_all(11)
+	ally_strip.add_theme_stylebox_override("panel", frame)
+	add_child(ally_strip)
+	ally_strip_rows = VBoxContainer.new()
+	ally_strip_rows.add_theme_constant_override("separation", 3)
+	ally_strip.add_child(ally_strip_rows)
+
+
+func refresh_ally_strip() -> void:
+	if ally_strip == null:
+		return
+	var runtime := get_tree().get_first_node_in_group("rpg_story_runtime")
+	if runtime == null or not runtime.has_method("companion_roster"):
+		ally_strip.visible = false
+		return
+	var roster: Array = runtime.call("companion_roster")
+	if roster.is_empty():
+		ally_strip.visible = false
+		return
+	ally_strip.visible = true
+	for child in ally_strip_rows.get_children():
+		child.queue_free()
+	for mate in roster:
+		var row := Label.new()
+		row.add_theme_font_size_override("font_size", 13)
+		var state := String(mate.call("status_line"))
+		var mark := "◆" if not bool(mate.get("downed")) else "◇"
+		var vigour := ""
+		if bool(mate.call("is_here")) and not bool(mate.get("downed")):
+			var full := maxi(int(mate.get("max_health")), 1)
+			var filled := int(round(8.0 * float(mate.get("health")) / float(full)))
+			vigour = "  %s%s" % ["█".repeat(maxi(filled, 0)), "░".repeat(maxi(8 - filled, 0))]
+		row.text = "%s %s%s   %s" % [mark, String(mate.get("display_name")).to_upper(), vigour, state]
+		var tone := Color(0.86, 0.90, 0.96)
+		if bool(mate.get("downed")):
+			tone = Color(0.82, 0.44, 0.40)
+		elif bool(mate.call("is_available")):
+			tone = Color(0.66, 0.88, 0.68)
+		row.add_theme_color_override("font_color", tone)
+		ally_strip_rows.add_child(row)
+
+
+func refresh_quest_tracker() -> void:
+	if quest_tracker_rows == null:
+		return
+	for child in quest_tracker_rows.get_children():
+		child.queue_free()
+	var runtime := get_tree().root.find_child("RPGStoryRuntime", true, false)
+	if runtime == null:
+		return
+	var campaign = runtime.get("campaign")
+	var quests = runtime.get("sidequests")
+
+	if campaign != null:
+		var open: Array = campaign.call("open_acts")
+		_tracker_heading("HISTORIA", Color(0.98, 0.78, 0.42))
+		if open.is_empty():
+			_tracker_line("Aeloria ha recuperado su voz.", Color(0.86, 0.84, 0.78), "")
+		else:
+			# Con tres caminos a la vez hay que enseñar los tres: elegir es
+			# parte de la aventura y no se puede elegir lo que no se ve.
+			for raw in open:
+				var act: Dictionary = raw
+				_tracker_line("%s · %s" % [String(act["numeral"]), String(act["title"])],
+					Color(1.0, 0.93, 0.80), "", 13)
+				if open.size() == 1:
+					_tracker_line(String(act["goal"]), Color(0.80, 0.77, 0.70), "›")
+			if open.size() > 1:
+				_tracker_line("Elige por dónde. Con P los ves todos.",
+					Color(0.74, 0.71, 0.66), "", 11)
+			var progress: Dictionary = campaign.call("progress")
+			_tracker_line("Nombres recuperados", Color(0.70, 0.66, 0.60), "",
+				11, "%d/%d" % [int(progress["relics"]), int(progress["total"])])
+
+	if quests != null:
+		var taken := _tracked_quests(quests)
+		if not taken.is_empty():
+			_tracker_gap()
+			_tracker_heading("ENCARGOS", Color(0.62, 0.86, 0.98))
+			for quest in taken:
+				var have: int = quests.call("progress_of", quest)
+				var need := int(quest["needed"])
+				_tracker_line(String(quest["title"]), Color(0.88, 0.92, 0.96), "›",
+					12, "%d/%d" % [mini(have, need), need])
+		var done := int(quests.call("completed_count"))
+		if taken.is_empty() and done > 0:
+			_tracker_gap()
+			_tracker_heading("ENCARGOS", Color(0.62, 0.86, 0.98))
+			_tracker_line("Habla con los habitantes", Color(0.74, 0.78, 0.82), "›",
+				12, "%d/%d" % [done, RPGSideQuests.QUESTS.size()])
+
+
+func _tracked_quests(quests: Node) -> Array:
+	## Sólo los aceptados y sin entregar, y como mucho tres: un seguidor con
+	## dieciocho líneas deja de ser un seguidor.
+	var out: Array = []
+	for quest in RPGSideQuests.QUESTS:
+		if bool(quests.call("is_taken", quest)) and not bool(quests.call("is_done", quest)):
+			out.append(quest)
+		if out.size() >= 3:
+			break
+	return out
+
+
+func _tracker_heading(text: String, tint: Color) -> void:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 10)
+	label.add_theme_color_override("font_color", tint)
+	quest_tracker_rows.add_child(label)
+	var rule := ColorRect.new()
+	rule.color = Color(tint, 0.28)
+	rule.custom_minimum_size = Vector2(0.0, 1.0)
+	quest_tracker_rows.add_child(rule)
+
+
+func _tracker_gap() -> void:
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0.0, 8.0)
+	quest_tracker_rows.add_child(gap)
+
+
+func _tracker_line(text: String, tint: Color, bullet: String, font_size := 12, tail := "") -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 5)
+	quest_tracker_rows.add_child(row)
+	if not bullet.is_empty():
+		var mark := Label.new()
+		mark.text = bullet
+		mark.add_theme_font_size_override("font_size", font_size)
+		mark.add_theme_color_override("font_color", Color(tint, 0.7))
+		row.add_child(mark)
+	var body := Label.new()
+	body.text = text
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_font_size_override("font_size", font_size)
+	body.add_theme_color_override("font_color", tint)
+	row.add_child(body)
+	if not tail.is_empty():
+		var count := Label.new()
+		count.text = tail
+		count.add_theme_font_size_override("font_size", font_size)
+		count.add_theme_color_override("font_color", Color(tint, 0.82))
+		row.add_child(count)
+
+
+func _build_vitals_panel() -> void:
+	## Vida y vigor, abajo a la izquierda. La vida ya se pintaba, pero en una
+	## tira de nueve píxeles metida dentro del panel de pistas: no se leía y no
+	## había ningún sitio donde ver el vigor, que es lo que limita la fuerza
+	## especial. Las barras se dibujan a mano (UiVitalBar) porque un ProgressBar
+	## no da bisel, degradado, marcas de segmento ni estela de daño.
+	vitals_panel = PanelContainer.new()
+	vitals_panel.name = "Vitals"
+	vitals_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	vitals_panel.position = Vector2(20.0, -118.0)
+	var frame := StyleBoxFlat.new()
+	frame.bg_color = Color(0.045, 0.04, 0.05, 0.72)
+	frame.set_corner_radius_all(9)
+	frame.set_border_width_all(1)
+	frame.border_color = Color(0.62, 0.48, 0.26, 0.55)
+	frame.set_content_margin_all(11)
+	frame.shadow_color = Color(0.0, 0.0, 0.0, 0.45)
+	frame.shadow_size = 7
+	vitals_panel.add_theme_stylebox_override("panel", frame)
+	add_child(vitals_panel)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 5)
+	vitals_panel.add_child(rows)
+
+	vitals_health_bar = UiVitalBar.new()
+	vitals_health_bar.icon = "heart"
+	vitals_health_bar.bright = Color(0.97, 0.33, 0.28)
+	vitals_health_bar.deep = Color(0.38, 0.06, 0.08)
+	rows.add_child(vitals_health_bar)
+
+	vitals_stamina_bar = UiVitalBar.new()
+	vitals_stamina_bar.icon = "drop"
+	vitals_stamina_bar.bright = Color(0.32, 0.68, 0.99)
+	vitals_stamina_bar.deep = Color(0.06, 0.20, 0.44)
+	vitals_stamina_bar.warn_below = 0.18
+	rows.add_child(vitals_stamina_bar)
+
+
+func _on_player_stamina_changed(current: float, maximum: float) -> void:
+	if vitals_stamina_bar != null:
+		vitals_stamina_bar.set_values(current, maximum)
+
+
 func _on_player_health_changed(current: int, maximum: int) -> void:
 	if player_health_bar == null:
 		return
 	player_health_bar.max_value = maximum
 	player_health_bar.value = current
 	player_health_bar.tooltip_text = "Vida · %d/%d" % [current, maximum]
+	if vitals_health_bar != null:
+		vitals_health_bar.set_values(float(current), float(maximum))
 
 
 func _build_settings_overlay() -> void:
@@ -529,12 +1093,7 @@ func _build_settings_overlay() -> void:
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(-450.0, -345.0)
 	panel.size = Vector2(900.0, 690.0)
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.045, 0.065, 0.075, 0.98)
-	panel_style.border_color = Color(0.77, 0.60, 0.32, 0.92)
-	panel_style.set_border_width_all(2)
-	panel_style.set_corner_radius_all(14)
-	panel.add_theme_stylebox_override("panel", panel_style)
+	panel.add_theme_stylebox_override("panel", UiTheme.panel(UiTheme.INK, UiTheme.AMBER_DIM, 18))
 	settings_overlay.add_child(panel)
 
 	var padding := MarginContainer.new()
@@ -696,12 +1255,7 @@ func _build_lobby_overlay() -> void:
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(-410.0, -355.0)
 	panel.size = Vector2(820.0, 710.0)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.045, 0.067, 0.073, 0.99)
-	style.border_color = Color(0.78, 0.60, 0.31, 0.95)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(16)
-	panel.add_theme_stylebox_override("panel", style)
+	panel.add_theme_stylebox_override("panel", UiTheme.panel(UiTheme.INK, UiTheme.AMBER_DIM, 18))
 	lobby_overlay.add_child(panel)
 
 	var margin := MarginContainer.new()
@@ -1034,14 +1588,15 @@ func _build_exploration_hud() -> void:
 	exploration_progress_panel.z_index = 70
 	exploration_progress_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	exploration_progress_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	# Las 200 zonas son EXPLORACIÓN, no la historia. Tenerlas fijas arriba junto
+	# al acto mezclaba tres progresiones distintas en la misma línea y no se
+	# entendía nada: ahora sólo aparecen con el diario, que es su sitio.
+	exploration_progress_panel.visible = false
 	exploration_progress_panel.position = Vector2(-190.0, 10.0)
 	exploration_progress_panel.size = Vector2(380.0, 48.0)
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.035, 0.052, 0.045, 0.88)
-	panel_style.border_color = Color(0.82, 0.64, 0.32, 0.92)
-	panel_style.set_border_width_all(2)
-	panel_style.set_corner_radius_all(12)
-	exploration_progress_panel.add_theme_stylebox_override("panel", panel_style)
+	exploration_progress_panel.add_theme_stylebox_override(
+		"panel", UiTheme.panel(UiTheme.INK_GLASS, UiTheme.AMBER_DIM, UiTheme.RADIUS_CHIP, 11.0, 7.0)
+	)
 	add_child(exploration_progress_panel)
 
 	var margin := MarginContainer.new()
@@ -1060,20 +1615,16 @@ func _build_exploration_hud() -> void:
 	exploration_progress_label.add_theme_font_size_override("font_size", 12)
 	exploration_progress_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.58))
 	content.add_child(exploration_progress_label)
+	# Segunda línea, pequeña: el acto en curso y lo secundario cumplido. La barra
+	# sólo decía cuántas zonas llevabas descubiertas, así que la campaña —que es
+	# el hilo de la aventura— no se veía por ninguna parte.
 	exploration_progress_bar = ProgressBar.new()
 	exploration_progress_bar.name = "ExplorationProgressBar"
 	exploration_progress_bar.max_value = 200.0
 	exploration_progress_bar.value = 0.0
 	exploration_progress_bar.show_percentage = false
 	exploration_progress_bar.custom_minimum_size = Vector2(350.0, 8.0)
-	var background := StyleBoxFlat.new()
-	background.bg_color = Color(0.10, 0.14, 0.11, 0.96)
-	background.set_corner_radius_all(7)
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(0.34, 0.72, 0.30, 0.98)
-	fill.set_corner_radius_all(7)
-	exploration_progress_bar.add_theme_stylebox_override("background", background)
-	exploration_progress_bar.add_theme_stylebox_override("fill", fill)
+	UiTheme.style_progress(exploration_progress_bar, UiTheme.SUCCESS)
 	content.add_child(exploration_progress_bar)
 
 	exploration_prompt = Label.new()
@@ -1108,12 +1659,7 @@ func _build_exploration_journal() -> void:
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(-470.0, -340.0)
 	panel.size = Vector2(940.0, 680.0)
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.11, 0.095, 0.06, 0.99)
-	panel_style.border_color = Color(0.86, 0.67, 0.33, 0.96)
-	panel_style.set_border_width_all(3)
-	panel_style.set_corner_radius_all(16)
-	panel.add_theme_stylebox_override("panel", panel_style)
+	panel.add_theme_stylebox_override("panel", UiTheme.panel(UiTheme.INK, UiTheme.AMBER, 18))
 	exploration_journal_overlay.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 28)
@@ -1125,6 +1671,7 @@ func _build_exploration_journal() -> void:
 	content.add_theme_constant_override("separation", 10)
 	margin.add_child(content)
 	var title := Label.new()
+	journal_title = title
 	title.text = "DIARIO DE AVENTURA · 200 RETOS"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 27)
@@ -1137,6 +1684,7 @@ func _build_exploration_journal() -> void:
 	exploration_journal_summary.add_theme_color_override("font_color", Color(0.88, 0.86, 0.72))
 	content.add_child(exploration_journal_summary)
 	var help := Label.new()
+	journal_help = help
 	help.text = "✓ descubierta · ○ pendiente · Pulsa una entrada para marcarla y verla en el mapa"
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.add_theme_font_size_override("font_size", 14)
@@ -1151,10 +1699,26 @@ func _build_exploration_journal() -> void:
 	exploration_journal_list.add_theme_font_size_override("font_size", 16)
 	exploration_journal_list.item_clicked.connect(_on_exploration_item_clicked)
 	content.add_child(exploration_journal_list)
+	# La crónica ocupa el mismo hueco que la lista de zonas: son dos páginas del
+	# mismo diario, no dos ventanas. Las 200 zonas y la historia contaban cosas
+	# distintas y juntarlas en una sola lista ya fue un error una vez.
+	chronicle_view = RichTextLabel.new()
+	chronicle_view.name = "Chronicle"
+	chronicle_view.bbcode_enabled = true
+	chronicle_view.scroll_active = true
+	chronicle_view.custom_minimum_size = Vector2(870.0, 500.0)
+	chronicle_view.add_theme_font_size_override("normal_font_size", 16)
+	chronicle_view.add_theme_color_override("default_color", Color(0.90, 0.88, 0.80))
+	chronicle_view.visible = false
+	content.add_child(chronicle_view)
 	var buttons := HBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	buttons.add_theme_constant_override("separation", 16)
 	content.add_child(buttons)
+	var flip := Button.new()
+	flip.text = "Crónica / Retos · Tab"
+	flip.pressed.connect(_flip_journal_page)
+	buttons.add_child(flip)
 	var clear_target := Button.new()
 	clear_target.text = "Quitar marcador"
 	clear_target.pressed.connect(_clear_exploration_target)
@@ -1165,8 +1729,34 @@ func _build_exploration_journal() -> void:
 	buttons.add_child(close_button)
 
 
+func _flip_journal_page() -> void:
+	journal_page = 1 - journal_page
+	_apply_journal_page()
+
+
+func _apply_journal_page() -> void:
+	var chronicle := journal_page == 0
+	if chronicle_view != null:
+		chronicle_view.visible = chronicle
+	if exploration_journal_list != null:
+		exploration_journal_list.visible = not chronicle
+	if exploration_journal_summary != null:
+		exploration_journal_summary.visible = not chronicle
+	if journal_help != null:
+		journal_help.visible = not chronicle
+	if journal_title != null:
+		journal_title.text = "CRÓNICA DE LA ISLA" if chronicle else "DIARIO DE AVENTURA · 200 RETOS"
+	if chronicle:
+		var runtime := get_tree().get_first_node_in_group("rpg_story_runtime")
+		if runtime != null and runtime.has_method("chronicle"):
+			chronicle_view.text = String(runtime.call("chronicle"))
+	else:
+		_rebuild_exploration_journal()
+
+
 func _set_exploration_journal_open(open: bool) -> void:
 	exploration_journal_open = open
+	_sync_exploration_panel()
 	exploration_journal_overlay.visible = open
 	if open:
 		map_open = false
@@ -1176,7 +1766,7 @@ func _set_exploration_journal_open(open: bool) -> void:
 		credits_overlay.visible = false
 		controls_panel.visible = false
 		mini_map.visible = false
-		_rebuild_exploration_journal()
+		_apply_journal_page()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		get_tree().paused = true
 	else:
@@ -1188,6 +1778,11 @@ func _set_exploration_journal_open(open: bool) -> void:
 
 func is_exploration_journal_open() -> bool:
 	return exploration_journal_open
+
+
+func _sync_exploration_panel() -> void:
+	if exploration_progress_panel != null:
+		exploration_progress_panel.visible = exploration_journal_open
 
 
 func _rebuild_exploration_journal() -> void:
@@ -1255,6 +1850,40 @@ func _on_exploration_progress_changed(completed: int, total: int, ratio: float) 
 		]
 	if exploration_journal_open:
 		_rebuild_exploration_journal()
+	_sync_exploration_panel()
+
+
+func refresh_campaign_bar() -> void:
+	## Compatibilidad: quien avisaba a la barra de arriba ahora refresca el
+	## seguidor de la derecha, que es donde vive esa información.
+	refresh_quest_tracker()
+	if true:
+		return
+	## La llaman el guion RPG al cambiar de acto y al cerrar un encargo. Se
+	## recalcula entera en vez de ir sumando: así lo que se lee sale siempre del
+	## estado real y no de una cuenta que pudiera desincronizarse.
+	if campaign_progress_label == null:
+		return
+	var runtime := get_tree().root.find_child("RPGStoryRuntime", true, false)
+	if runtime == null:
+		return
+	var campaign = runtime.get("campaign")
+	var quests = runtime.get("sidequests")
+	if campaign == null:
+		return
+	var progress: Dictionary = campaign.call("progress")
+	var done := 0
+	var total := 0
+	if quests != null:
+		done = int(quests.call("completed_count"))
+		total = int(RPGSideQuests.QUESTS.size())
+	var taken := 0 if quests == null else int(quests.call("taken_count"))
+	var pending := "" if taken <= 0 else " · %d en curso" % taken
+	campaign_progress_label.text = "◆ %s · reliquias %d/%d · encargos %d/%d%s" % [
+		String(campaign.call("headline")),
+		int(progress["relics"]), int(progress["total"]),
+		done, total, pending,
+	]
 
 
 func _on_exploration_nearby_changed(zone: Dictionary) -> void:
@@ -1277,6 +1906,7 @@ func _on_exploration_zone_discovered(zone: Dictionary, completed: int, total: in
 func _on_exploration_selected_changed(_zone: Dictionary) -> void:
 	if exploration_journal_open:
 		_rebuild_exploration_journal()
+	_sync_exploration_panel()
 
 
 func _refresh_exploration_prompt() -> void:
@@ -1298,12 +1928,9 @@ func _build_quickbar() -> void:
 	quickbar_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	quickbar_panel.position = Vector2(-344.0, -70.0)
 	quickbar_panel.size = Vector2(324.0, 52.0)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.025, 0.035, 0.028, 0.84)
-	style.border_color = Color(0.80, 0.61, 0.29, 0.94)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(13)
-	quickbar_panel.add_theme_stylebox_override("panel", style)
+	quickbar_panel.add_theme_stylebox_override(
+		"panel", UiTheme.panel(UiTheme.INK_GLASS, UiTheme.AMBER_DIM, UiTheme.RADIUS_PANEL, 8.0, 5.0)
+	)
 	add_child(quickbar_panel)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -1316,13 +1943,7 @@ func _build_quickbar() -> void:
 		button.expand_icon = true
 		button.add_theme_constant_override("icon_max_width", 27)
 		button.add_theme_font_size_override("font_size", 11)
-		button.add_theme_color_override("font_color", Color(1.0, 0.88, 0.55))
-		var slot_style := StyleBoxFlat.new()
-		slot_style.bg_color = Color(0.08, 0.11, 0.08, 0.92)
-		slot_style.border_color = Color(0.53, 0.47, 0.28, 0.92)
-		slot_style.set_border_width_all(2)
-		slot_style.set_corner_radius_all(13)
-		button.add_theme_stylebox_override("normal", slot_style)
+		UiTheme.style_button(button)
 		button.pressed.connect(_on_quickslot_button_pressed.bind(slot))
 		row.add_child(button)
 		quickbar_buttons.append(button)
@@ -1339,12 +1960,7 @@ func _build_quickbar() -> void:
 	horse_call_button.tooltip_text = "Llamar a Brisa"
 	horse_call_button.custom_minimum_size = Vector2(42.0, 42.0)
 	horse_call_button.add_theme_font_size_override("font_size", 11)
-	var horse_style := StyleBoxFlat.new()
-	horse_style.bg_color = Color(0.17, 0.12, 0.065, 0.94)
-	horse_style.border_color = Color(0.93, 0.69, 0.31, 0.96)
-	horse_style.set_border_width_all(2)
-	horse_style.set_corner_radius_all(13)
-	horse_call_button.add_theme_stylebox_override("normal", horse_style)
+	UiTheme.style_button(horse_call_button, UiTheme.AMBER)
 	horse_call_button.pressed.connect(_call_horse)
 	row.add_child(horse_call_button)
 
@@ -1358,14 +1974,7 @@ func _build_quickbar() -> void:
 	bow_power_bar.size = Vector2(180.0, 12.0)
 	bow_power_bar.max_value = 1.0
 	bow_power_bar.show_percentage = false
-	var power_background := StyleBoxFlat.new()
-	power_background.bg_color = Color(0.05, 0.06, 0.05, 0.82)
-	power_background.set_corner_radius_all(6)
-	var power_fill := StyleBoxFlat.new()
-	power_fill.bg_color = Color(0.92, 0.68, 0.24, 0.96)
-	power_fill.set_corner_radius_all(6)
-	bow_power_bar.add_theme_stylebox_override("background", power_background)
-	bow_power_bar.add_theme_stylebox_override("fill", power_fill)
+	UiTheme.style_progress(bow_power_bar, UiTheme.AMBER)
 	add_child(bow_power_bar)
 
 	adventure_action_hint = Label.new()
@@ -1415,12 +2024,7 @@ func _build_inventory_overlay() -> void:
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(-450.0, -330.0)
 	panel.size = Vector2(900.0, 660.0)
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.095, 0.078, 0.045, 0.99)
-	panel_style.border_color = Color(0.88, 0.66, 0.28, 0.98)
-	panel_style.set_border_width_all(3)
-	panel_style.set_corner_radius_all(16)
-	panel.add_theme_stylebox_override("panel", panel_style)
+	panel.add_theme_stylebox_override("panel", UiTheme.panel(UiTheme.INK, UiTheme.AMBER, 18))
 	inventory_overlay.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 28)
@@ -1524,12 +2128,11 @@ func _rebuild_inventory() -> void:
 		]
 		cell.clip_text = true
 		cell.add_theme_font_size_override("font_size", 12)
-		var cell_style := StyleBoxFlat.new()
-		cell_style.bg_color = Color(0.19, 0.15, 0.075, 0.98) if equipped else Color(0.075, 0.085, 0.065, 0.96)
-		cell_style.border_color = Color(1.0, 0.76, 0.27, 1.0) if equipped else Color(0.45, 0.40, 0.25, 0.9)
-		cell_style.set_border_width_all(3 if equipped else 1)
-		cell_style.set_corner_radius_all(12)
-		cell.add_theme_stylebox_override("normal", cell_style)
+		# El objeto equipado se distingue por el acento del borde, no por un
+		# grosor distinto: mantiene todas las celdas de la rejilla alineadas.
+		UiTheme.style_button(cell, UiTheme.AMBER if equipped else UiTheme.MUTED)
+		if equipped:
+			cell.add_theme_stylebox_override("normal", UiTheme.chip(Color(0.19, 0.15, 0.075, 0.96), UiTheme.AMBER))
 		cell.pressed.connect(_on_inventory_item_pressed.bind(String(entry.id)))
 		inventory_grid.add_child(cell)
 		var count_badge := Label.new()
@@ -1587,7 +2190,19 @@ func _refresh_quickbar() -> void:
 		quickbar_buttons[index].icon = icon
 		quickbar_buttons[index].text = str(index + 1) if icon != null else "%d\n%s" % [index + 1, fallback_icons[index]]
 		quickbar_buttons[index].tooltip_text = "%d · %s" % [index + 1, display_name]
-		quickbar_buttons[index].modulate = Color(1.0, 0.78, 0.31) if player != null and player.equipped_slot == index + 1 else Color.WHITE
+		# El hueco activo se marca con el acento del propio tema en vez de
+		# tintar el botón entero, que apagaba el icono del objeto.
+		var active := player != null and player.equipped_slot == index + 1
+		var stowed := active and player != null and player.is_weapon_on_back()
+		quickbar_buttons[index].modulate = Color.WHITE
+		if active:
+			var accent := UiTheme.FROST if stowed else UiTheme.AMBER
+			quickbar_buttons[index].add_theme_stylebox_override(
+				"normal", UiTheme.chip(Color(0.17, 0.21, 0.26, 0.94), accent)
+			)
+			quickbar_buttons[index].add_theme_color_override("font_color", accent)
+		else:
+			UiTheme.style_button(quickbar_buttons[index])
 	if arrow_counter != null:
 		arrow_counter.text = "🏹\n×%d" % _inventory_arrow_count()
 
@@ -1609,16 +2224,78 @@ func _on_player_action_feedback(message: String) -> void:
 	_refresh_quickbar()
 
 
+func _update_arrow_marker() -> void:
+	## Marca de impacto del arco. La retícula del centro dice hacia dónde miras,
+	## no dónde cae la flecha: con la gravedad encima podían diferir más de cien
+	## metros. Esta marca se coloca en el punto donde la flecha se va a clavar de
+	## verdad, así que apuntar deja de ser adivinar.
+	var crosshair := get_node_or_null("Crosshair") as Label
+	if not player.is_drawing_bow:
+		if arrow_impact_marker != null:
+			arrow_impact_marker.visible = false
+		if crosshair != null:
+			crosshair.visible = true
+		return
+	if arrow_impact_marker == null:
+		arrow_impact_marker = Label.new()
+		arrow_impact_marker.name = "ArrowImpactMarker"
+		arrow_impact_marker.text = "⊕"
+		arrow_impact_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		arrow_impact_marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		arrow_impact_marker.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		arrow_impact_marker.add_theme_font_size_override("font_size", 30)
+		add_child(arrow_impact_marker)
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var prediction := player.get_predicted_impact()
+	var impact: Vector3 = prediction.get("position", Vector3.ZERO)
+	if camera.is_position_behind(impact):
+		arrow_impact_marker.visible = false
+		return
+	var screen := camera.unproject_position(impact)
+	arrow_impact_marker.size = Vector2(34.0, 34.0)
+	arrow_impact_marker.position = screen - arrow_impact_marker.size * 0.5
+	arrow_impact_marker.visible = true
+	# Ámbar cuando la flecha llega justo a la retícula; blanco frío cuando se
+	# queda corta, que es la forma de leer el alcance sin ningún número.
+	arrow_impact_marker.add_theme_color_override(
+		"font_color",
+		UiTheme.AMBER if bool(prediction.get("reaches_aim", false)) else UiTheme.FROST
+	)
+	# La retícula del centro estorba encima de la marca: mientras se apunta
+	# manda la marca.
+	if crosshair != null:
+		crosshair.visible = false
+
+
 func _on_bow_draw_changed(strength: float, arrows: int) -> void:
 	if bow_power_bar != null:
 		bow_power_bar.value = strength
 		bow_power_bar.visible = player.is_drawing_bow
+		var fill := bow_power_bar.get_theme_stylebox("fill") as StyleBoxFlat
+		if fill != null:
+			fill.bg_color = Color(0.92, 0.68, 0.24, 0.96)
 	var crosshair := get_node_or_null("Crosshair") as Label
 	if crosshair != null:
 		crosshair.text = "◎" if player.is_drawing_bow else "·"
 		crosshair.add_theme_font_size_override("font_size", 34 if player.is_drawing_bow else 18)
 	if arrow_counter != null:
 		arrow_counter.text = "🏹\n×%d" % arrows
+
+
+func _on_charge_changed(strength: float, spin_ready: bool) -> void:
+	## La carga no lleva barra: la propia tormenta —viento, oscurecimiento y
+	## rayos sobre el filo— dice cuánta fuerza se lleva acumulada, y una barra
+	## encima resultaba fea y redundante.
+	var crosshair := get_node_or_null("Crosshair") as Label
+	if crosshair != null and not player.is_drawing_bow:
+		crosshair.text = "✦" if spin_ready else "·"
+	if spin_ready and not _spin_hint_shown:
+		_spin_hint_shown = true
+		_on_player_action_feedback("¡Fuerza especial lista! Suelta para girar")
+	elif strength <= 0.01:
+		_spin_hint_shown = false
 
 
 func _on_arrow_fired(remaining_arrows: int, _strength: float) -> void:
@@ -1637,6 +2314,12 @@ func _controls_summary() -> String:
 		+ "[b]EQUIPO Y NAVEGACIÓN[/b]\n"
 		+ "1 Espada · 2 Hacha · 3 Arco · 4 Antorcha · I Inventario\n"
 		+ "Con el arco: mantén clic para tensar y apuntar; suelta para disparar\n"
+		+ "Con espada o hacha: un clic da un tajo; mantén hasta cargar la fuerza\n"
+		+ "especial y suelta para el ataque giratorio de 360°, que además tumba\n"
+		+ "la hierba de alrededor. Puedes seguir andando mientras cargas\n"
+		+ "Escudo: mantén el clic derecho para cubrirte; el resto del tiempo va\n"
+		+ "colgado a la espalda, igual que el arma cuando corres sin pelear\n"
+		+ "Esquiva: Ctrl te mueve de costado y Ctrl + dirección + salto rueda\n"
 		+ "5 Dunas · 6 Nieve · 7 Villa · 8 Bosque Umbrío · 9 Bosque Tenebroso\n"
 		+ "Mapa: %s · B Minimapa · L Diario de 200 zonas · N Ayuda · 0 Siguiente jefe final\n" % GameSettings.action_keys("map")
 		+ "Configuración / identidad / multijugador: %s · Esc cerrar ventana / menú de pausa" % GameSettings.action_keys("settings")

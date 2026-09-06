@@ -1,35 +1,40 @@
 class_name RPGStoryCatalog
 extends RefCounted
 
-## Estructura narrativa determinista para los 200 objetivos existentes.
-## No mueve los marcadores: únicamente los ordena como una campaña en ocho
-## capítulos y aporta nombres, contexto, recompensas y personajes relacionados.
+## Estructura narrativa determinista para los 200 objetivos de EXPLORACIÓN.
+## No mueve los marcadores: únicamente los ordena en ocho capítulos y aporta
+## nombres, contexto, recompensas y personajes relacionados.
+##
+## Es la capa de fondo, no la campaña: los cinco actos de RPGCampaign son el
+## hilo. Las dos comparten el mismo mundo, y la clave que las une es que a una
+## campana a la que le raspan el nombre se le va la voz. "El Silencio" no es una
+## criatura: es lo que se extiende por donde ha pasado alguien borrando nombres.
 
 const CHAPTERS: Array[Dictionary] = [
 	{
 		"id": "el_eco_roto", "title": "I · El eco roto", "region": "Puerto Alba y las praderas",
 		"summary": "Las campanas de Aeloria han dejado de responder. Maela, la cartógrafa, reconoce en ti al Portador del Eco y te pide reunir a los primeros testigos.",
-		"finale": "Recupera el Fragmento del Alba antes de que el Silencio borre el camino a Robledal.",
+		"finale": "Averigua quién anda raspando los nombres de las campanas antes de que el camino a Robledal se quede mudo también.",
 	},
 	{
 		"id": "raices_de_robledal", "title": "II · Raíces de Robledal", "region": "Robledal y el bosque occidental",
 		"summary": "Las raíces recuerdan una melodía que los hombres olvidaron. La herborista Tavia guía la búsqueda del segundo fragmento entre bestias inquietas y árboles marcados.",
-		"finale": "Despierta el Corazón de Roble y descubre quién está envenenando los senderos.",
+		"finale": "Descubre qué se está bebiendo las raíces de Robledal por debajo, y de dónde le viene el hambre.",
 	},
 	{
 		"id": "la_bruma_que_habla", "title": "III · La bruma que habla", "region": "Bosque Umbrío y Sierra del Viento",
 		"summary": "Voces perdidas vagan bajo la niebla. El guardabosques Brenn asegura que una de ellas pertenece a la antigua reina de la isla.",
-		"finale": "Cruza la senda de los susurros y libera la voz atrapada en la Piedra de la Bruma.",
+		"finale": "Cruza la senda de los susurros y averigua a quién pertenecen las voces que repiten allí abajo.",
 	},
 	{
 		"id": "corona_de_invierno", "title": "IV · La corona de invierno", "region": "Cordilleras y Cumbres Blancas",
-		"summary": "El Silencio congela los nombres de quienes suben al norte. Ysra, astrónoma boreal, busca tres runas capaces de encender de nuevo el cielo.",
-		"finale": "Abre el observatorio sepultado y reclama la Corona de Escarcha.",
+		"summary": "En el norte los nombres se congelan antes de llegar a decirse. Ysra, astrónoma boreal, lleva cuarenta y un años midiendo un cielo que este invierno no ha girado.",
+		"finale": "Abre el observatorio sepultado y devuélvele su vuelta al cielo del norte.",
 	},
 	{
 		"id": "sol_bajo_la_arena", "title": "V · El sol bajo la arena", "region": "Cumbres Blancas y Oasis Dorado",
 		"summary": "Una ciudad duerme bajo las dunas. Nara, última vigía del oasis, conoce la llave de sus cámaras y el precio que exigió el antiguo rey.",
-		"finale": "Desciende al Santuario Solar y rescata la Brasa que no se apaga.",
+		"finale": "Desciende al Santuario Solar y saca de la arena el guijarro que alguien llevaba bajo la lengua.",
 	},
 	{
 		"id": "mareas_de_cristal", "title": "VI · Mareas de cristal", "region": "Dunas, playas y rías",
@@ -39,12 +44,12 @@ const CHAPTERS: Array[Dictionary] = [
 	{
 		"id": "las_cuatro_llaves", "title": "VII · Las cuatro llaves", "region": "Costa, castillos y frontera oriental",
 		"summary": "Los cuatro fragmentos señalan puertas más antiguas que los castillos. Reúne las llaves de sus guardianes y prepara a las villas para la última noche.",
-		"finale": "Abre las grutas selladas y forja el arma capaz de herir al Silencio.",
+		"finale": "Abre las grutas selladas y forja el filo capaz de morder a algo que ya no tiene nombre.",
 	},
 	{
 		"id": "la_voz_del_horizonte", "title": "VIII · La voz del horizonte", "region": "Bosque Tenebroso",
 		"summary": "En el confín oriental, los árboles rojos crecen alrededor de una voz sin cuerpo. Allí aguarda Vaelor, criatura nacida de todo lo que Aeloria decidió olvidar.",
-		"finale": "Entra en la Cámara sin Eco, derrota a Vaelor y devuelve su voz a la isla.",
+		"finale": "Entra en la Cámara sin Eco, enfréntate a Vaelor y devuelve a la isla los cinco nombres que le quitaron.",
 	},
 ]
 
@@ -78,9 +83,9 @@ const OBJECTIVE_TITLES: Array = [
 		"El gigante dormido", "La tercera runa", "El cielo vuelve a girar", "La cima sin bandera", "La Corona de Escarcha",
 	],
 	[
-		"Deshielo hacia el sur", "El mapa grabado en sal", "Nara, vigía del oasis", "El cactus de flores rojas", "La caravana inmóvil",
+		"Deshielo hacia el sur", "El mapa grabado en sal", "Nara, vigía del oasis", "El monolito de flores rojas", "La caravana inmóvil",
 		"Huellas que terminan en el aire", "El cofre bajo la duna", "La llave del escorpión", "Cristales al mediodía", "La tumba del rey sin rostro",
-		"Un pozo lleno de estrellas", "El ladrón de cantimploras", "La aguja solar", "El cactoro centinela", "Las columnas enterradas",
+		"Un pozo lleno de estrellas", "El ladrón de cantimploras", "La aguja solar", "El guardián de las dunas", "Las columnas enterradas",
 		"El mercado de los espejismos", "La canción de Nara", "El sello de arenisca", "La cámara del mediodía", "Una sombra sin dueño",
 		"El guardián de oro", "El puente sobre el vacío", "La llama cautiva", "El juramento del oasis", "La Brasa Eterna",
 	],

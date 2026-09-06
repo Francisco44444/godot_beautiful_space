@@ -88,7 +88,30 @@ func _run_test() -> void:
 		_fail("El personaje no respondió al salto.")
 		return
 
-	print("MOVEMENT TEST OK: caminar %.2f m, correr %.2f m con Mayús y salto funcional." % [horizontal_distance, sprint_distance])
+	# El salto no puede ser un globo: a 1.43 m de altura y más de un segundo en
+	# el aire parecía que el héroe bajaba flotando de pie. Se comprueba el ápice
+	# y que la bajada sea más rápida que la subida.
+	var apex := player.global_position.y - floor_height
+	var rise_frames := 8
+	var air_frames := 8
+	for frame_index in range(200):
+		await physics_frame
+		air_frames += 1
+		var height := player.global_position.y - floor_height
+		if height > apex:
+			apex = height
+			rise_frames = air_frames
+		if player.is_on_floor():
+			break
+	if apex > 1.15:
+		_fail("El salto sube demasiado: %.2f m." % apex)
+		return
+	if air_frames - rise_frames >= rise_frames:
+		_fail("La bajada del salto no es más rápida que la subida: parece flotar.")
+		return
+
+	print("MOVEMENT TEST OK: caminar %.2f m, correr %.2f m con Mayús y salto de %.2f m que cae más rápido de lo que sube." % [
+		horizontal_distance, sprint_distance, apex])
 	quit(0)
 
 

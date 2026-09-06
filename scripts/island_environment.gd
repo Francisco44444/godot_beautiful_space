@@ -7,6 +7,9 @@ const WORLD_SIZE := 12000.0
 const MOON_DIRECTION := Vector3(-0.42, 0.88, -0.31)
 const MOON_DISTANCE := 760.0
 const SUN_DISTANCE := 20000.0
+const MOON_RISE_START_DAYLIGHT := 0.11
+const MOON_FULL_DAYLIGHT := 0.018
+const MOON_SHADOW_HANDOFF := 0.42
 const FOG_STREAM_REFRESH_SECONDS := 0.40
 const FOG_VOLUME_BUDGET := 2
 const MOON_TEXTURE: Texture2D = preload("res://assets/textures/moon/moon_craters_lowpoly.png")
@@ -239,17 +242,31 @@ func _process(delta: float) -> void:
 		# bajo el horizonte; así no desaparece antes de completar la puesta.
 		var horizon_margin := sun_radius / SUN_DISTANCE * 1.05
 		sun_visual.visible = camera != null and daylight > 0.004 and sun_source_direction.y > -horizon_margin
-	var night := 1.0 - smoothstep(0.08, 0.34, daylight)
+	var night := 1.0 - smoothstep(
+		MOON_FULL_DAYLIGHT,
+		MOON_RISE_START_DAYLIGHT,
+		daylight
+	)
 	if _star_material != null:
 		_star_material.albedo_color = Color(0.88, 0.94, 1.0, night)
 		_star_material.emission_energy_multiplier = 1.2 + night * 2.6
 	if moon_visual != null:
 		# No se deja una esfera transparente en el pase diurno: se retira del
 		# render por completo para impedir el punto negro que producía la niebla.
-		moon_visual.visible = night > 0.06
+		# La luna empieza a salir cuando el resplandor del crepúsculo ya casi ha
+		# desaparecido; antes nacía demasiado pronto junto al disco solar.
+		moon_visual.visible = night > 0.025
 	if moon_light != null:
 		moon_light.light_energy = night * 0.72
-		moon_light.shadow_enabled = night > 0.08
+		var moon_owns_shadows := night >= MOON_SHADOW_HANDOFF
+		moon_light.shadow_enabled = moon_owns_shadows
+		var directional_sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
+		if directional_sun != null:
+			# Una sola luz direccional genera mapas de sombras. El color de ambas
+			# puede fundirse, pero nunca se vuelven a renderizar sol y luna a la vez.
+			directional_sun.shadow_enabled = not moon_owns_shadows
+		set_meta("moon_shadow_owner", moon_owns_shadows)
+		set_meta("exclusive_celestial_shadows", true)
 	if _ocean_material != null:
 		var ocean_night := Color(0.035, 0.075, 0.16, 1.0)
 		var ocean_day := Color(0.34, 0.64, 0.76, 1.0)
@@ -619,10 +636,17 @@ func _build_moon() -> void:
 	moon_light.light_color = Color(0.52, 0.66, 1.0)
 	moon_light.light_energy = 0.0
 	moon_light.shadow_enabled = false
-	moon_light.directional_shadow_max_distance = 720.0
+	var directional_sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
+	if directional_sun != null:
+		moon_light.directional_shadow_max_distance = directional_sun.directional_shadow_max_distance
+		moon_light.directional_shadow_fade_start = directional_sun.directional_shadow_fade_start
+	else:
+		moon_light.directional_shadow_max_distance = 480.0
+		moon_light.directional_shadow_fade_start = 0.82
 	moon_light.light_volumetric_fog_energy = 0.72
 	moon_light.set_meta("night_only", true)
 	moon_light.set_meta("aligned_with_visible_moon", true)
+	moon_light.set_meta("shares_sun_shadow_range", true)
 	add_child(moon_light)
 	_update_moon_light_direction()
 

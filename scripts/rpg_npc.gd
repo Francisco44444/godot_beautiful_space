@@ -7,7 +7,7 @@ extends StaticBody3D
 @export var npc_id := "maela"
 @export var display_name := "Habitante de Aeloria"
 @export var role := "Testigo"
-@export var character_file := "Casual_Female.gltf"
+@export var character_file := "Viking_Female.gltf"
 @export var interaction_radius := 4.5
 
 var story_runtime: Node
@@ -36,6 +36,8 @@ func interact(player: Node) -> bool:
 	conversation_count += 1
 	_face_position((player as Node3D).global_position if player is Node3D else global_position - global_basis.z)
 	story_runtime.call("begin_npc_dialogue", self, player)
+	if player.has_method("play_gesture"):
+		player.call("play_gesture", "Yes")
 	_play_best_animation(["Talk", "Talking", "Interact", "Idle"])
 	return true
 
@@ -61,7 +63,10 @@ func _load_character() -> void:
 		return
 	visual.name = "CharacterVisual"
 	visual.scale = Vector3.ONE * 0.95
+	visual.set_meta("character_file", character_file)
 	add_child(visual)
+	var appearance: Script = preload("res://scripts/medieval_villager_visual.gd")
+	appearance.apply(visual, hash(npc_id), appearance.player_skin(self))
 	animator = visual.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	_play_best_animation(["Idle", "idle", "Standing"])
 

@@ -17,6 +17,19 @@ const RPG_OBJ_ROOT := RPG_ROOT + "OBJ/"
 const RPG_ICON_ROOT := RPG_ROOT + "Icons/"
 const MEDIEVAL_OBJ_ROOT := "res://assets/quaternius/Medieval Weapons Pack by @Quaternius/OBJ/"
 const SURVIVAL_OBJ_ROOT := "res://assets/quaternius/Survival Pack - Sept 2020/OBJ/"
+## Corrección de tamaño por pieza. Las mallas del pack medieval están a otra
+## escala que las del pack RPG: la espada del RPG mide 2,30 m de punta a pomo y
+## la claymore del medieval 6,59 m, casi el triple. Por eso el juego sólo había
+## incorporado sus cinco escudos. Aquí cada pieza trae su factor, medido, para
+## que todas queden en la mano del héroe con un tamaño creíble —y por debajo de
+## los 2,1 m de alcance que vigila la prueba de combate—.
+const MESH_SCALE_FIX := {
+	"Sword_2": 0.438, "Sword_Big": 0.373, "Claymore": 0.370,
+	"Sword_big_Golden": 0.894, "Sword_big": 0.894,
+	"Bow_Wooden2": 0.360, "Bow_Evil": 0.345,
+	"Dagger_2": 0.45, "Spear": 0.36, "Scythe": 0.36,
+	"Axe": 0.42, "Axe_Small": 0.45, "Hammer_Small": 0.45,
+}
 const SHIELD_FILES: PackedStringArray = [
 	"Shield_Celtic_Golden", "Shield_Heater", "Shield_Heater_2",
 	"Shield_Round", "Shield_Round_2",
@@ -27,12 +40,15 @@ const STARTING_ITEMS := {
 	"Bow_Wooden": 1,
 	"Arrow": 12,
 	"Torch": 1,
+	"Shield_Round": 1,
 }
 const STARTING_EQUIPMENT := {
 	"sword": "Sword",
 	"axe": "Axe_small",
 	"bow": "Bow_Wooden",
-	"shield": "",
+	# El escudo redondo de madera se lleva colgado a la espalda desde el primer
+	# minuto; el botón derecho lo pasa al brazo para protegerse.
+	"shield": "Shield_Round",
 }
 
 @export_file("*.json") var save_path := SAVE_PATH
@@ -244,6 +260,7 @@ func apply_save_state(state: Dictionary, persist: bool = true) -> bool:
 			_equipped[category] = item_id
 	if _inventory.is_empty():
 		_inventory = STARTING_ITEMS.duplicate(true)
+	_grant_missing_starting_equipment()
 	_emit_changed()
 	for category in ["sword", "axe", "bow", "shield"]:
 		equipment_changed.emit(category, String(_equipped.get(category, "")))
@@ -299,6 +316,21 @@ func load_inventory() -> bool:
 	return apply_save_state({"items": stored_items, "equipped": stored_equipment}, false)
 
 
+func _grant_missing_starting_equipment() -> void:
+	## Las partidas guardadas antes de que el escudo formase parte del equipo
+	## inicial llegan con ese hueco vacío. Se completa al cargar para que nadie
+	## tenga que empezar de cero por una incorporación posterior.
+	for category in STARTING_EQUIPMENT:
+		var default_id := String(STARTING_EQUIPMENT[category])
+		if default_id.is_empty() or not _catalog.has(default_id):
+			continue
+		if not String(_equipped.get(category, "")).is_empty():
+			continue
+		if int(_inventory.get(default_id, 0)) <= 0:
+			_inventory[default_id] = int(STARTING_ITEMS.get(default_id, 1))
+		_equipped[category] = default_id
+
+
 func _build_catalog() -> void:
 	_catalog.clear()
 	var directory := DirAccess.open(RPG_OBJ_ROOT)
@@ -311,8 +343,25 @@ func _build_catalog() -> void:
 				_add_catalog_item(item_id, RPG_OBJ_ROOT + file_name, RPG_ICON_ROOT + _icon_file_for(item_id), "rpg")
 			file_name = directory.get_next()
 		directory.list_dir_end()
+	# El pack medieval entero, no sólo sus cinco escudos. Antes se incorporaban
+	# a mano y el resto —claymore, espadas intermedias, dagas, lanza, guadaña y
+	# dos arcos más— se quedaba en disco sin que el juego lo viera, así que la
+	# escalera de armas se quedaba en cuatro grados pudiendo tener seis.
+	# Los que ya vengan del pack RPG NO se pisan: aquéllos traen icono.
+	var medieval := DirAccess.open(MEDIEVAL_OBJ_ROOT)
+	if medieval != null:
+		medieval.list_dir_begin()
+		var medieval_file := medieval.get_next()
+		while not medieval_file.is_empty():
+			if not medieval.current_is_dir() and medieval_file.get_extension().to_lower() == "obj":
+				var medieval_id := medieval_file.get_basename()
+				if not _catalog.has(medieval_id):
+					_add_catalog_item(medieval_id, MEDIEVAL_OBJ_ROOT + medieval_file, "", "medieval")
+			medieval_file = medieval.get_next()
+		medieval.list_dir_end()
 	for shield_name in SHIELD_FILES:
-		_add_catalog_item(shield_name, MEDIEVAL_OBJ_ROOT + shield_name + ".obj", "", "medieval")
+		if not _catalog.has(shield_name):
+			_add_catalog_item(shield_name, MEDIEVAL_OBJ_ROOT + shield_name + ".obj", "", "medieval")
 	_catalog["Torch"] = {
 		"id": "Torch", "display_name": "Antorcha", "category": "torch",
 		"obj_path": SURVIVAL_OBJ_ROOT + "WoodenTorch_Fire.obj", "icon_path": "",
@@ -335,6 +384,7 @@ func _add_catalog_item(item_id: String, obj_path: String, icon_path: String, sou
 		"obj_path": obj_path,
 		"icon_path": icon_path,
 		"source": source,
+		"mesh_scale": float(MESH_SCALE_FIX.get(item_id, 1.0)),
 		"stackable": _category_for(item_id) not in ["sword", "axe", "bow", "shield", "armor"],
 		"rewardable": not item_id.begins_with("Chest_") and not item_id.ends_with("_Empty"),
 	}

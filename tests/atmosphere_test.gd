@@ -213,11 +213,17 @@ func _run_test() -> void:
 				failures.append("El sol low-poly no aparece durante el día")
 			if moon.visible:
 				failures.append("La luna transparente sigue dejando un punto negro durante el día")
+			if not sun.shadow_enabled or moon_light.shadow_enabled:
+				failures.append("Durante el día la luna intenta compartir las sombras del sol")
 			world.sun_cycle_radians = PI + 0.055
 			world.call("_update_sun_cycle", 0.0)
 			await process_frame
 			if day_sun == null or not day_sun.visible:
 				failures.append("El sol desaparece antes de terminar de ocultarse bajo el horizonte")
+			if moon.visible or moon_light.shadow_enabled:
+				failures.append("La luna sale demasiado pronto durante el crepúsculo")
+			if not sun.shadow_enabled:
+				failures.append("El sol entrega sus sombras antes de que salga la luna")
 			world.sun_cycle_radians = 4.72
 			world.call("_update_sun_cycle", 0.0)
 			await process_frame
@@ -225,6 +231,14 @@ func _run_test() -> void:
 				failures.append("El sol diurno permanece visible durante la noche")
 			if not moon.visible or moon_light.light_energy < 0.55 or not moon_light.shadow_enabled:
 				failures.append("La luna no alumbra ni proyecta sombras durante la noche")
+			if sun.shadow_enabled:
+				failures.append("El sol sigue proyectando sombras cuando la luna ya las genera")
+			if absf(moon_light.directional_shadow_max_distance - sun.directional_shadow_max_distance) > 0.01:
+				failures.append("La distancia de sombras de la luna no coincide con la del sol")
+			if absf(moon_light.directional_shadow_fade_start - sun.directional_shadow_fade_start) > 0.001:
+				failures.append("El fundido de sombras de la luna no coincide con el del sol")
+			if not bool(island_environment.get_meta("exclusive_celestial_shadows", false)):
+				failures.append("El relevo de sombras entre sol y luna no está marcado como exclusivo")
 			island_environment.call("sync_celestial_sources", active_camera)
 			var moon_source := (moon.global_position - active_camera.global_position).normalized() if active_camera != null else Vector3.ZERO
 			var moon_light_source := moon_light.global_basis.z.normalized()
@@ -248,6 +262,19 @@ func _run_test() -> void:
 				failures.append("La luna cambia de lugar durante la noche en vez de permanecer fija en el cielo")
 			if later_moon_source.dot(moon_light.global_basis.z.normalized()) < 0.9998:
 				failures.append("La luz lunar deja de coincidir con la luna fija al avanzar la noche")
+			# Recorremos el ciclo completo porque el fallo original solo aparecía en
+			# unos segundos del crepúsculo: ambas luces enviaban árboles al mapa de
+			# sombras aunque las capturas de pleno día y plena noche fueran correctas.
+			for cycle_step in 72:
+				world.sun_cycle_radians = TAU * float(cycle_step) / 72.0
+				world.call("_update_sun_cycle", 0.0)
+				await process_frame
+				if sun.shadow_enabled == moon_light.shadow_enabled:
+					failures.append(
+						"El relevo celestial deja %d luces con sombras en el paso %d."
+						% [int(sun.shadow_enabled) + int(moon_light.shadow_enabled), cycle_step]
+					)
+					break
 
 	var ambient_audio := world.get_node("AmbientAudio") as AmbientAudio
 	ambient_audio.music.stop()
@@ -257,11 +284,110 @@ func _run_test() -> void:
 	ambient_audio.birds.stop()
 	for _frame in range(8):
 		await process_frame
+	# --- Brisa de polvo del desierto ---
+	# Solo pasa en el desierto y solo de vez en cuando: una nube permanente se
+	# leería como niebla, no como viento.
+	var breeze := world.get_node_or_null("DesertBreeze")
+	var player := world.get_node_or_null("Player") as Node3D
+	var terrain := world.get_node_or_null("Terrain3D")
+	if breeze == null:
+		failures.append("Falta el nodo de brisa del desierto.")
+	elif player != null and terrain != null:
+		var dust := breeze.get_node_or_null("DesertDust") as GPUParticles3D
+		if dust == null:
+			failures.append("La brisa del desierto no trae partículas de polvo.")
+		else:
+			# Al valle primero: bloques anteriores de esta prueba han movido al
+			# héroe, así que no se puede dar por hecho dónde está.
+			var valley := Vector3(0.0, 0.0, 190.0)
+			valley.y = float(terrain.data.get_height(valley)) + 1.0
+			player.global_position = valley
+			for _frame in 30:
+				await physics_frame
+			if String(breeze.call("get_biome")) == "desert":
+				failures.append("El valle se lee como desierto.")
+			if dust.emitting:
+				failures.append("Hay polvo del desierto fuera del desierto.")
+			# Al desierto: la racha tiene que llegar sola.
+			var dunes := Vector3(2400.0, 0.0, 2050.0)
+			dunes.y = float(terrain.data.get_height(dunes)) + 1.0
+			player.global_position = dunes
+			for _frame in 30:
+				await physics_frame
+			if String(breeze.call("get_biome")) != "desert":
+				failures.append("La brisa no reconoce las dunas como desierto.")
+			var gusts_before := int(breeze.call("get_gust_count"))
+			var dusty_frames := 0
+			var quiet_frames := 0
+			for _frame in 1500:
+				await physics_frame
+				if dust.emitting:
+					dusty_frames += 1
+				else:
+					quiet_frames += 1
+			if int(breeze.call("get_gust_count")) <= gusts_before:
+				failures.append("En el desierto no pasa ninguna racha de polvo.")
+			if quiet_frames == 0:
+				failures.append("El polvo del desierto no descansa entre rachas.")
+			if dusty_frames == 0:
+				failures.append("La racha del desierto no llega a levantar polvo.")
+			# Y al salir del desierto se corta.
+			# --- Remolinos de arena ---
+			# Geometría propia y facetada, no un billboard, y solo sobre terreno
+			# de desierto: son lo que da inquietud a las dunas.
+			var devils := world.get_node_or_null("DustDevils")
+			if devils == null:
+				failures.append("Falta el nodo de remolinos de arena.")
+			else:
+				player.global_position = dunes
+				for _frame in 20:
+					await physics_frame
+				if not bool(devils.call("spawn_devil")):
+					failures.append("No se pudo plantar un remolino en las dunas.")
+				else:
+					for _frame in 40:
+						await physics_frame
+					if int(devils.call("get_active_count")) < 1:
+						failures.append("El remolino no queda activo tras nacer.")
+					var devil := devils.get_child(devils.get_child_count() - 1) as Node3D
+					var funnel := devil.get_node_or_null("Funnel") as MeshInstance3D
+					if funnel == null or funnel.mesh == null:
+						failures.append("El remolino no trae embudo de geometría.")
+					else:
+						var vertices := (
+							(funnel.mesh as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+							as PackedVector3Array
+						).size()
+						# Low poly de verdad: unas decenas de caras, no cientos.
+						if vertices > 900:
+							failures.append("El embudo del remolino no es low poly: %d vértices." % vertices)
+						if funnel.mesh.get_aabb().size.y < 10.0:
+							failures.append("El remolino es demasiado bajo: %.1f m." % funnel.mesh.get_aabb().size.y)
+					if String(breeze.call("get_biome")) != "desert":
+						failures.append("El remolino no nació sobre desierto.")
+					var spun_before := devil.rotation.y
+					for _frame in 30:
+						await physics_frame
+					if absf(devil.rotation.y - spun_before) < 0.2:
+						failures.append("El remolino no gira.")
+					# Al alejarse, se retiran.
+					player.global_position = valley
+					for _frame in 40:
+						await physics_frame
+					if int(devils.call("get_active_count")) > 0:
+						failures.append("Los remolinos siguen activos lejos del desierto.")
+
+			player.global_position = valley
+			for _frame in 30:
+				await physics_frame
+			if dust.emitting:
+				failures.append("El polvo del desierto sigue al salir de las dunas.")
+
 	if not failures.is_empty():
 		_fail(failures)
 		return
 
-	print("ATMOSPHERE TEST OK: luna y sombras alineadas, mar multiescala, cascadas, estrellas y niebla regional.")
+	print("ATMOSPHERE TEST OK: luna y sombras alineadas, mar multiescala, cascadas, estrellas, niebla regional, rachas de polvo y remolinos de arena low poly solo en el desierto.")
 	quit(0)
 
 

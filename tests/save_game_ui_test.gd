@@ -46,9 +46,21 @@ func _run_test() -> void:
 	if pause == null or not pause.visible or not paused:
 		_fail("Esc no abre el menú de pausa convencional.")
 		return
+	var lobby := hud.get_node_or_null("MultiplayerLobby") as Control
+	if lobby == null or lobby.visible or bool(hud.call("is_lobby_open")):
+		_fail("El juego no entra directamente en modo individual.")
+		return
+	var multiplayer_button := pause.find_child("MultiplayerButton", true, false) as Button
+	if multiplayer_button == null:
+		_fail("El menú de pausa no permite abrir el multijugador.")
+		return
+	multiplayer_button.pressed.emit()
+	if pause.visible or not lobby.visible or not bool(hud.call("is_lobby_open")) or not paused:
+		_fail("ESC → Multijugador no abre el vestíbulo cooperativo.")
+		return
 	hud.call("_unhandled_input", cancel)
-	if pause.visible or paused:
-		_fail("Esc no cierra el menú de pausa y continúa.")
+	if lobby.visible or bool(hud.call("is_lobby_open")) or paused:
+		_fail("Esc no cierra el vestíbulo y vuelve a la partida individual.")
 		return
 	var inventory_event := InputEventKey.new()
 	inventory_event.physical_keycode = KEY_I

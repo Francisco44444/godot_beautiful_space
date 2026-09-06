@@ -16,10 +16,13 @@ extends Node3D
 @export var mounted_fov: float = 78.0
 @export var riding_transition_speed: float = 4.5
 @export_category("Apuntado con arco")
-@export var aiming_distance: float = 5.4
-@export var aiming_fov: float = 54.0
-@export var aiming_target_height: float = 1.72
-@export var aiming_side_offset: float = 0.72
+@export var aiming_distance: float = 2.9
+@export var aiming_fov: float = 60.0
+@export var aiming_target_height: float = 1.56
+## Vista claramente diagonal sobre el hombro. Con el desplazamiento corto de
+## antes el héroe tapaba el arco y la flecha salía justo por detrás de su
+## cabeza, así que el disparo no se veía nunca.
+@export var aiming_side_offset: float = -1.35
 
 @onready var target: Node3D = get_node(target_path) as Node3D
 @onready var spring_arm: SpringArm3D = $SpringArm3D
@@ -32,9 +35,13 @@ var _foot_distance: float
 var _foot_fov: float
 var _aiming := false
 var _current_side_offset := 0.0
+var _trauma := 0.0
+var _shake_time := 0.0
+var shake_count := 0
 
 
 func _ready() -> void:
+	add_to_group("camera_rig")
 	_current_height = target_height
 	_foot_distance = spring_arm.spring_length
 	_foot_fov = camera.fov
@@ -74,6 +81,46 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+## El golpe se siente en la cámara o no se siente. El desplazamiento va con el
+## CUADRADO del trauma: así un roce apenas mueve nada y un pisotón sacude de
+## verdad, en vez de que todo tiemble igual.
+const MAX_SHAKE_PITCH := 0.055
+const MAX_SHAKE_YAW := 0.075
+const MAX_SHAKE_ROLL := 0.09
+const TRAUMA_FADE := 1.35
+
+
+func add_shake(amount: float) -> void:
+	if amount <= 0.0:
+		return
+	_trauma = minf(1.0, _trauma + amount)
+	shake_count += 1
+
+
+## Sacudida a distancia: un pisotón a 40 m no puede moverte la cámara igual que
+## uno en la cara.
+func add_shake_from(point: Vector3, amount: float, reach: float) -> void:
+	var span := global_position.distance_to(point)
+	if span >= reach:
+		return
+	add_shake(amount * (1.0 - span / reach))
+
+
+func _shake_offset(delta: float) -> Vector3:
+	if _trauma <= 0.0:
+		return Vector3.ZERO
+	# En segundos REALES: durante la cámara lenta del golpe final la escala de
+	# tiempo baja a 0,16 y con delta a secas la sacudida duraría seis veces más.
+	var real := delta / maxf(Engine.time_scale, 0.01)
+	_trauma = maxf(0.0, _trauma - TRAUMA_FADE * real)
+	_shake_time += real * 34.0
+	var force := _trauma * _trauma
+	return Vector3(
+		sin(_shake_time * 1.7) * MAX_SHAKE_PITCH,
+		sin(_shake_time * 2.3 + 1.1) * MAX_SHAKE_YAW,
+		sin(_shake_time * 2.9 + 2.4) * MAX_SHAKE_ROLL) * force
+
+
 func _physics_process(delta: float) -> void:
 	var player := target as Player
 	var riding := player != null and player.is_mounted()
@@ -95,4 +142,4 @@ func _physics_process(delta: float) -> void:
 	# Esta forma exponencial mantiene la misma sensación a cualquier tasa de fotogramas.
 	var follow_weight := 1.0 - exp(-follow_speed * delta)
 	global_position = global_position.lerp(desired_position, follow_weight)
-	rotation = Vector3(pitch, yaw, 0.0)
+	rotation = Vector3(pitch, yaw, 0.0) + _shake_offset(delta)

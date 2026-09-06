@@ -22,7 +22,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	color = Color(0.008, 0.014, 0.019, 0.88)
+	color = Color(0.008, 0.014, 0.019, 0.82)
 	visible = false
 	_build_interface()
 	SaveGameManager.status_changed.connect(_set_status)
@@ -56,14 +56,7 @@ func _build_interface() -> void:
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.position = Vector2(-330.0, -330.0)
 	panel.size = Vector2(660.0, 660.0)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.055, 0.068, 0.061, 0.985)
-	style.border_color = Color(0.86, 0.66, 0.30, 0.96)
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(20)
-	style.shadow_color = Color(0, 0, 0, 0.55)
-	style.shadow_size = 18
-	panel.add_theme_stylebox_override("panel", style)
+	panel.add_theme_stylebox_override("panel", UiTheme.panel(UiTheme.INK, UiTheme.AMBER, 20, 0.0, 0.0))
 	add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 46)
@@ -77,8 +70,7 @@ func _build_interface() -> void:
 	var title := Label.new()
 	title.text = "SENDEROS DEL HORIZONTE"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 30)
-	title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.48))
+	UiTheme.style_title(title, 30)
 	root_content.add_child(title)
 	var subtitle := Label.new()
 	subtitle.text = "MENÚ DE PAUSA"
@@ -116,6 +108,7 @@ func _build_interface() -> void:
 	_page_content.add_theme_constant_override("separation", 10)
 	_page.add_child(_page_content)
 	var back := Button.new()
+	UiTheme.style_button(back)
 	back.name = "BackButton"
 	back.text = "Volver · Esc"
 	back.pressed.connect(_show_main)
@@ -131,6 +124,7 @@ func _build_interface() -> void:
 
 func _add_main_button(text_value: String, node_name: String, callback: Callable) -> void:
 	var button := Button.new()
+	UiTheme.style_button(button)
 	button.name = node_name
 	button.text = text_value
 	button.custom_minimum_size = Vector2(0.0, 46.0)
@@ -264,6 +258,7 @@ func _show_saves() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_page_content.add_child(row)
 	var save := Button.new()
+	UiTheme.style_button(save)
 	save.text = "Guardar ahora"
 	save.pressed.connect(func() -> void:
 		SaveGameManager.save_current_game("manual")
@@ -271,6 +266,7 @@ func _show_saves() -> void:
 	)
 	row.add_child(save)
 	var load_button := Button.new()
+	UiTheme.style_button(load_button)
 	load_button.text = "Cargar seleccionada"
 	load_button.pressed.connect(_load_selected_save)
 	row.add_child(load_button)

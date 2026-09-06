@@ -3,19 +3,26 @@ extends SceneTree
 ## Comprueba que el valle Quaternius sea determinista, esté dividido en celdas
 ## y no invada el sendero jugable. También valida personajes y caballo.
 
-const EXPECTED_TREE_COUNT := 80000
-const EXPECTED_ROCK_COUNT := 504
+const EXPECTED_TREE_COUNT := 59312
+# Distribución actual aprobada: conservar el paisaje, no aplicar el límite
+# de una distribución anterior que obligaba a eliminar árboles adicionales.
+## Número de oro del reparto junto a caminos. Subió de 18.791 a 18.812 al dar
+## claro propio a las cinco arenas de jefe (esquema 12): los árboles que se
+## quitan de una arena no desaparecen, se reparten, y 21 cayeron en el corredor
+## de los caminos. Si cambia sin que se haya tocado un claro, es una regresión.
+const EXPECTED_NEAR_ROUTE_TREE_COUNT := 18812
+const EXPECTED_ROCK_COUNT := 101
 const EXPECTED_MOSS_ROCK_COUNT := 0
-const EXPECTED_CACTUS_COUNT := 173
-const EXPECTED_MYSTERY_DEAD_TREE_COUNT := 4200
+const EXPECTED_CACTUS_COUNT := 0
+const EXPECTED_MYSTERY_DEAD_TREE_COUNT := 3360
 const EXPECTED_GRASS_COUNT := 220000
 const EXPECTED_GRASS_CLUMPS_PER_PATCH := 1550
 const MAX_GRASS_FULL_TRIANGLES_PER_PATCH := 6300
 const MAX_GRASS_MID_TRIANGLES_PER_PATCH := 910
 const MAX_GRASS_LOD_TRIANGLES_PER_PATCH := 410
-const EXPECTED_FERN_COUNT := 10000
-const EXPECTED_SHRUB_COUNT := 10000
-const EXPECTED_FLOWER_COUNT := 8000
+const EXPECTED_FERN_COUNT := 800
+const EXPECTED_SHRUB_COUNT := 700
+const EXPECTED_FLOWER_COUNT := 500
 const EXPECTED_MUSHROOM_COUNT := 2200
 const EXPECTED_PATH_PEBBLE_COUNT := 12000
 const EXPECTED_CHARACTER_COUNT := 50
@@ -39,6 +46,9 @@ func _init() -> void:
 
 
 func _run_test() -> void:
+	for singleton_name in ["ExplorationManager", "InventoryManager"]:
+		root.get_node(singleton_name).set("autosave_enabled", false)
+	root.get_node("SaveGameManager").set_process(false)
 	var game_settings := root.get_node_or_null("GameSettings")
 	if game_settings != null:
 		game_settings.call("reset_defaults", false)
@@ -49,6 +59,7 @@ func _run_test() -> void:
 
 	var world := scene.instantiate()
 	root.add_child(world)
+	root.get_node("SaveGameManager").call("bind_world", null)
 	var scatter := world.get_node("VegetationScatter") as VegetationScatter
 	var terrain := world.get_node("Terrain3D") as Terrain3D
 	var player := world.get_node("Player") as Player
@@ -62,7 +73,23 @@ func _run_test() -> void:
 	for _frame in range(4):
 		await process_frame
 	var vegetation_cache := load("res://generated/vegetation_layout_cache.res") as VegetationLayoutCache
-	if vegetation_cache == null or vegetation_cache.schema_version != 4 or "scale=2.20-4.00" not in vegetation_cache.signature:
+	# Esquema 10: Villa Robledal pasó de cinco casas a un casco de calles, y su
+	# claro tuvo que crecer de 88 a 178 m de radio. La firma del caché NO incluye
+	# el radio del claro, así que sin subir el esquema el caché viejo se habría
+	# seguido dando por bueno y los pinos habrían brotado dentro de las casas
+	# nuevas sin que nada avisara.
+	if (
+		vegetation_cache == null
+		or vegetation_cache.schema_version != 12
+		or "tr=0.297" not in vegetation_cache.signature
+		or "rr=1742" not in vegetation_cache.signature
+		or "rd=1.120" not in vegetation_cache.signature
+		or "rdr=17410" not in vegetation_cache.signature
+		or "sr=0.050" not in vegetation_cache.signature
+		or "sra=94" not in vegetation_cache.signature
+		or "mr=0.800" not in vegetation_cache.signature
+		or "scale=2.20-4.00" not in vegetation_cache.signature
+	):
 		_fail("La caché de vegetación no contiene la escala equilibrada de los árboles.")
 		return
 	if vegetation_cache != null and vegetation_cache.grass_records.size() >= 3:
@@ -288,16 +315,20 @@ func _run_test() -> void:
 	var minimum_tree_z := INF
 	var maximum_tree_z := -INF
 	var far_from_route_count := 0
+	var near_route_count := 0
 	var far_tree_cells: Dictionary = {}
 	for tree_position in scatter.tree_positions:
 		minimum_tree_x = minf(minimum_tree_x, tree_position.x)
 		maximum_tree_x = maxf(maximum_tree_x, tree_position.x)
 		minimum_tree_z = minf(minimum_tree_z, tree_position.z)
 		maximum_tree_z = maxf(maximum_tree_z, tree_position.z)
-		if scatter.distance_to_route(Vector2(tree_position.x, tree_position.z)) > 180.0:
+		var route_distance := scatter.distance_to_route(Vector2(tree_position.x, tree_position.z))
+		if route_distance > 180.0:
 			far_from_route_count += 1
 			far_tree_cells[Vector2i(floori(tree_position.x / 320.0), floori(tree_position.z / 320.0))] = true
-		if scatter.distance_to_route(Vector2(tree_position.x, tree_position.z)) < 11.2:
+		else:
+			near_route_count += 1
+		if route_distance < 11.2:
 			_fail("Un árbol invadió el corredor despejado del sendero.")
 			return
 	if maximum_tree_x - minimum_tree_x < 4000.0 or maximum_tree_z - minimum_tree_z < 3500.0:
@@ -306,10 +337,19 @@ func _run_test() -> void:
 	if far_from_route_count < roundi(scatter.generated_tree_count * 0.25) or far_tree_cells.size() < 85:
 		_fail("El arbolado continúa aglutinado junto a caminos: %d ejemplares lejanos en %d celdas." % [far_from_route_count, far_tree_cells.size()])
 		return
+	if near_route_count + int(scatter.get_meta("urban_near_route_trees_removed", 0)) != EXPECTED_NEAR_ROUTE_TREE_COUNT:
+		_fail("La distribución aprobada junto a caminos ha cambiado: %d árboles frente a %d." % [near_route_count, EXPECTED_NEAR_ROUTE_TREE_COUNT])
+		return
 	var tree_cells_root := scatter.get_node("TreeCells") as Node3D
 	if (
 		scatter.generated_coverage_tree_count < 7000
 		or scatter.generated_coverage_primary_tree_count < 7000
+		or absf(float(tree_cells_root.get_meta("route_distribution_ratio", 0.0)) - 0.297) > 0.0001
+		or int(tree_cells_root.get_meta("removed_route_replacements", 0)) != 1742
+		or absf(float(tree_cells_root.get_meta("route_density_target", 0.0)) - 1.12) > 0.001
+		or int(tree_cells_root.get_meta("route_density_removed", 0)) != 17410
+		or absf(float(tree_cells_root.get_meta("start_route_tree_bonus_ratio", 0.0)) - 0.05) > 0.001
+		or int(tree_cells_root.get_meta("start_route_tree_bonus_count", 0)) != 94
 		or float(tree_cells_root.get_meta("coverage_cell_size", INF)) > 70.0
 		or int(tree_cells_root.get_meta("coverage_tree_count", 0)) != scatter.generated_coverage_tree_count
 		or int(tree_cells_root.get_meta("coverage_primary_tree_count", 0)) != scatter.generated_coverage_primary_tree_count
@@ -324,15 +364,15 @@ func _run_test() -> void:
 		return
 
 	var count_specs: Array[Array] = [
-		["árboles", scatter.tree_count, scatter.generated_tree_count, EXPECTED_TREE_COUNT],
+		["árboles", scatter.tree_count, scatter.generated_tree_count + int(scatter.get_meta("urban_trees_removed", 0)), EXPECTED_TREE_COUNT],
 		["rocas", scatter.rock_count, scatter.generated_rock_count, EXPECTED_ROCK_COUNT],
 		["rocas musgosas", scatter.moss_rock_count, scatter.generated_moss_rock_count, EXPECTED_MOSS_ROCK_COUNT],
 		["cactus", scatter.cactus_count, scatter.generated_cactus_count, EXPECTED_CACTUS_COUNT],
-		["hierba", scatter.grass_count, scatter.generated_grass_count, EXPECTED_GRASS_COUNT],
-		["helechos", scatter.fern_count, scatter.generated_fern_count, EXPECTED_FERN_COUNT],
-		["arbustos", scatter.shrub_count, scatter.generated_shrub_count, EXPECTED_SHRUB_COUNT],
-		["flores", scatter.flower_count, scatter.generated_flower_count, EXPECTED_FLOWER_COUNT],
-		["setas", scatter.mushroom_count, scatter.generated_mushroom_count, EXPECTED_MUSHROOM_COUNT],
+		["hierba", scatter.grass_count, scatter.generated_grass_count + int(scatter.get_meta("urban_grass_removed", 0)), EXPECTED_GRASS_COUNT],
+		["helechos", scatter.fern_count, scatter.generated_fern_count + int(scatter.get_meta("urban_ferns_removed", 0)), EXPECTED_FERN_COUNT],
+		["arbustos", scatter.shrub_count, scatter.generated_shrub_count + int(scatter.get_meta("urban_shrubs_removed", 0)), EXPECTED_SHRUB_COUNT],
+		["flores", scatter.flower_count, scatter.generated_flower_count + int(scatter.get_meta("urban_flowers_removed", 0)), EXPECTED_FLOWER_COUNT],
+		["setas", scatter.mushroom_count, scatter.generated_mushroom_count + int(scatter.get_meta("urban_mushrooms_removed", 0)), EXPECTED_MUSHROOM_COUNT],
 		["guijarros", scatter.path_pebble_count, scatter.generated_path_pebble_count, EXPECTED_PATH_PEBBLE_COUNT],
 	]
 	for spec in count_specs:
@@ -370,6 +410,10 @@ func _run_test() -> void:
 		["ForestDetailCells", scatter.forest_detail_count],
 		["MysteryDeadTreeCells", scatter.generated_mystery_dead_tree_count],
 	]
+	var reduced_vegetation_lod_categories := PackedStringArray([
+		"TreeCells", "FernCells", "ShrubCells", "FlowerCells",
+		"MushroomCells", "ForestDetailCells", "MysteryDeadTreeCells",
+	])
 	var counted_cells := 0
 	for spec in cell_specs:
 		var root_name: String = spec[0]
@@ -381,6 +425,11 @@ func _run_test() -> void:
 		if expected_instances > 0 and category.get_child_count() == 0:
 			_fail("La raíz %s no contiene ninguna celda." % root_name)
 			return
+		var expected_lod_bias := (
+			0.25
+			if root_name in reduced_vegetation_lod_categories
+			else 0.75
+		)
 		var instance_total := 0
 		for child in category.get_children():
 			var cell := child as MultiMeshInstance3D
@@ -390,7 +439,7 @@ func _run_test() -> void:
 			if cell.multimesh.instance_count <= 0:
 				_fail("%s contiene una celda vacía." % root_name)
 				return
-			if absf(cell.lod_bias - 0.75) > 0.01 or not cell.has_meta("imported_mesh_lod_bias"):
+			if absf(cell.lod_bias - expected_lod_bias) > 0.01 or not cell.has_meta("imported_mesh_lod_bias"):
 				_fail("%s no aplica el LOD importado al decorado completo." % root_name)
 				return
 			instance_total += cell.multimesh.instance_count
@@ -400,6 +449,9 @@ func _run_test() -> void:
 			return
 		if not root_name.begins_with("Grass") and instance_total != expected_instances:
 			_fail("%s contiene %d instancias; se esperaban %d." % [root_name, instance_total, expected_instances])
+			return
+		if root_name.begins_with("Grass") and absf(expected_lod_bias - 0.75) > 0.01:
+			_fail("La reducción poligonal de Quaternius ha alterado la mata densa de hierba.")
 			return
 	if scatter.get_node_or_null("StoneRoadGround") != null:
 		_fail("Todavía existe una cinta de piedra colocada por encima del terreno.")
@@ -446,7 +498,7 @@ func _run_test() -> void:
 		or not bool(scatter.get_meta("dense_static_grass_lod", false))
 		or not bool(scatter.get_meta("grass_lod_crossfade", false))
 		or String(grass_lod_cells.get_meta("crossfades_with", "")) != "GrassCells"
-		or scatter.generated_grass_lod_instances != EXPECTED_GRASS_COUNT
+		or scatter.generated_grass_lod_instances != scatter.generated_grass_count
 		or scatter.generated_grass_lod_cells <= 0
 		or String(grass_cells.get_meta("source_model", "")) != "Grass_Common_Short.gltf"
 		or grass_cells.get_meta("excluded_biomes", PackedStringArray()) != PackedStringArray(["snow", "desert", "mystery_forest"])
@@ -460,8 +512,8 @@ func _run_test() -> void:
 			return
 	if (
 		int(scatter.get_meta("grass_patch_clumps", 0)) != EXPECTED_GRASS_CLUMPS_PER_PATCH
-		or int(grass_cells.get_meta("effective_clump_count", 0)) != EXPECTED_GRASS_COUNT * EXPECTED_GRASS_CLUMPS_PER_PATCH
-		or int(grass_lod_cells.get_meta("effective_clump_count", 0)) != EXPECTED_GRASS_COUNT * EXPECTED_GRASS_CLUMPS_PER_PATCH
+		or int(grass_cells.get_meta("effective_clump_count", 0)) != scatter.generated_grass_count * EXPECTED_GRASS_CLUMPS_PER_PATCH
+		or int(grass_lod_cells.get_meta("effective_clump_count", 0)) != scatter.generated_grass_count * EXPECTED_GRASS_CLUMPS_PER_PATCH
 	):
 		_fail("Los parches no representan la nueva alfombra densa mediante MultiMesh.")
 		return
@@ -492,7 +544,7 @@ func _run_test() -> void:
 			_fail("Una celda proxy de hierba no es barata, local o exclusivamente gobernada.")
 			return
 		counted_grass_lod_instances += grass_lod_cell.multimesh.instance_count
-	if counted_grass_lod_instances != EXPECTED_GRASS_COUNT:
+	if counted_grass_lod_instances != scatter.generated_grass_count:
 		_fail("El proxy de hierba no replica exactamente las %d matas dispersas." % EXPECTED_GRASS_COUNT)
 		return
 	if not bool(scatter.get_meta("project_assets_loaded_via_importer", false)):
@@ -531,7 +583,7 @@ func _run_test() -> void:
 	var tree_lod_cells := scatter.get_node_or_null("TreeLODCells") as Node3D
 	if (
 		tree_lod_cells == null
-		or scatter.generated_tree_lod_instances != EXPECTED_TREE_COUNT
+		or scatter.generated_tree_lod_instances != scatter.generated_tree_count
 		or scatter.generated_tree_lod_cells < 120
 		or absf(float(tree_lod_cells.get_meta("visibility_begin", 0.0)) - scatter.lod_switch_distance) > 0.01
 		or float(tree_lod_cells.get_meta("visibility_end", 0.0)) < 5000.0
@@ -560,7 +612,7 @@ func _run_test() -> void:
 		counted_tree_lod_instances += lod_cell.multimesh.instance_count
 		var lod_triangles := _mesh_triangle_count(lod_cell.multimesh.mesh)
 		maximum_tree_lod_triangles = maxi(maximum_tree_lod_triangles, lod_triangles)
-	if counted_tree_lod_instances != EXPECTED_TREE_COUNT or maximum_tree_lod_triangles > 110:
+	if counted_tree_lod_instances != scatter.generated_tree_count or maximum_tree_lod_triangles > 110:
 		_fail("El proxy arbóreo no replica los %d árboles o supera 110 triángulos: %d/%d." % [EXPECTED_TREE_COUNT, counted_tree_lod_instances, maximum_tree_lod_triangles])
 		return
 	if not _lod_pair_is_exclusive(tree_cells, tree_lod_cells):
@@ -577,13 +629,19 @@ func _run_test() -> void:
 			_fail("El bosque debe utilizar árboles adultos Quaternius de al menos seis metros.")
 			return
 	var forest_detail_cells := scatter.get_node("ForestDetailCells") as Node3D
+	if (
+		String(forest_detail_cells.get_meta("tree_style", "")) != "green_pines"
+		or not bool(forest_detail_cells.get_meta("dry_trees_exclusive_to_mystery_forest", false))
+	):
+		_fail("Los árboles secos exteriores no se han sustituido por pinos verdes.")
+		return
 	if DisplayServer.get_name().to_lower() != "headless":
 		for child in forest_detail_cells.get_children():
 			var cell := child as MultiMeshInstance3D
 			for index in cell.multimesh.instance_count:
 				var position := cell.to_global(cell.multimesh.get_instance_transform(index).origin)
 				if bool(scatter.call("_inside_village_clearing", Vector2(position.x, position.z), 0.0)):
-					_fail("Un árbol seco de detalle atraviesa una casa, patio o castillo.")
+					_fail("Un pino de detalle atraviesa una casa, patio o castillo.")
 					return
 
 	var collision_body := scatter.get_node_or_null("DecorCollisions") as StaticBody3D
@@ -602,6 +660,33 @@ func _run_test() -> void:
 	if scatter.generated_tree_collision_count < 4000:
 		_fail("El corredor jugable no conserva suficiente colisión entre árboles.")
 		return
+	var streamed_collisions := scatter.get_node_or_null("StreamedTreeCollisions") as StaticBody3D
+	var registered_tree_count := int(scatter.get("generated_harvestable_tree_count"))
+	if (
+		streamed_collisions == null
+		or not bool(scatter.get_meta("all_trees_collidable", false))
+		or not bool(streamed_collisions.get_meta("covers_every_tree", false))
+		or int(streamed_collisions.get_meta("registered_tree_count", 0)) != registered_tree_count
+		or streamed_collisions.get_child_count() != 320
+	):
+		_fail("Todos los árboles sólidos deben entrar en la ventana física optimizada.")
+		return
+	# Incluso un árbol lejano, antes sin colisión, se vuelve sólido al acercarse.
+	var probe_tree_index := registered_tree_count - 1
+	var previous_player_position := player.global_position
+	player.global_position = scatter.get("_harvest_tree_positions")[probe_tree_index] + Vector3(0.0, 0.0, 2.0)
+	scatter.call("_update_streamed_tree_collisions", true)
+	var probe_collision_active := false
+	for collision_value in streamed_collisions.get_children():
+		var streamed_collision := collision_value as CollisionShape3D
+		if streamed_collision != null and int(streamed_collision.get_meta("tree_index", -1)) == probe_tree_index and not streamed_collision.disabled:
+			probe_collision_active = true
+			break
+	player.global_position = previous_player_position
+	scatter.call("_update_streamed_tree_collisions", true)
+	if not probe_collision_active:
+		_fail("Un árbol lejano no adquirió colisión al acercarse el jugador.")
+		return
 	var breakable_root := scatter.get_node_or_null("BreakableResources") as Node3D
 	var expected_breakables := scatter.generated_rock_count + scatter.generated_cactus_count
 	if (
@@ -609,19 +694,19 @@ func _run_test() -> void:
 		or breakable_root.get_child_count() != expected_breakables
 		or scatter.generated_breakable_resource_count != expected_breakables
 	):
-		_fail("Cada roca y cactus del desierto debe tener una colisión rompible individual.")
+		_fail("Cada roca del desierto debe tener una colisión rompible individual.")
 		return
 	for child in breakable_root.get_children():
 		var resource := child as AdventureResource
-		if resource == null or resource.kind not in ["rock", "cactus"] or resource.get_child_count() != 1:
-			_fail("Una roca o cactus no está conectado al sistema rompible.")
+		if resource == null or resource.kind != "rock" or resource.get_child_count() != 1:
+			_fail("Una roca no está conectada al sistema rompible.")
 			return
 	var persistence_probe := breakable_root.get_child(0) as AdventureResource
 	var probe_id := persistence_probe.zone_id
 	scatter.apply_save_state({"destroyed_resource_ids": [probe_id]})
 	var saved_resources := scatter.get_save_state().get("destroyed_resource_ids", []) as Array
 	if not persistence_probe.broken or probe_id not in saved_resources:
-		_fail("El estado roto de una roca o cactus no entra en el guardado.")
+		_fail("El estado roto de una roca no entra en el guardado.")
 		return
 	scatter.apply_save_state({"destroyed_resource_ids": []})
 	if persistence_probe.broken:
@@ -631,7 +716,7 @@ func _run_test() -> void:
 	if save_manager != null:
 		save_manager.call("bind_world", null)
 	var adventure_system := world.get_node("AdventureSystem")
-	for wanted_kind in ["rock", "cactus"]:
+	for wanted_kind in ["rock"]:
 		var breakable: AdventureResource = null
 		for child in breakable_root.get_children():
 			var candidate := child as AdventureResource
@@ -647,8 +732,14 @@ func _run_test() -> void:
 		var visible_before := visual_multimesh.multimesh.get_instance_transform(visual_index)
 		var drops_before := int(adventure_system.get("generated_pickup_count"))
 		breakable.receive_tool_hit("axe", "Axe_Small", breakable.global_position, player)
-		await create_timer(0.10).timeout
+		# El temblor lo produce un tween: muestrear a un tiempo fijo hacía fallar
+		# la prueba una vez de cada cuatro. Se espera a que aparezca.
 		var visible_during_hit := visual_multimesh.multimesh.get_instance_transform(visual_index)
+		for _wobble_frame in 30:
+			await process_frame
+			visible_during_hit = visual_multimesh.multimesh.get_instance_transform(visual_index)
+			if float(breakable.get_meta("computed_visible_wobble_delta", 0.0)) > 0.0001:
+				break
 		# El renderer dummy de --headless no conserva el buffer MultiMesh tras
 		# instalarlo en el árbol. En ejecución normal comprobamos la transformación
 		# real; sin pantalla comprobamos que el tween produjo una pose visible.
@@ -766,7 +857,7 @@ func _run_test() -> void:
 	):
 		_fail("La alfombra no combina viento coordinado y apertura alrededor del personaje.")
 		return
-	scatter.call("_update_grass_interaction")
+	scatter.call("_update_grass_interaction", 0.0)
 	var shader_player_position: Vector3 = grass_material.get_shader_parameter("player_position")
 	var interaction_player := world.get_node("Player") as Node3D
 	if shader_player_position.distance_to(interaction_player.global_position) > 0.01:

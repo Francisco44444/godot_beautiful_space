@@ -17,9 +17,26 @@ var _progress: Array = []
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_apply_theme()
 	progress_bar.value = 2.0
 	stage_label.text = "Preparando la expedición…"
 	call_deferred("_begin_world_load")
+
+
+func _apply_theme() -> void:
+	## La pantalla de carga comparte el lenguaje visual del resto de la interfaz
+	## en vez de llevar sus propios estilos incrustados en la escena.
+	var panel := get_node_or_null("Panel") as Panel
+	if panel != null:
+		panel.add_theme_stylebox_override("panel", UiTheme.panel(UiTheme.INK, UiTheme.AMBER, 20, 0.0, 0.0))
+	UiTheme.style_progress(progress_bar, UiTheme.AMBER)
+	var title := get_node_or_null("Panel/Margin/Content/Title") as Label
+	if title != null:
+		UiTheme.style_title(title, 34)
+	var subtitle := get_node_or_null("Panel/Margin/Content/Subtitle") as Label
+	if subtitle != null:
+		UiTheme.style_body(subtitle, 18, UiTheme.FROST)
+	UiTheme.style_body(stage_label, 16, UiTheme.MUTED)
 
 
 func _begin_world_load() -> void:

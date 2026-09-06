@@ -34,6 +34,11 @@ const HOOFBEATS: Array[AudioStream] = [
 
 @onready var visual: Node3D = $Visual
 @onready var rider_anchor: Marker3D = $Visual/RiderAnchor
+
+## Fase de la zancada y marcha normalizada (0 parado, 1 galope tendido). Las lee
+## el jinete para acompasar su postura.
+var stride_phase := 0.0
+var gait := 0.0
 @onready var name_label: Label3D = $NameLabel
 @onready var model_root: Node3D = $Visual/ModelRoot
 @onready var hoof_audio: AudioStreamPlayer3D = $HoofAudio
@@ -303,6 +308,10 @@ func _update_animation(delta: float) -> void:
 
 	# El ancla acompaña suavemente el lomo para que el jinete siga la zancada.
 	var bob := absf(sin(_stride_time * 2.0)) * 0.075 * motion_amount
+	# El jinete necesita conocer la fase y la marcha exactas para acompasar su
+	# postura al galope en vez de rebotar con un seno propio.
+	stride_phase = _stride_time
+	gait = motion_amount
 	rider_anchor.position.y = lerpf(rider_anchor.position.y, _rider_base_height + bob, 0.3)
 
 

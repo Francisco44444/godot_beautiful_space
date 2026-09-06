@@ -53,6 +53,9 @@ func interact(player: Player) -> bool:
 	match kind:
 		"chest":
 			activated = true
+			# El héroe se agacha a abrirlo en vez de destaparlo por telequinesis.
+			if player.has_method("play_gesture"):
+				player.call("play_gesture", "Chest_Open")
 			if adventure_system != null:
 				adventure_system.call("open_chest", self, player)
 			return true
@@ -72,6 +75,8 @@ func interact(player: Player) -> bool:
 				inventory.call("add_item", reward_item_id, 1)
 			if exploration != null:
 				exploration.call("register_world_action", zone_id, "recover_relic")
+			if player.has_method("play_gesture"):
+				player.call("play_gesture", "Farm_Harvest")
 			player.action_feedback.emit("Reliquia conseguida: %s" % _reward_name())
 			var tween := create_tween().set_parallel(true)
 			tween.tween_property(self, "scale", Vector3.ONE * 0.05, 0.24).set_trans(Tween.TRANS_BACK)

@@ -3,6 +3,8 @@ extends Node3D
 ## Conecta el mundo ampliado de 12 x 12 km y gobierna un ciclo completo con amanecer,
 ## atardecer y noche real, incluida la iluminación ambiental.
 
+const DESERT_BREEZE_SCRIPT: Script = preload("res://scripts/desert_breeze.gd")
+const DUST_DEVIL_SCRIPT: Script = preload("res://scripts/dust_devil.gd")
 const FAST_TRAVEL_POINTS: Array[Dictionary] = [
 	{"name": "Dunas Doradas", "position": Vector2(2350.0, 2050.0)},
 	{"name": "Cumbres Blancas", "position": Vector2(520.0, -3000.0)},
@@ -78,7 +80,11 @@ func _ready() -> void:
 	_last_dry_player_position = player.global_position
 	_last_dry_horse_position = horse.global_position
 	_build_sea_boundary()
-	_build_coastal_cliff_barrier()
+	# Sin barandilla invisible: el terreno conserva sus desniveles físicos y el
+	# jugador puede caer libremente por cualquier cornisa o acantilado.
+	coastal_cliff_barrier = null
+	coastal_cliff_barrier_segment_count = 0
+	set_meta("coastal_fall_barrier_disabled", true)
 	GameSettings.lod_distance_changed.connect(_apply_lod_distance)
 	_apply_lod_distance(GameSettings.lod_distance_metres)
 	_setup_network_players()
@@ -93,8 +99,33 @@ func _ready() -> void:
 		exploration.call("bind_terrain", terrain)
 		exploration.call("set_tracked_player", player)
 		_sync_exploration_time(exploration)
+	_build_desert_breeze()
 	set_meta("systematic_mesh_lod", true)
 	set_meta("lod_sources", "imported glTF/OBJ + explicit vegetation HLOD")
+
+
+func _build_desert_breeze() -> void:
+	## Aire del desierto: rachas de polvo y remolinos de arena. Viven en el mundo
+	## y no en el jugador porque son del escenario, y el bioma lo decide la
+	## vegetación.
+	var breeze := DESERT_BREEZE_SCRIPT.new() as Node3D
+	breeze.name = "DesertBreeze"
+	add_child(breeze)
+	breeze.call("bind", self)
+	# Remolinos de arena recorriendo las dunas: dan inquietud a un bioma que,
+	# por lo demás, es una extensión quieta.
+	var devils := DUST_DEVIL_SCRIPT.new() as Node3D
+	devils.name = "DustDevils"
+	add_child(devils)
+	devils.call("bind", self)
+
+
+func _atmosphere_storm_dimming() -> float:
+	var dimming := 1.0
+	for node in get_tree().get_nodes_in_group("atmosphere_storm"):
+		if node.has_method("get_dimming"):
+			dimming = minf(dimming, float(node.call("get_dimming")))
+	return dimming
 
 
 func _process(delta: float) -> void:
@@ -297,6 +328,13 @@ func _clear_network_players() -> void:
 
 func get_tide_dry_clearance() -> float:
 	return TIDE_DRY_CLEARANCE
+
+
+func call_companions_to_player() -> String:
+	var story := get_node_or_null("RPGStoryRuntime")
+	if story == null or not story.has_method("call_companions"):
+		return ""
+	return String(story.call("call_companions"))
 
 
 func call_horse_to_player() -> bool:
@@ -672,9 +710,13 @@ func _update_sun_cycle(delta: float) -> void:
 	sun.rotation_degrees.y = -122.0 + sin(sun_cycle_radians * 0.5) * 18.0
 	if island_environment != null:
 		island_environment.sync_celestial_sources()
-	sun.light_energy = daylight_factor * lerpf(0.62, 1.35, maxf(solar_height, 0.0))
+	# La tormenta del ataque cargado atenúa la luz a través de este factor en
+	# lugar de escribir el sol directamente: si lo hiciera, este mismo cálculo la
+	# borraría en el fotograma siguiente y el giro saldría a plena luz.
+	var storm_dimming := _atmosphere_storm_dimming()
+	sun.light_energy = daylight_factor * lerpf(0.62, 1.35, maxf(solar_height, 0.0)) * storm_dimming
 	sun.light_color = Color(1.0, 0.58, 0.32).lerp(Color(1.0, 0.93, 0.79), smoothstep(0.05, 0.62, solar_height))
-	sky_fill.light_energy = lerpf(0.19, 0.22, daylight_factor)
+	sky_fill.light_energy = lerpf(0.19, 0.22, daylight_factor) * storm_dimming
 	sky_fill.light_color = Color(0.34, 0.44, 0.78).lerp(Color(0.58, 0.7, 0.92), daylight_factor)
 	if daylight_factor < 0.14:
 		time_of_day = "Noche"
@@ -702,7 +744,7 @@ func _update_sun_cycle(delta: float) -> void:
 	# El color bajo el horizonte coincide con el mar distante para borrar la
 	# línea blanca del final del mapa y reforzar la curvatura falsa del océano.
 	sky_material.ground_horizon_color = Color(0.035, 0.075, 0.16).lerp(Color(0.34, 0.64, 0.76), daylight_factor).lerp(sunset_horizon, twilight * 0.28)
-	environment.ambient_light_energy = lerpf(0.22, 0.66, daylight_factor)
+	environment.ambient_light_energy = lerpf(0.22, 0.66, daylight_factor) * maxf(storm_dimming, 0.34)
 	environment.ambient_light_color = Color(0.28, 0.36, 0.62).lerp(Color(0.91, 0.93, 0.87), daylight_factor)
 	environment.tonemap_exposure = lerpf(0.84, 0.98, daylight_factor)
 	for lantern in get_tree().get_nodes_in_group("night_lantern"):
