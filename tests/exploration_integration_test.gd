@@ -9,6 +9,8 @@ func _init() -> void:
 
 func _run_test() -> void:
 	_cleanup()
+	root.get_node("InventoryManager").set("autosave_enabled", false)
+	root.get_node("SaveGameManager").set_process(false)
 	var exploration := root.get_node_or_null("ExplorationManager")
 	if exploration == null or int(exploration.call("get_zone_count")) != 200:
 		_fail("No se cargó el catálogo global de 200 zonas.")
@@ -20,6 +22,7 @@ func _run_test() -> void:
 	var scene := load("res://scenes/world.tscn") as PackedScene
 	var world := scene.instantiate()
 	root.add_child(world)
+	root.get_node("SaveGameManager").call("bind_world", null)
 	for _frame in 5:
 		await process_frame
 	var hud := world.get_node("HUD")
@@ -67,7 +70,17 @@ func _run_test() -> void:
 		return
 
 	hud.call("_set_exploration_journal_open", true)
-	if not journal.visible or not paused or list.item_count != 200:
+	# L abre primero la crónica; TAB pasa al listado de exploración. Comprobar
+	# ambas páginas evita exigir la interfaz antigua o aceptar una lista oculta.
+	var chronicle := journal.find_child("Chronicle", true, false) as RichTextLabel
+	if not journal.visible or not paused or chronicle == null or not chronicle.visible or list.visible:
+		_fail("L no abre la crónica pausada como primera página del diario.")
+		return
+	var page_key := InputEventKey.new()
+	page_key.physical_keycode = KEY_TAB
+	page_key.pressed = true
+	hud.call("_unhandled_input", page_key)
+	if not journal.visible or not paused or not list.visible or chronicle.visible or list.item_count != 200:
 		_fail("L no dispone de un listado pausado con las 200 zonas.")
 		return
 	hud.call("_on_exploration_item_clicked", 10, Vector2.ZERO, MOUSE_BUTTON_LEFT)
