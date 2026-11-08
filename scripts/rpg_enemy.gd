@@ -98,10 +98,11 @@ func _physics_process(delta: float) -> void:
 		_pick_target()
 	if not is_instance_valid(_target):
 		return
+	var posicion_objetivo := _posicion_objetivo()
 	var flat := Vector3(
-		_posicion_objetivo().x - global_position.x,
+		posicion_objetivo.x - global_position.x,
 		0.0,
-		_posicion_objetivo().z - global_position.z
+		posicion_objetivo.z - global_position.z
 	)
 	var distance := flat.length()
 	if distance > sleep_radius:

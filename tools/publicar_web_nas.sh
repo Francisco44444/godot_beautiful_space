@@ -29,7 +29,7 @@ for archivo in "$paquete" "$instalador" version.json; do
   fi
 done
 python3 - "$version" "$origen" "$preparado" <<'PY'
-import hashlib,json,shutil,sys,zipfile
+import hashlib,json,re,shutil,sys,zipfile
 from pathlib import Path
 version,origen,preparado=sys.argv[1:]
 origen=Path(origen); preparado=Path(preparado)
@@ -55,6 +55,12 @@ for archivo in Path('website').rglob('*'):
         destino=preparado/archivo.relative_to('website')
         destino.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(archivo,destino)
+# El enlace inicial también debe servir la versión publicada sin JavaScript.
+pagina=preparado/'index.html'
+html=pagina.read_text()
+html=re.sub(r'SenderosDelHorizonte-Windows-x86_64-\d+\.\d+\.\d+\.zip',nombre,html)
+html=re.sub(r'(data-version>Alfa )\d+\.\d+\.\d+',lambda coincidencia:coincidencia[1]+version,html)
+pagina.write_text(html)
 for archivo in [nombre,'SenderosDelHorizonte-Instalador.zip']: shutil.copy2(origen/archivo,preparado/archivo)
 # La misma página debe descargar desde el NAS tanto por HTTPS público como por
 # su dirección local, sin depender de que el router admita retorno NAT.

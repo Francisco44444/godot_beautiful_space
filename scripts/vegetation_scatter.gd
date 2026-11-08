@@ -359,6 +359,8 @@ var _grass_mid_active_instances := 0
 var _tree_cell_states: Dictionary = {}
 var _grass_cell_states: Dictionary = {}
 var _explicit_lod_refresh_elapsed := 0.0
+var _explicit_lod_last_focus := Vector2(INF, INF)
+var _explicit_lod_last_switch := INF
 var _installed_multimeshes: Dictionary = {}
 var _breakable_resources: Dictionary = {}
 var _destroyed_resource_ids: Dictionary = {}
@@ -2224,6 +2226,12 @@ func _update_explicit_lod_visibility(force: bool) -> void:
 		)
 	else:
 		return
+	# El corte usa sólo XZ. Repetir miles de consultas con el mismo foco no
+	# cambia ninguna celda; el viento y las transiciones siguen en el shader.
+	if not force and focus == _explicit_lod_last_focus and lod_switch_distance == _explicit_lod_last_switch:
+		return
+	_explicit_lod_last_focus = focus
+	_explicit_lod_last_switch = lod_switch_distance
 	explicit_lod_visible_full_cells = 0
 	explicit_lod_visible_proxy_cells = 0
 	_update_lod_pair_set(
@@ -2324,6 +2332,7 @@ func _set_lod_instances_visible(instances: Array, should_be_visible: bool) -> vo
 
 
 func _register_lod_instance(store: Dictionary, cell: Vector2i, instance: MultiMeshInstance3D) -> void:
+	_explicit_lod_last_focus = Vector2(INF, INF)
 	if not store.has(cell):
 		store[cell] = []
 	var instances: Array = store[cell]
