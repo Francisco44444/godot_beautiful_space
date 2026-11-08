@@ -42,18 +42,24 @@ func comprobar() -> void:
 	var poses: Array[Transform3D] = [Transform3D(Basis.IDENTITY,Vector3(-12,0,0)),Transform3D(Basis(Vector3.UP,0.8).scaled(Vector3.ONE*3),Vector3(30,0,-15))]
 	multi.custom_aabb = AABB(Vector3(-20,-5,-30),Vector3(70,50,45))
 	celda.multimesh = multi
+	celda.layers = 5
 	celda.position = Vector3(-340,10,680)
 	mundo.add_child(celda)
 	gestor.registrar(celda,poses)
 	var sin_sombra := MultiMeshInstance3D.new()
 	sin_sombra.multimesh = multi
+	sin_sombra.layers = 8
 	sin_sombra.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mundo.add_child(sin_sombra)
 	gestor.registrar(sin_sombra,poses)
-	if gestor.estadisticas().celdas!=1 or sin_sombra.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF: fallar("Se habilitan sombras que estaban desactivadas."); return
+	if gestor.estadisticas().celdas!=1 or sin_sombra.layers!=8 or sin_sombra.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF: fallar("Se cambian capas o sombras que estaban desactivadas."); return
 	gestor.iniciar()
-	if gestor.estadisticas().instancias!=2 or celda.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY: fallar("No se separan color y sombras originales."); return
+	if gestor.estadisticas().instancias!=2 or celda.layers!=0 or celda.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY: fallar("La fuente duplica las sombras de los árboles individuales."); return
 	var creadas := int(gestor.estadisticas().creadas)
+	gestor.establecer_sombras_individuales(false)
+	if celda.layers!=5 or celda.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY or gestor.estadisticas().instancias!=2: fallar("El control de sombras pierde el color o sus capas originales."); return
+	gestor.establecer_sombras_individuales(true)
+	if celda.layers!=0 or gestor.estadisticas().instancias!=2 or int(gestor.estadisticas().creadas)!=creadas: fallar("Cambiar las sombras reconstruye o duplica los árboles."); return
 	for paso in 20:
 		mundo.visible = false
 		if gestor.estadisticas().instancias!=0: fallar("El bosque oculto sigue representando árboles individuales."); return
@@ -62,13 +68,15 @@ func comprobar() -> void:
 	var nueva := Transform3D(Basis(Vector3.RIGHT,1.1).scaled(Vector3.ONE*3),Vector3(45,0,-15))
 	gestor.actualizar(celda,1,nueva)
 	var datos: Dictionary = gestor.get("_celdas")[celda.get_instance_id()]
+	if int(datos.capas)!=5 or int(datos.sombra)!=GeometryInstance3D.SHADOW_CASTING_SETTING_ON: fallar("El árbol individual pierde las capas o las sombras originales."); return
 	var caja_nueva: AABB = datos.cajas[1]
 	var esperada := celda.global_transform*nueva
 	if not caja_nueva.get_center().is_equal_approx(esperada.origin): fallar("La tala mueve otro ejemplar o pierde el ancla de la celda."); return
 	if not (datos.cajas[0] as AABB).get_center().is_equal_approx(celda.to_global(poses[0].origin)): fallar("Mover un árbol desplaza a su vecino."); return
 	gestor.establecer_activo(false)
-	if gestor.estadisticas().instancias!=0 or celda.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_ON: fallar("El control anterior deja color duplicado o sombras modificadas."); return
+	if gestor.estadisticas().instancias!=0 or celda.layers!=5 or celda.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_ON: fallar("El control anterior deja color duplicado o pierde capas y sombras."); return
 	gestor.establecer_activo(true)
+	if celda.layers!=0: fallar("Reactivar el render deja las sombras dibujadas dos veces."); return
 	if int(gestor.estadisticas().creadas)!=creadas: fallar("Reactivar el render pierde la reserva."); return
 	var camara := Camera3D.new()
 	camara.position = Vector3(-900,90,800)
@@ -93,9 +101,17 @@ func comprobar() -> void:
 	gestor._process(1.0/60.0)
 	for registro in (gestor.get("_visibles") as Dictionary).values():
 		if registro.camara!=camara.global_position: fallar("Un salto de cámara espera al turno y deja LOD sin compensar."); return
+	mundo.remove_child(celda)
+	if celda.layers!=5 or celda.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_ON or (gestor.get("_celdas") as Dictionary).has(celda.get_instance_id()): fallar("Retirar una celda pierde sus capas o deja instancias registradas."); return
+	var cantidad_creada := int(gestor.estadisticas().creadas)
+	mundo.add_child(celda)
+	gestor.registrar(celda,poses)
+	if celda.layers!=0 or int(gestor.estadisticas().creadas)!=cantidad_creada: fallar("Registrar de nuevo la celda pierde la reserva o sus capas."); return
+	mundo.remove_child(celda)
+	celda.free()
 	mundo.queue_free()
 	await process_frame
-	print("FOREST RENDER TEST OK: 3000 cotas de detalle, proyección ortogonal, sombras conservadas, reserva y tala por índice.")
+	print("FOREST RENDER TEST OK: 3000 cotas de detalle, proyección ortogonal, sombras individuales sin duplicados, capas restauradas, reserva y tala por índice.")
 	quit()
 
 func fallar(mensaje: String) -> void:

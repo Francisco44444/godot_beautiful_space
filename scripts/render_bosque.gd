@@ -1,13 +1,14 @@
 extends Node
 
-## El MultiMesh conserva la identidad de cada árbol y las sombras anteriores.
-## El pase de color se descarta por ejemplar y aprovecha la agrupación nativa
-## de Forward+. Compensar la distancia y escala evita degradar su LOD.
+## El MultiMesh conserva la identidad de cada árbol. Color y sombras se
+## descartan por ejemplar y aprovechan la agrupación nativa de Forward+.
+## Compensar la distancia y escala evita degradar su LOD.
 const MARGEN_CAMARA := 2.0
 const CELDAS_POR_FRAME := 12
 const DETALLE_COMPLETO := 1000000.0
 
 var activo := true
+var sombras_individuales := true
 var _preparado := false
 var _celdas: Dictionary = {}
 var _visibles: Dictionary = {}
@@ -28,12 +29,12 @@ func registrar(celda: MultiMeshInstance3D, poses: Array[Transform3D]) -> void:
 	var id := celda.get_instance_id()
 	var datos := {"nodo":celda,"poses":poses.duplicate(),"ids":[],"cajas":[],"escalas":[],"bias":[],
 		"camara":Vector3(INF,INF,INF),"sucio":true,"completo":false,
-		"sombra":celda.cast_shadow,"malla":celda.multimesh.mesh.get_instance_id()}
+		"sombra":celda.cast_shadow,"capas":celda.layers,"malla":celda.multimesh.mesh.get_instance_id()}
 	_celdas[id] = datos
 	_mallas[datos.malla] = celda.multimesh.mesh
 	celda.visibility_changed.connect(_al_cambiar_visibilidad.bind(id))
 	celda.tree_exiting.connect(_desregistrar.bind(id))
-	if activo: celda.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	_configurar_celda(datos,activo)
 	if _preparado: _al_cambiar_visibilidad(id)
 
 
@@ -50,9 +51,29 @@ func establecer_activo(valor: bool) -> void:
 		var datos: Dictionary = _celdas[id]
 		var celda := datos.nodo as MultiMeshInstance3D
 		if not is_instance_valid(celda): continue
-		celda.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if valor else int(datos.sombra)
+		_configurar_celda(datos,valor)
 		_al_cambiar_visibilidad(id)
 	_pendiente = true
+
+
+func _configurar_celda(datos: Dictionary, individual: bool) -> void:
+	var celda := datos.nodo as MultiMeshInstance3D
+	# La celda de 340 m obligaba a dibujar en sombras árboles que no alcanzaban
+	# la cascada. Las instancias individuales conservan sus mallas y sombras;
+	# la fuente queda fuera de las capas de render para evitar duplicarlas.
+	celda.layers = 0 if individual and sombras_individuales else int(datos.capas)
+	celda.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if individual else int(datos.sombra)
+
+
+func establecer_sombras_individuales(valor: bool) -> void:
+	# El control anterior permite medir el coste sin tocar vegetación ni luz,
+	# y reutiliza las instancias de color ya activas en lugar de reconstruirlas.
+	if sombras_individuales==valor: return
+	sombras_individuales = valor
+	for datos in _celdas.values():
+		_configurar_celda(datos,activo)
+		for instancia in datos.ids:
+			RenderingServer.instance_geometry_set_cast_shadows_setting(instancia,int(datos.sombra) if valor else RenderingServer.SHADOW_CASTING_SETTING_OFF)
 
 
 func _al_cambiar_visibilidad(id: int) -> void:
@@ -69,9 +90,9 @@ func _al_cambiar_visibilidad(id: int) -> void:
 				instancia = RenderingServer.instance_create2(celda.multimesh.mesh.get_rid(),celda.get_world_3d().scenario)
 				_creadas += 1
 			else: instancia = banco.pop_back()
-			RenderingServer.instance_geometry_set_cast_shadows_setting(instancia,RenderingServer.SHADOW_CASTING_SETTING_OFF)
+			RenderingServer.instance_geometry_set_cast_shadows_setting(instancia,int(datos.sombra) if sombras_individuales else RenderingServer.SHADOW_CASTING_SETTING_OFF)
 			RenderingServer.instance_geometry_set_lod_bias(instancia,DETALLE_COMPLETO)
-			RenderingServer.instance_set_layer_mask(instancia,celda.layers)
+			RenderingServer.instance_set_layer_mask(instancia,int(datos.capas))
 			RenderingServer.instance_attach_object_instance_id(instancia,id)
 			ids.append(instancia)
 			datos.cajas.append(AABB())
@@ -201,6 +222,11 @@ func _desregistrar(id: int) -> void:
 	if _visibles.has(id): _retirar(datos)
 	_visibles.erase(id)
 	_celdas.erase(id)
+	var celda := datos.nodo as MultiMeshInstance3D
+	if is_instance_valid(celda):
+		celda.visibility_changed.disconnect(_al_cambiar_visibilidad.bind(id))
+		celda.tree_exiting.disconnect(_desregistrar.bind(id))
+		_configurar_celda(datos,false)
 
 
 func estadisticas() -> Dictionary:
@@ -218,7 +244,7 @@ func _exit_tree() -> void:
 		for instancia in banco: RenderingServer.free_rid(instancia)
 	for datos in _celdas.values():
 		var celda := datos.nodo as MultiMeshInstance3D
-		if is_instance_valid(celda): celda.cast_shadow = int(datos.sombra)
+		if is_instance_valid(celda): _configurar_celda(datos,false)
 	_visibles.clear()
 	_bancos.clear()
 	_celdas.clear()

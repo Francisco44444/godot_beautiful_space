@@ -1,5 +1,10 @@
 # Bosque y medición completa del suelo — 8 de noviembre de 2026
 
+**Pasada posterior:** [SOMBRAS_DEL_BOSQUE.md](SOMBRAS_DEL_BOSQUE.md) extiende el
+descarte individual a las sombras, con la cámara enlazada a Terrain3D y
+comparaciones nuevas de día, noche y movimiento. Este documento conserva el
+control histórico de color individual y sombras en MultiMesh.
+
 El objetivo acordado es buscar **100–120 FPS conservando la calidad**. Esta
 pasada consigue una mejora modesta en Puerto Alba; la villa sigue prácticamente
 igual. No se ha alcanzado todavía ese objetivo.

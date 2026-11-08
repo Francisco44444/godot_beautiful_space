@@ -109,6 +109,12 @@ apenas cambia. Incluye la corrección del control de suelo para retirar también
 la calzada independiente. El objetivo actual es 100–120 FPS con la calidad
 conservada; los 200 ya no son un requisito.
 
+La pasada posterior de [SOMBRAS_DEL_BOSQUE.md](SOMBRAS_DEL_BOSQUE.md) extiende
+esa representación a las sombras. Con la cámara y la fase de luz comprobadas,
+Puerto mejora otro 8,8–9,4 % y la villa un 2,3–2,6 % frente a la ruta anterior.
+Las medidas históricas no se suman entre sí: utilizan configuraciones y
+cámaras distintas. Continúa pendiente la referencia de Windows.
+
 - Medir y reducir los dibujos y el coste GPU de edificios/sombras sin retirar
   elementos ni bajar resolución o densidad. En la cámara de la villa siguen
   dibujándose unos 5 millones de primitivas y 3.900 llamadas.
