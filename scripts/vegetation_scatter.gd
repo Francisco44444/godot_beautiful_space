@@ -402,6 +402,7 @@ var _streamed_tree_collision_active := 0
 var _grass_wind_materials: Array[ShaderMaterial] = []
 var _tree_wind_materials: Array[ShaderMaterial] = []
 var _render_bosque: Node
+var _render_hierba: Node
 var _tree_wind_material_count := 0
 var _storm_strength := 0.0
 var _grass_interaction_target: Node3D
@@ -426,6 +427,11 @@ func _ready() -> void:
 	_render_bosque.name = "RenderBosque"
 	_render_bosque.activo = DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="forward_plus"
 	add_child(_render_bosque)
+	_render_hierba = preload("res://scripts/render_hierba.gd").new()
+	_render_hierba.name = "RenderHierba"
+	_render_hierba.activo = _render_bosque.activo
+	add_child(_render_hierba)
+	_render_hierba.iniciar(terrain)
 	var startup_stage := Time.get_ticks_msec()
 	_bake_layout_cache = "--bake-vegetation" in OS.get_cmdline_user_args()
 	_profile_vegetation_startup = _bake_layout_cache or "--profile-vegetation" in OS.get_cmdline_user_args()
@@ -1561,6 +1567,7 @@ func _make_meadow_blades(count: int, width: Vector2, height: Vector2) -> ArrayMe
 	arrays[Mesh.ARRAY_TEX_UV2] = roots
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.set_meta("limites_hierba", {"radio":DENSE_GRASS_PATCH_RADIUS,"altura":height.y,"anchura":width.y,"ancho_maximo":1.8})
 	return mesh
 
 
@@ -1945,6 +1952,7 @@ func _install_grass_near_field() -> void:
 	_grass_near_instance.set_meta("source_layout_count", grass_count)
 	_grass_near_instance.set_meta("preload_radius", GRASS_NEAR_PRELOAD_RADIUS)
 	category.add_child(_grass_near_instance)
+	_render_hierba.registrar(_grass_near_instance,_actualizar_fuente_hierba)
 	var mid_category := Node3D.new()
 	mid_category.name = "GrassMidLODCells"
 	mid_category.set_meta("fixed_world_layout", true)
@@ -1966,6 +1974,7 @@ func _install_grass_near_field() -> void:
 	_grass_mid_instance.set_meta("source_layout_count", grass_count)
 	_grass_mid_instance.set_meta("preload_radius", GRASS_MID_PRELOAD_RADIUS)
 	mid_category.add_child(_grass_mid_instance)
+	_render_hierba.registrar(_grass_mid_instance,_actualizar_fuente_hierba)
 	generated_cell_count += 2
 
 
@@ -1994,32 +2003,52 @@ func _update_grass_near_field(focus: Vector2, force: bool) -> void:
 	var mid_radius_squared := GRASS_MID_PRELOAD_RADIUS * GRASS_MID_PRELOAD_RADIUS
 	var active_transforms: Array[Transform3D] = []
 	var mid_transforms: Array[Transform3D] = []
+	var identidades_cercanas := PackedInt64Array()
+	var identidades_medias := PackedInt64Array()
 	for cell_y in range(center_cell.y - cell_radius, center_cell.y + cell_radius + 1):
 		for cell_x in range(center_cell.x - cell_radius, center_cell.x + cell_radius + 1):
-			for transform_value in _grass_near_transform_cells.get(Vector2i(cell_x, cell_y), []):
-				var transform := transform_value as Transform3D
+			var celda := Vector2i(cell_x,cell_y)
+			var transforms: Array = _grass_near_transform_cells.get(celda,[])
+			# La isla cabe en celdas con signo de 16 bits; otros 16 guardan el
+			# índice estable dentro de la celda, sin duplicar el índice del mundo.
+			var id_celda := ((cell_x & 65535)<<32) | ((cell_y & 65535)<<16)
+			for indice in transforms.size():
+				var transform := transforms[indice] as Transform3D
 				var point := Vector2(transform.origin.x, transform.origin.z)
 				var distance_squared := point.distance_squared_to(focus)
 				if distance_squared <= near_radius_squared:
 					active_transforms.append(transform)
+					identidades_cercanas.append(id_celda | indice)
 				if distance_squared <= mid_radius_squared:
 					mid_transforms.append(transform)
+					identidades_medias.append(id_celda | indice)
 	var multimesh := _grass_near_instance.multimesh
 	if active_transforms.size() > multimesh.instance_count:
 		multimesh.instance_count = active_transforms.size() + 256
 	multimesh.visible_instance_count = active_transforms.size()
-	for index in active_transforms.size():
-		multimesh.set_instance_transform(index, active_transforms[index])
-	multimesh.custom_aabb = _transforms_aabb(active_transforms, multimesh.mesh).grow(2.5)
+	if _render_hierba == null or not _render_hierba.difiere_fuente(_grass_near_instance):
+		_actualizar_fuente_hierba(_grass_near_instance,active_transforms)
 	_grass_near_active_instances = active_transforms.size()
 	var mid_multimesh := _grass_mid_instance.multimesh
 	if mid_transforms.size() > mid_multimesh.instance_count:
 		mid_multimesh.instance_count = mid_transforms.size() + 256
 	mid_multimesh.visible_instance_count = mid_transforms.size()
-	for index in mid_transforms.size():
-		mid_multimesh.set_instance_transform(index, mid_transforms[index])
-	mid_multimesh.custom_aabb = _transforms_aabb(mid_transforms, mid_multimesh.mesh).grow(2.5)
+	if _render_hierba == null or not _render_hierba.difiere_fuente(_grass_mid_instance):
+		_actualizar_fuente_hierba(_grass_mid_instance,mid_transforms)
 	_grass_mid_active_instances = mid_transforms.size()
+	if _render_hierba != null:
+		_render_hierba.actualizar(_grass_near_instance, active_transforms, identidades_cercanas)
+		_render_hierba.actualizar(_grass_mid_instance, mid_transforms, identidades_medias)
+
+
+func _actualizar_fuente_hierba(campo: MultiMeshInstance3D, poses: Array[Transform3D]) -> void:
+	# La fuente invisible no necesita subir matrices y reconstruir su caja al
+	# caminar. Se sincroniza antes de restaurarla, con la distribución más reciente.
+	var multimesh := campo.multimesh
+	if poses.size() > multimesh.instance_count: multimesh.instance_count = poses.size()+256
+	multimesh.visible_instance_count = poses.size()
+	for indice in poses.size(): multimesh.set_instance_transform(indice,poses[indice])
+	multimesh.custom_aabb = _transforms_aabb(poses,multimesh.mesh).grow(2.5)
 
 
 func _bucket_transform_reference(buckets: Dictionary, variant: int, point: Vector2, cell_size: float, transform: Transform3D) -> Dictionary:
