@@ -7,9 +7,14 @@ su propia carpeta. La referencia de Vigo se consultó por la dirección local
 desde esta red.
 
 `website/` contiene HTML, CSS, JavaScript y capturas reales del juego. No necesita
-compilador ni dependencias externas. El instalador es la descarga principal;
-también ofrece el ZIP completo, tamaño y SHA-256 a partir de `version.json`.
-El lanzador conserva su canal de actualizaciones de GitHub Releases.
+compilador ni dependencias externas. La descarga principal es el ZIP del juego
+completo con `SenderosDelHorizonte.exe`: se extrae todo y se abre el ejecutable.
+Los dos botones principales consultan `version.json` para enlazar la misma
+versión, junto con su tamaño y SHA-256. El instalador `.bat` queda como opción
+secundaria para quien prefiera actualizaciones automáticas; su lanzador conserva
+el canal de GitHub Releases. En el manifiesto de la web, el enlace al ZIP es
+relativo para que funcione desde la URL pública y desde la dirección local del
+NAS sin depender del retorno NAT del router.
 
 ## Publicar una versión
 

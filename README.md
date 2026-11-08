@@ -67,13 +67,16 @@ tools/runtime/Godot.app/Contents/MacOS/Godot --editor --path .
 
 Dentro del editor, `F5` ejecuta el proyecto completo.
 
-### Instalar en Windows
+### Jugar en Windows
 
-Descarga [SenderosDelHorizonte-Instalador.zip](https://github.com/Francisco44444/godot_beautiful_space/releases/latest/download/SenderosDelHorizonte-Instalador.zip), extráelo y ejecuta `Instalar.bat`. El instalador
-crea un acceso directo en el escritorio; a partir de ahí, ese acceso comprueba las
-actualizaciones antes de abrir el juego. La versión alfa no está firmada y Windows
-puede mostrar SmartScreen; para una distribución pública habrá que firmar el
-ejecutable.
+Descarga el **ZIP completo** desde la [web del NAS](https://franfuco4444.synology.me:24573/senderos/),
+extrae todos sus archivos y abre `SenderosDelHorizonte.exe`. Mantén el ejecutable,
+el `.pck` y la DLL de Terrain3D dentro de la misma carpeta.
+
+Como alternativa, [SenderosDelHorizonte-Instalador.zip](https://github.com/Francisco44444/godot_beautiful_space/releases/latest/download/SenderosDelHorizonte-Instalador.zip)
+incluye `Instalar.bat` y crea un acceso directo que comprueba las actualizaciones
+antes de abrir el juego. La versión alfa no está firmada y Windows puede mostrar
+SmartScreen; para una distribución pública habrá que firmar el ejecutable.
 
 El lobby consulta `https://franfuco4444.synology.me:24568/v1` y muestra las
 expediciones activas. Para jugar por Internet, el PC anfitrión aún debe permitir y
@@ -87,7 +90,7 @@ relay/NAT traversal ni sincronización autoritativa de futuras misiones.
 La web de descarga de Senderos se prepara desde `website/` y se publica en la
 carpeta `/senderos/` del NAS. Tras generar una release, se actualiza con
 `bash tools/publicar_web_nas.sh VERSION --subir`.
-[Instalador, copia verificada y publicación de la web](docs/WEB_DE_DESCARGA.md).
+[ZIP completo, copia verificada y publicación de la web](docs/WEB_DE_DESCARGA.md).
 
 Después de editar el proyecto, haz doble clic en `PublicarCambios.command`. La
 opción 1 sube un cambio y deja un ejecutable de prueba en GitHub Actions; la

@@ -24,14 +24,14 @@ fi
 mkdir -p "$origen" "$preparado/assets"
 for archivo in "$paquete" "$instalador" version.json; do
   if [[ ! -f "$origen/$archivo" ]]; then
-    echo "Descargando $archivo de la release v$version…"
+    echo "Descargando $archivo de la release v${version}…"
     gh release download "v$version" --repo Francisco44444/godot_beautiful_space --pattern "$archivo" --dir "$origen"
   fi
 done
-python3 - "$version" "$origen" "$preparado" "$base_url" <<'PY'
+python3 - "$version" "$origen" "$preparado" <<'PY'
 import hashlib,json,shutil,sys,zipfile
 from pathlib import Path
-version,origen,preparado,base_url=sys.argv[1:]
+version,origen,preparado=sys.argv[1:]
 origen=Path(origen); preparado=Path(preparado)
 manifiesto=json.loads((origen/'version.json').read_text())
 if manifiesto['version']!=version: raise SystemExit('El manifiesto no corresponde a la versión solicitada.')
@@ -42,6 +42,12 @@ with archivo.open('rb') as entrada:
     for bloque in iter(lambda:entrada.read(1024*1024),b''): digest.update(bloque)
 if archivo.stat().st_size!=manifiesto['windows']['size_bytes'] or digest.hexdigest()!=manifiesto['windows']['sha256']:
     raise SystemExit('El ZIP no coincide con el tamaño y SHA-256 publicados.')
+with zipfile.ZipFile(archivo) as z:
+    try:
+        with z.open('SenderosDelHorizonte.exe') as ejecutable:
+            if ejecutable.read(2)!=b'MZ': raise SystemExit('El ZIP no contiene un ejecutable Windows válido.')
+    except KeyError:
+        raise SystemExit('Falta SenderosDelHorizonte.exe en el ZIP del juego completo.')
 with zipfile.ZipFile(origen/'SenderosDelHorizonte-Instalador.zip') as z:
     if not {'Instalar.bat','ActualizarYJugar.ps1'}.issubset(z.namelist()) or z.testzip(): raise SystemExit('El instalador está incompleto.')
 for archivo in Path('website').rglob('*'):
@@ -50,7 +56,9 @@ for archivo in Path('website').rglob('*'):
         destino.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(archivo,destino)
 for archivo in [nombre,'SenderosDelHorizonte-Instalador.zip']: shutil.copy2(origen/archivo,preparado/archivo)
-manifiesto['windows']['url']=base_url+'/'+nombre
+# La misma página debe descargar desde el NAS tanto por HTTPS público como por
+# su dirección local, sin depender de que el router admita retorno NAT.
+manifiesto['windows']['url']=nombre
 (preparado/'version.json').write_text(json.dumps(manifiesto,ensure_ascii=False,indent=2)+'\n')
 print('Paquete e instalador verificados; web preparada en',preparado)
 PY
@@ -58,7 +66,7 @@ if [[ "$modo" != "--subir" ]]; then
   echo "Añade --subir para publicar en $base_url/"
   exit 0
 fi
-ssh -o BatchMode=yes "$nas_ssh" "mkdir -p '$nas_dir/assets'"
+ssh -n -o BatchMode=yes "$nas_ssh" "mkdir -p '$nas_dir/assets'"
 subir() {
   local relativo="$1"
   if [[ ! "$relativo" =~ ^[a-zA-Z0-9/_.-]+$ ]] || [[ "$relativo" == *..* ]]; then exit 2; fi
@@ -66,10 +74,11 @@ subir() {
   hash_archivo="$(shasum -a 256 "$preparado/$relativo" | awk '{print $1}')"
   local carpeta="${relativo%/*}"
   if [[ "$carpeta" == "$relativo" ]]; then carpeta=""; fi
-  ssh -o BatchMode=yes "$nas_ssh" "mkdir -p '$nas_dir/$carpeta'"
-  echo "Subiendo $relativo…"
+  # SSH no debe consumir la lista de assets que lee el bucle de publicación.
+  ssh -n -o BatchMode=yes "$nas_ssh" "mkdir -p '$nas_dir/$carpeta'"
+  echo "Subiendo ${relativo}…"
   ssh -o BatchMode=yes "$nas_ssh" "cat > '$nas_dir/$relativo.upload'" < "$preparado/$relativo"
-  ssh -o BatchMode=yes "$nas_ssh" "cd '$nas_dir' && printf '%s  %s\n' '$hash_archivo' '$relativo.upload' | sha256sum -c - && chmod 644 '$relativo.upload' && mv '$relativo.upload' '$relativo'"
+  ssh -n -o BatchMode=yes "$nas_ssh" "cd '$nas_dir' && printf '%s  %s\n' '$hash_archivo' '$relativo.upload' | sha256sum -c - && chmod 644 '$relativo.upload' && mv '$relativo.upload' '$relativo'"
 }
 subir "$paquete"
 subir "$instalador"

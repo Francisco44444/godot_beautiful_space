@@ -28,7 +28,7 @@ async function actualizarVersion() {
     if (paquete && typeof paquete.url === "string") {
       const destino = new URL(paquete.url, location.href);
       if (!['https:', 'http:'].includes(destino.protocol)) throw new Error("Enlace de descarga inválido.");
-      document.querySelector("[data-paquete]").href = destino.href;
+      document.querySelectorAll("[data-paquete]").forEach((enlace) => { enlace.href = destino.href; });
       if (Number.isFinite(paquete.size_bytes)) document.querySelector("[data-tamano]").textContent = `${(paquete.size_bytes / 1024 ** 3).toLocaleString("es", { maximumFractionDigits: 2 })} GB · ZIP completo, sin instalación.`;
       if (/^[a-f0-9]{64}$/i.test(paquete.sha256)) document.querySelector("[data-hash]").textContent = paquete.sha256;
     }
