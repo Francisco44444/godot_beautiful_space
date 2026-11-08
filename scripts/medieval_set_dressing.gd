@@ -251,6 +251,9 @@ func _build_grand_streets(center: Vector2, yaw: float, keep_out: Rect2) -> void:
 	node.mesh = VillageStreet.build(terrain, center, yaw, GRAND_VILLAGE_RADIUS, keep_out, roads)
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.set_meta("terrain_following", true)
+	node.set_meta("grass_road_segments", roads)
+	node.set_meta("grass_road_center", center)
+	node.set_meta("grass_road_yaw", yaw)
 	node.set_meta("street_width", float(VillageStreet.HALF_WIDTH * 2))
 	add_child(node)
 	generated_prop_count += 1
@@ -507,6 +510,21 @@ func _publish_house_metrics(
 	## deja de ser cero, la casa está mal construida y la prueba lo caza sin tener
 	## que volver a medir la geometría desde fuera.
 	var report: Dictionary = solver.report
+	var grass_rects: Array[Rect2] = []
+	var shift := solver.centre_offset()
+	for floor_spec in solver.floors_plan:
+		if int(floor_spec.level) == 0:
+			var origin: Vector2i = floor_spec.origin
+			var size: Vector2i = floor_spec.size
+			grass_rects.append(Rect2(Vector2(origin) * BuildingSolver.CELL + Vector2(shift.x, shift.z), Vector2(size) * BuildingSolver.CELL))
+	var ramp := body.get_node_or_null("EntranceRamp") as CollisionShape3D
+	if ramp != null and ramp.shape is ConvexPolygonShape3D:
+		var points := (ramp.shape as ConvexPolygonShape3D).points
+		var ramp_rect := Rect2(Vector2(points[0].x, points[0].z), Vector2.ZERO)
+		for point in points:
+			ramp_rect = ramp_rect.expand(Vector2(point.x, point.z))
+		grass_rects.append(ramp_rect)
+	body.set_meta("grass_exclusion_rects", grass_rects)
 	body.set_meta("enterable", true)
 	body.set_meta("recipe", String(recipe["display_name"]))
 	body.set_meta("footprint", Vector2(box.size.x * body.scale.x, box.size.y * body.scale.z))

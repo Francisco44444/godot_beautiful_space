@@ -151,7 +151,9 @@ func _instance_count(category: Node3D) -> int:
 	for node in category.get_children():
 		var instance := node as MultiMeshInstance3D
 		if instance != null and instance.multimesh != null:
-			total += instance.multimesh.instance_count
+			# La capacidad se conserva al viajar; el contrato de ventana compara
+			# instancias activas, que ahora van en visible_instance_count.
+			total += instance.multimesh.visible_instance_count if instance.multimesh.visible_instance_count >= 0 else instance.multimesh.instance_count
 	return total
 
 

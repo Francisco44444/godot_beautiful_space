@@ -30,6 +30,19 @@ var _yaw := 0.0
 var _network_clock := 0.0
 var generated_folk_count := 0
 var generated_node_count := 0
+var _rejilla_evitacion: Dictionary = {}
+var _transporte_vecinos := preload("res://scripts/estado_fragmentado.gd").new()
+
+
+func _ready() -> void:
+	var sesion := get_node_or_null("/root/NetworkSession")
+	if sesion!=null: sesion.session_ended.connect(_reiniciar_transporte_vecinos)
+
+
+func _reiniciar_transporte_vecinos() -> void:
+	_transporte_vecinos.reiniciar()
+	_network_clock = 0.0
+	for vecino in _walkers: vecino.has_network_state = false
 
 
 func build(terrain: Node, center: Vector2, yaw: float, radius: float, keep_out: Rect2) -> void:
@@ -214,19 +227,31 @@ func _physics_process(delta: float) -> void:
 				walker.position = walker.position.lerp(walker.network_position, minf(delta * 12.0, 1.0))
 				walker.rotation.y = lerp_angle(walker.rotation.y, walker.network_yaw, minf(delta * 12.0, 1.0))
 		return
-	for walker in _walkers:
+	_reconstruir_rejilla_evitacion()
+	for index in _walkers.size():
+		var walker := _walkers[index]
+		var previous_cell := _celda_evitacion(walker.global_position)
 		_advance(walker, delta)
+		_actualizar_celda_evitacion(index, previous_cell)
 	_network_clock += delta
 	if _network_clock >= 0.15 and network != null and bool(network.call("is_host")) and not multiplayer.get_peers().is_empty():
 		_network_clock = 0.0
 		var state: Array = []
 		for walker in _walkers:
 			state.append([walker.position, walker.rotation.y, walker.current_action])
-		_receive_folk_state.rpc(state)
+		for paquete in _transporte_vecinos.preparar(state): _receive_folk_state.rpc(paquete)
 
 
-@rpc("authority", "call_remote", "unreliable_ordered", 2)
-func _receive_folk_state(state: Array) -> void:
+@rpc("authority", "call_remote", "unreliable", 2)
+func _receive_folk_state(paquete: PackedByteArray) -> void:
+	var sesion := get_node_or_null("/root/NetworkSession")
+	if sesion==null or bool(sesion.call("is_world_authority")): return
+	var recibido: Variant = _transporte_vecinos.recibir(paquete)
+	if not recibido is Array: return
+	_aplicar_vecinos(recibido)
+
+
+func _aplicar_vecinos(state: Array) -> void:
 	for index in mini(state.size(), _walkers.size()):
 		var walker := _walkers[index]
 		var entry: Array = state[index]
@@ -282,7 +307,16 @@ func _advance(walker: VillageNeighbour, delta: float) -> void:
 
 func _avoidance(walker: VillageNeighbour) -> Vector3:
 	var push := Vector3.ZERO
-	for other in _walkers:
+	# Sólo pueden empujarle vecinos de estas nueve celdas. Ordenar los índices
+	# conserva exactamente el orden de suma anterior y las mismas trayectorias.
+	var nearby: Array[int] = []
+	var cell := _celda_evitacion(walker.global_position)
+	for z in range(cell.y-1,cell.y+2):
+		for x in range(cell.x-1,cell.x+2):
+			for index in _rejilla_evitacion.get(Vector2i(x,z),[]): nearby.append(index)
+	nearby.sort()
+	for index in nearby:
+		var other := _walkers[index]
 		if other == walker:
 			continue
 		var away := walker.global_position - other.global_position
@@ -292,6 +326,27 @@ func _avoidance(walker: VillageNeighbour) -> Vector3:
 			continue
 		push += away.normalized() * (1.0 - distance / AVOID_RADIUS) * AVOID_STRENGTH
 	return push.limit_length(0.55)
+
+
+func _celda_evitacion(at: Vector3) -> Vector2i:
+	return Vector2i(floori(at.x/AVOID_RADIUS),floori(at.z/AVOID_RADIUS))
+
+
+func _reconstruir_rejilla_evitacion() -> void:
+	_rejilla_evitacion.clear()
+	for index in _walkers.size():
+		var cell := _celda_evitacion(_walkers[index].global_position)
+		if not _rejilla_evitacion.has(cell): _rejilla_evitacion[cell] = []
+		(_rejilla_evitacion[cell] as Array).append(index)
+
+
+func _actualizar_celda_evitacion(index: int, previous: Vector2i) -> void:
+	var current := _celda_evitacion(_walkers[index].global_position)
+	if current==previous: return
+	(_rejilla_evitacion[previous] as Array).erase(index)
+	if (_rejilla_evitacion[previous] as Array).is_empty(): _rejilla_evitacion.erase(previous)
+	if not _rejilla_evitacion.has(current): _rejilla_evitacion[current] = []
+	(_rejilla_evitacion[current] as Array).append(index)
 
 
 func _arrive(walker: VillageNeighbour) -> void:

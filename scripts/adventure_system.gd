@@ -229,7 +229,7 @@ func network_break_resource(resource_id: String, remote_player: Player) -> bool:
 	var resource := _resources_by_id.get(resource_id) as AdventureResource
 	if resource == null or resource.broken or resource.kind not in ["tree", "rock"]:
 		return false
-	var delta := remote_player.global_position - resource.global_position
+	var delta := remote_player.get_network_authoritative_position() - resource.global_position
 	if Vector2(delta.x, delta.z).length() > 7.0 or absf(delta.y) > 8.0:
 		return false
 	resource.health = 0

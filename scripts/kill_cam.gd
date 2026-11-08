@@ -51,7 +51,9 @@ func flourish(beat: int, caption := "") -> void:
 	var setting: Dictionary = SETTINGS[beat]
 	_total = float(setting["hold"])
 	_left = _total
-	Engine.time_scale = float(setting["scale"])
+	# En cooperativo el remate conserva encuadre y sacudida, pero no ralentiza
+	# la simulación autoritativa mientras el invitado sigue peleando a tiempo real.
+	Engine.time_scale = 1.0 if get_node("/root/NetworkSession").is_networked() else float(setting["scale"])
 	_camera = get_viewport().get_camera_3d()
 	if _camera != null:
 		_base_fov = _camera.fov

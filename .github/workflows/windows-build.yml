@@ -90,10 +90,24 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/test_lobby_directory.py -v
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/island_map_cache_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/network_motion_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/state_transport_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/forest_render_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/cave_entrance_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/multiplayer_test.gd
           python3 tests/test_network_handshake.py \
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          python3 tests/test_cooperative_combat.py \
+            --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/celestial_transition_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/exploration_manager_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
@@ -114,6 +128,8 @@ jobs:
             --headless --path . --script res://tests/building_geometry_test.gd
           timeout 15m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/house_traversal_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/village_avoidance_test.gd
           timeout 15m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/village_folk_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
@@ -134,6 +150,9 @@ jobs:
             --headless --path . --script res://tests/boss_banner_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/chronicle_test.gd
+
+          timeout 15m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/wonders_test.gd
 
       - name: Crear paquete, manifiesto e instalador
         shell: bash
@@ -169,6 +188,7 @@ jobs:
           package="$release_dir/SenderosDelHorizonte-Windows-x86_64-$VERSION.zip"
           manifest="$release_dir/version.json"
           installer="$release_dir/SenderosDelHorizonte-Instalador.zip"
+          notes_file="docs/NOTAS_$VERSION.md"
 
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
@@ -182,4 +202,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag --generate-notes --latest \
               --title "Senderos del Horizonte $GITHUB_REF_NAME"
+          fi
+          if [[ -f "$notes_file" ]]; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$notes_file"
           fi

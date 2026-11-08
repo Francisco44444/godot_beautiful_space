@@ -66,6 +66,10 @@ func _run_test() -> void:
 	if eye == null or eye.name != "CinematicEye":
 		_fail("La cinemática no toma la cámara (lleva %s)." % [eye.name if eye != null else "ninguna"])
 		return
+	for fotograma in 2: await process_frame
+	if world.get_node("Terrain3D").get_camera()!=eye:
+		_fail("El terreno no centra su detalle en la cámara de la cinemática.")
+		return
 	# Y mira al sitio del jefe, no a donde estuviera el héroe.
 	var target := RPGCampaign.where_of(act)
 	var eye_flat := Vector2(eye.global_position.x, eye.global_position.z)
@@ -107,6 +111,10 @@ func _run_test() -> void:
 	var back := root.get_viewport().get_camera_3d()
 	if back != null and back.name == "CinematicEye":
 		_fail("Al terminar no devuelve la cámara del juego.")
+		return
+	for fotograma in 2: await process_frame
+	if back!=null and world.get_node("Terrain3D").get_camera()!=back:
+		_fail("El terreno no recupera la cámara de juego al acabar la cinemática.")
 		return
 	if not player.is_physics_processing():
 		_fail("El héroe se queda sin mando después de la cinemática.")

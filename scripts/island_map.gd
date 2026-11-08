@@ -57,6 +57,22 @@ const POINTS_OF_INTEREST: Array = [
 	{"name": "Bosque Tenebroso", "point": Vector2(4620, -1260), "kind": "mystery"},
 ]
 
+# CanvasItem conserva los comandos de dibujo hasta queue_redraw. La costa y
+# los biomas no cambian al girar al héroe: sólo el marcador necesita redibujarse.
+class CartographyLayer:
+	extends Control
+	var map_view: Control
+	func _draw() -> void:
+		map_view._draw_cartography(self)
+
+var _cartography: Control
+var _drawing: CanvasItem
+var _cached_tide := NAN
+var _cached_size := Vector2.ZERO
+var _cached_full_map := false
+var _cached_caves := -1
+var _static_redraw_count := 0
+
 @export var player_path: NodePath = NodePath("../../Player")
 @export var full_map := false
 @onready var player: Node3D = get_node_or_null(player_path) as Node3D
@@ -66,6 +82,15 @@ const POINTS_OF_INTEREST: Array = [
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_install_parchment_background()
+	_cartography = CartographyLayer.new()
+	_cartography.name = "Cartography"
+	_cartography.map_view = self
+	_cartography.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cartography.show_behind_parent = true
+	add_child(_cartography)
+	_cartography.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	resized.connect(_invalidate_cartography)
+	_invalidate_cartography()
 	set_meta("ocean_fills_exterior", true)
 	set_meta("false_beach_border_removed", true)
 	set_meta("rotating_player_marker", true)
@@ -75,7 +100,22 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	if not is_visible_in_tree(): return
+	var tide := _tide_amount()
+	var caves := get_tree().get_nodes_in_group("explorable_cave").size()
+	# 0,02 de marea cambia el ancho de la ría en menos de 0,06 píxeles. La
+	# posición, el rumbo y el pulso del objetivo siguen actualizándose cada frame.
+	if size != _cached_size or full_map != _cached_full_map or absf(tide-_cached_tide)>0.02 or caves != _cached_caves:
+		_invalidate_cartography()
 	queue_redraw()
+
+
+func _invalidate_cartography() -> void:
+	_cached_size = size
+	_cached_full_map = full_map
+	_cached_tide = _tide_amount()
+	_cached_caves = get_tree().get_nodes_in_group("explorable_cave").size()
+	if _cartography != null: _cartography.queue_redraw()
 
 
 func get_road_count() -> int:
@@ -87,9 +127,17 @@ func get_poi_count() -> int:
 
 
 func _draw() -> void:
-	# El fondo vive en un TextureRect independiente: así se recorta el negro
-	# exterior sin volver transparentes las líneas oscuras de la cartografía.
-	# La antigua plancha azul rectangular se elimina por completo.
+	_drawing = self
+	_draw_exploration_target()
+	_draw_player()
+	if full_map:
+		var tide_name := "PLEAMAR" if _tide_amount()>0.58 else "BAJAMAR"
+		_drawing.draw_string(ThemeDB.fallback_font,Vector2(42,size.y-50),"%s · M cerrar · B minimapa · N controles · 0 créditos"%tide_name,HORIZONTAL_ALIGNMENT_LEFT,-1,16,Color(0.31,0.18,0.08))
+
+
+func _draw_cartography(layer: CanvasItem) -> void:
+	_drawing = layer
+	_static_redraw_count += 1
 	_draw_sea_marks()
 	_draw_island()
 	_draw_biomes()
@@ -97,16 +145,12 @@ func _draw() -> void:
 	_draw_rias_and_fossa()
 	_draw_roads()
 	_draw_points_of_interest()
-	_draw_exploration_target()
-	_draw_player()
-	var font := ThemeDB.fallback_font
+	_draw_cave_entrances()
 	if full_map:
-		draw_string(font, Vector2(42, 46), "ISLA DE LOS SENDEROS · 12 × 12 km", HORIZONTAL_ALIGNMENT_LEFT, -1, 25, Color(0.23, 0.12, 0.055))
-		var tide_name := "PLEAMAR" if _tide_amount() > 0.58 else "BAJAMAR"
-		draw_string(font, Vector2(42, size.y - 50), "%s · M cerrar · B minimapa · N controles · 0 créditos" % tide_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.31, 0.18, 0.08))
-		_draw_compass_rose(Vector2(size.x - 92.0, size.y - 86.0), 31.0)
+		_drawing.draw_string(ThemeDB.fallback_font,Vector2(42,46),"ISLA DE LOS SENDEROS · 12 × 12 km",HORIZONTAL_ALIGNMENT_LEFT,-1,25,Color(0.23,0.12,0.055))
+		_draw_compass_rose(Vector2(size.x-92,size.y-86),31)
 	else:
-		draw_string(font, Vector2(12, 22), "ISLA · B ocultar · M ampliar", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.22, 0.11, 0.045))
+		_drawing.draw_string(ThemeDB.fallback_font,Vector2(12,22),"ISLA · B ocultar · M ampliar",HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color(0.22,0.11,0.045))
 
 
 func _install_parchment_background() -> void:
@@ -133,10 +177,10 @@ func _draw_island() -> void:
 	var island := _island_polygon(1.0)
 	# El límite marrón fino es la costa cartográfica. La gruesa cinta amarilla
 	# anterior se elimina: fuera de este polígono ya está dibujado el mar.
-	draw_colored_polygon(island, Color(0.42, 0.58, 0.30, 0.97))
+	_drawing.draw_colored_polygon(island, Color(0.42, 0.58, 0.30, 0.97))
 	var closed := island + PackedVector2Array([island[0]])
-	draw_polyline(closed, Color(0.20, 0.12, 0.065, 0.92), 3.0 if full_map else 1.4, true)
-	draw_polyline(closed, Color(0.55, 0.76, 0.72, 0.72), 1.0 if full_map else 0.6, true)
+	_drawing.draw_polyline(closed, Color(0.20, 0.12, 0.065, 0.92), 3.0 if full_map else 1.4, true)
+	_drawing.draw_polyline(closed, Color(0.55, 0.76, 0.72, 0.72), 1.0 if full_map else 0.6, true)
 
 
 func _draw_biomes() -> void:
@@ -157,14 +201,14 @@ func _draw_rias_and_fossa() -> void:
 		var points := PackedVector2Array()
 		for world_point in ria:
 			points.append(_world_to_map(world_point))
-		draw_polyline(points, Color(0.13, 0.34, 0.48, 0.58), (10.0 if full_map else 4.2) + tide * 3.0, true)
-		draw_polyline(points, Color(0.24, 0.62, 0.73, 0.96), (4.2 if full_map else 1.8) + tide * 2.2, true)
+		_drawing.draw_polyline(points, Color(0.13, 0.34, 0.48, 0.58), (10.0 if full_map else 4.2) + tide * 3.0, true)
+		_drawing.draw_polyline(points, Color(0.24, 0.62, 0.73, 0.96), (4.2 if full_map else 1.8) + tide * 2.2, true)
 	for branch in FOSSA_BRANCHES:
 		var points := PackedVector2Array()
 		for world_point in branch:
 			points.append(_world_to_map(world_point))
-		draw_polyline(points, Color(0.12, 0.075, 0.055, 0.98), 8.0 if full_map else 3.5, true)
-		draw_polyline(points, Color(0.78, 0.39, 0.16, 0.92), 2.0 if full_map else 1.0, true)
+		_drawing.draw_polyline(points, Color(0.12, 0.075, 0.055, 0.98), 8.0 if full_map else 3.5, true)
+		_drawing.draw_polyline(points, Color(0.78, 0.39, 0.16, 0.92), 2.0 if full_map else 1.0, true)
 
 
 func _draw_roads() -> void:
@@ -172,8 +216,8 @@ func _draw_roads() -> void:
 		var points := PackedVector2Array()
 		for world_point in road:
 			points.append(_world_to_map(world_point))
-		draw_polyline(points, Color(0.27, 0.13, 0.055, 0.72), 5.5 if full_map else 2.6, true)
-		draw_polyline(points, Color(0.91, 0.60, 0.23, 0.98), 2.6 if full_map else 1.25, true)
+		_drawing.draw_polyline(points, Color(0.27, 0.13, 0.055, 0.72), 5.5 if full_map else 2.6, true)
+		_drawing.draw_polyline(points, Color(0.91, 0.60, 0.23, 0.98), 2.6 if full_map else 1.25, true)
 
 
 func _draw_points_of_interest() -> void:
@@ -189,10 +233,20 @@ func _draw_points_of_interest() -> void:
 			color = Color(0.96, 0.52, 0.22)
 		elif poi.kind == "mystery":
 			color = Color(0.25, 0.78, 0.94)
-		draw_circle(point, 5.0 if full_map else 3.0, color)
+		_drawing.draw_circle(point, 5.0 if full_map else 3.0, color)
 		if full_map:
-			draw_string(font, point + Vector2(9, 6), poi.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.12, 0.07, 0.035, 0.88))
-			draw_string(font, point + Vector2(8, 5), poi.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.97, 0.91, 0.72))
+			_drawing.draw_string(font, point + Vector2(9, 6), poi.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.12, 0.07, 0.035, 0.88))
+			_drawing.draw_string(font, point + Vector2(8, 5), poi.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.97, 0.91, 0.72))
+
+
+func _draw_cave_entrances() -> void:
+	if get_tree() == null: return
+	for cave in get_tree().get_nodes_in_group("explorable_cave"):
+		var at: Vector3 = cave.global_position
+		var point := _world_to_map(Vector2(at.x,at.z))
+		_drawing.draw_arc(point,5.0 if full_map else 3.0,PI,TAU,12,Color(0.8,0.7,0.48),2.0)
+		if full_map:
+			_drawing.draw_string(ThemeDB.fallback_font,point+Vector2(8,17),String(cave.spec.name),HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color(0.18,0.10,0.06))
 
 
 func _draw_player() -> void:
@@ -201,13 +255,13 @@ func _draw_player() -> void:
 	var world_point := Vector2(player.global_position.x, player.global_position.z)
 	var point := _world_to_map(world_point)
 	var radius := 7.5 if full_map else 5.0
-	draw_circle(point, radius + 3.0, Color(0.03, 0.05, 0.08, 0.86))
-	draw_circle(point, radius, Color(1.0, 0.34, 0.19, 1.0))
+	_drawing.draw_circle(point, radius + 3.0, Color(0.03, 0.05, 0.08, 0.86))
+	_drawing.draw_circle(point, radius, Color(1.0, 0.34, 0.19, 1.0))
 	var direction := _player_map_direction()
 	var tip := point + direction * (radius + 9.0)
 	var side := Vector2(-direction.y, direction.x)
-	draw_colored_polygon(PackedVector2Array([tip, point + side * 3.2, point - side * 3.2]), Color(1.0, 0.97, 0.86, 1.0))
-	draw_polyline(PackedVector2Array([point + side * 3.2, tip, point - side * 3.2]), Color(0.12, 0.08, 0.045, 0.86), 1.0, true)
+	_drawing.draw_colored_polygon(PackedVector2Array([tip, point + side * 3.2, point - side * 3.2]), Color(1.0, 0.97, 0.86, 1.0))
+	_drawing.draw_polyline(PackedVector2Array([point + side * 3.2, tip, point - side * 3.2]), Color(0.12, 0.08, 0.045, 0.86), 1.0, true)
 
 
 func _draw_exploration_target() -> void:
@@ -222,8 +276,8 @@ func _draw_exploration_target() -> void:
 	var pulse := sin(float(Time.get_ticks_msec()) * 0.006) * 0.5 + 0.5
 	var radius := (12.0 if full_map else 6.0) + pulse * (4.0 if full_map else 2.0)
 	var gold := Color(1.0, 0.75, 0.18, 0.98)
-	draw_arc(point, radius, 0.0, TAU, 32, gold, 3.0 if full_map else 1.8, true)
-	draw_colored_polygon(PackedVector2Array([
+	_drawing.draw_arc(point, radius, 0.0, TAU, 32, gold, 3.0 if full_map else 1.8, true)
+	_drawing.draw_colored_polygon(PackedVector2Array([
 		point + Vector2(0.0, -8.0 if full_map else -4.0),
 		point + Vector2(6.0 if full_map else 3.0, 0.0),
 		point + Vector2(0.0, 8.0 if full_map else 4.0),
@@ -231,8 +285,8 @@ func _draw_exploration_target() -> void:
 	]), gold)
 	if full_map:
 		var caption := "OBJETIVO · %s" % String(zone.name)
-		draw_string(ThemeDB.fallback_font, point + Vector2(16.0, -11.0), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.16, 0.08, 0.025))
-		draw_string(ThemeDB.fallback_font, point + Vector2(15.0, -12.0), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.91, 0.56))
+		_drawing.draw_string(ThemeDB.fallback_font, point + Vector2(16.0, -11.0), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.16, 0.08, 0.025))
+		_drawing.draw_string(ThemeDB.fallback_font, point + Vector2(15.0, -12.0), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.91, 0.56))
 
 
 func _player_map_direction() -> Vector2:
@@ -255,8 +309,8 @@ func _draw_world_blob(center: Vector2, radii: Vector2, color: Color, seed: float
 	for clipped in clipped_polygons:
 		if clipped.size() < 3:
 			continue
-		draw_colored_polygon(clipped, color)
-		draw_polyline(clipped + PackedVector2Array([clipped[0]]), color.darkened(0.28), 1.4 if full_map else 0.7, true)
+		_drawing.draw_colored_polygon(clipped, color)
+		_drawing.draw_polyline(clipped + PackedVector2Array([clipped[0]]), color.darkened(0.28), 1.4 if full_map else 0.7, true)
 
 
 func _draw_contours_and_symbols() -> void:
@@ -266,7 +320,7 @@ func _draw_contours_and_symbols() -> void:
 			var angle := TAU * float(index) / 96.0
 			var radius: float = _coast_radius_at_angle(angle) * float(ratio)
 			contour.append(_world_to_map(Vector2(cos(angle), sin(angle)) * radius))
-		draw_polyline(contour + PackedVector2Array([contour[0]]), Color(0.25, 0.16, 0.075, 0.18), 1.0, true)
+		_drawing.draw_polyline(contour + PackedVector2Array([contour[0]]), Color(0.25, 0.16, 0.075, 0.18), 1.0, true)
 	for mountain in [Vector2(180, -3350), Vector2(-2850, -2200), Vector2(2700, -2350), Vector2(-980, 2940)]:
 		_draw_mountain_symbol(_world_to_map(mountain), 11.0 if full_map else 5.0)
 	for forest in [Vector2(-2180, 1650), Vector2(-3300, 650), Vector2(760, -1550), Vector2(3900, -1250), Vector2(4650, -1650), Vector2(5050, -650)]:
@@ -275,17 +329,17 @@ func _draw_contours_and_symbols() -> void:
 
 func _draw_mountain_symbol(point: Vector2, scale_value: float) -> void:
 	var dark := Color(0.25, 0.20, 0.15, 0.74)
-	draw_colored_polygon(PackedVector2Array([point + Vector2(-scale_value, scale_value * 0.72), point + Vector2(0, -scale_value), point + Vector2(scale_value, scale_value * 0.72)]), Color(0.44, 0.43, 0.39, 0.84))
-	draw_polyline(PackedVector2Array([point + Vector2(-scale_value, scale_value * 0.72), point + Vector2(0, -scale_value), point + Vector2(scale_value, scale_value * 0.72)]), dark, 1.2, true)
+	_drawing.draw_colored_polygon(PackedVector2Array([point + Vector2(-scale_value, scale_value * 0.72), point + Vector2(0, -scale_value), point + Vector2(scale_value, scale_value * 0.72)]), Color(0.44, 0.43, 0.39, 0.84))
+	_drawing.draw_polyline(PackedVector2Array([point + Vector2(-scale_value, scale_value * 0.72), point + Vector2(0, -scale_value), point + Vector2(scale_value, scale_value * 0.72)]), dark, 1.2, true)
 
 
 func _draw_tree_symbol(point: Vector2, scale_value: float, mystery: bool) -> void:
 	var leaf := Color(0.055, 0.20, 0.30, 0.94) if mystery else Color(0.08, 0.31, 0.17, 0.92)
-	draw_line(point + Vector2(0, scale_value * 0.45), point + Vector2(0, scale_value), Color(0.28, 0.16, 0.07), 1.5, true)
+	_drawing.draw_line(point + Vector2(0, scale_value * 0.45), point + Vector2(0, scale_value), Color(0.28, 0.16, 0.07), 1.5, true)
 	for tier in 3:
 		var y := -scale_value * 0.72 + tier * scale_value * 0.42
 		var width := scale_value * (0.58 - tier * 0.10)
-		draw_colored_polygon(PackedVector2Array([point + Vector2(0, y - scale_value * 0.38), point + Vector2(-width, y + scale_value * 0.35), point + Vector2(width, y + scale_value * 0.35)]), leaf)
+		_drawing.draw_colored_polygon(PackedVector2Array([point + Vector2(0, y - scale_value * 0.38), point + Vector2(-width, y + scale_value * 0.35), point + Vector2(width, y + scale_value * 0.35)]), leaf)
 
 
 func _draw_sea_marks() -> void:
@@ -294,18 +348,18 @@ func _draw_sea_marks() -> void:
 		for column in 7:
 			if (row + column) % 2 == 0:
 				var origin := Vector2(55.0 + column * size.x / 7.4, 72.0 + row * size.y / 4.8)
-				draw_arc(origin, 8.0 if full_map else 3.5, PI * 1.10, PI * 1.90, 10, ink, 1.2, true)
+				_drawing.draw_arc(origin, 8.0 if full_map else 3.5, PI * 1.10, PI * 1.90, 10, ink, 1.2, true)
 
 
 func _draw_compass_rose(center: Vector2, radius: float) -> void:
 	var ink := Color(0.29, 0.14, 0.055, 0.88)
-	draw_circle(center, radius, Color(0.88, 0.70, 0.38, 0.35))
-	draw_arc(center, radius, 0.0, TAU, 32, ink, 2.0, true)
+	_drawing.draw_circle(center, radius, Color(0.88, 0.70, 0.38, 0.35))
+	_drawing.draw_arc(center, radius, 0.0, TAU, 32, ink, 2.0, true)
 	for index in 8:
 		var angle := TAU * float(index) / 8.0 - PI * 0.5
 		var length := radius * (0.92 if index % 2 == 0 else 0.62)
-		draw_line(center, center + Vector2(cos(angle), sin(angle)) * length, ink, 2.0, true)
-	draw_string(ThemeDB.fallback_font, center + Vector2(-5, -radius - 5), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, ink)
+		_drawing.draw_line(center, center + Vector2(cos(angle), sin(angle)) * length, ink, 2.0, true)
+	_drawing.draw_string(ThemeDB.fallback_font, center + Vector2(-5, -radius - 5), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, ink)
 
 
 func _island_polygon(ratio: float) -> PackedVector2Array:

@@ -134,13 +134,8 @@ func _run_test() -> void:
 		return
 	for gate_id in ["roots", "frost", "sun", "echo"]:
 		var cave := runtime.get_node_or_null("Cave_%s" % gate_id) as StaticBody3D
-		var cave_rock_collisions := 0
-		if cave != null:
-			for cave_part in cave.get_children():
-				if cave_part is CollisionShape3D and cave_part.name.begins_with("CaveRockCollision"):
-					cave_rock_collisions += 1
-		if cave == null or cave_rock_collisions != 16:
-			_fail("Una gruta conserva rocas visibles atravesables.")
+		if cave == null or cave.get_node_or_null("HollowCollision") == null or cave.get_node_or_null("ApproachCollision") == null or float(cave.get_meta("route_length",0.0)) < 200:
+			_fail("Una gruta no tiene recorrido, suelo y colisión continua explorables.")
 			return
 	var character_variants := {}
 	for npc_value in npcs:

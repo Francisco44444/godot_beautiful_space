@@ -8,9 +8,14 @@ signal session_started(mode_name: String)
 signal session_ended()
 signal session_status_changed(message: String)
 signal roster_changed(roster: Dictionary)
-signal remote_state_received(peer_id: int, position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int)
+signal remote_state_received(peer_id: int, position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int, sample_time: float, grounded: bool)
 signal world_state_received(state: Dictionary)
 signal world_resource_break_requested(peer_id: int, domain: String, resource_id: String)
+signal accion_combate_recibida(peer_id: int, accion: Dictionary)
+signal dano_combate_recibido(cantidad: int, origen: Vector3, nombre: String)
+
+var gestor_combate := Callable()
+var _secuencia_combate := 0
 
 enum SessionMode {
 	OFFLINE,
@@ -37,6 +42,7 @@ var _active_port := PORT
 var _party_save_states: Dictionary = {}
 var _loaded_party_states: Dictionary = {}
 var _last_resource_break_request_msec: Dictionary = {}
+var _transporte_mundo := preload("res://scripts/estado_fragmentado.gd").new()
 
 
 func _ready() -> void:
@@ -69,10 +75,13 @@ func _physics_process(delta: float) -> void:
 		var peer_id := multiplayer.get_unique_id()
 		var yaw := float(player.call("get_network_facing_yaw"))
 		var equipped_slot := int(player.get("equipped_slot"))
+		var sample_time := float(Time.get_ticks_usec())/1000000.0
+		var movement := Vector3.ZERO if get_tree().paused else player.velocity*Engine.time_scale
+		var grounded := player.is_on_floor()
 		if session_mode == SessionMode.HOST:
-			_broadcast_state(peer_id, player.global_position, yaw, player.velocity, equipped_slot)
+			_broadcast_state(peer_id, player.global_position, yaw, movement, equipped_slot, sample_time, grounded)
 		else:
-			_server_receive_state.rpc_id(1, player.global_position, yaw, player.velocity, equipped_slot)
+			_server_receive_state.rpc_id(1, player.global_position, yaw, movement, equipped_slot, sample_time, grounded)
 	if _save_snapshot_accumulator >= SAVE_SNAPSHOT_SECONDS:
 		_save_snapshot_accumulator = 0.0
 		var snapshot := _local_save_snapshot(player)
@@ -80,7 +89,7 @@ func _physics_process(delta: float) -> void:
 			_party_save_states[_local_name()] = snapshot
 		else:
 			_server_receive_save_snapshot.rpc_id(1, snapshot)
-	if session_mode == SessionMode.HOST and _world_state_accumulator >= 1.0 / WORLD_STATE_SEND_RATE:
+	if session_mode == SessionMode.HOST and not multiplayer.get_peers().is_empty() and _world_state_accumulator >= 1.0 / WORLD_STATE_SEND_RATE:
 		_world_state_accumulator = 0.0
 		var world := get_tree().current_scene
 		if world != null and world.has_method("get_network_world_state"):
@@ -150,6 +159,8 @@ func leave_session() -> void:
 	_party_save_states.clear()
 	_loaded_party_states.clear()
 	_last_resource_break_request_msec.clear()
+	_transporte_mundo.reiniciar()
+	_secuencia_combate = 0
 	_set_offline_roster()
 	if was_networked:
 		session_ended.emit()
@@ -333,13 +344,13 @@ func _client_sync_roster(network_roster: Dictionary) -> void:
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered", 1)
-func _server_receive_state(position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int) -> void:
+func _server_receive_state(position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int, sample_time: float, grounded: bool) -> void:
 	if not multiplayer.is_server() or session_mode != SessionMode.HOST:
 		return
 	var sender := multiplayer.get_remote_sender_id()
-	if sender <= 1 or not players.has(sender) or not _is_valid_state(position, yaw, velocity, equipped_slot):
+	if sender <= 1 or not players.has(sender) or not _is_valid_state(position, yaw, velocity, equipped_slot) or not is_finite(sample_time) or sample_time<0.0:
 		return
-	remote_state_received.emit(sender, position, yaw, velocity, equipped_slot)
+	remote_state_received.emit(sender, position, yaw, velocity, equipped_slot, sample_time, grounded)
 	var identity := players[sender] as Dictionary
 	var cached: Dictionary = _party_save_states.get(String(identity.name), {})
 	if not cached.is_empty():
@@ -347,14 +358,14 @@ func _server_receive_state(position: Vector3, yaw: float, velocity: Vector3, equ
 		cached["yaw"] = yaw
 		cached["equipped_slot"] = equipped_slot
 		_party_save_states[String(identity.name)] = cached
-	_broadcast_state(sender, position, yaw, velocity, equipped_slot)
+	_broadcast_state(sender, position, yaw, velocity, equipped_slot, sample_time, grounded)
 
 
 @rpc("authority", "call_remote", "unreliable_ordered", 1)
-func _client_receive_state(peer_id: int, position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int) -> void:
-	if peer_id == multiplayer.get_unique_id() or not _is_valid_state(position, yaw, velocity, equipped_slot):
+func _client_receive_state(peer_id: int, position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int, sample_time: float, grounded: bool) -> void:
+	if peer_id == multiplayer.get_unique_id() or not _is_valid_state(position, yaw, velocity, equipped_slot) or not is_finite(sample_time) or sample_time<0.0:
 		return
-	remote_state_received.emit(peer_id, position, yaw, velocity, equipped_slot)
+	remote_state_received.emit(peer_id, position, yaw, velocity, equipped_slot, sample_time, grounded)
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -395,11 +406,12 @@ func _client_apply_loaded_state(state: Dictionary) -> void:
 	_apply_save_state_to_local(state)
 
 
-@rpc("authority", "call_remote", "unreliable_ordered", 2)
-func _client_receive_world_state(state: Dictionary) -> void:
+@rpc("authority", "call_remote", "unreliable", 2)
+func _client_receive_world_state(paquete: PackedByteArray) -> void:
 	if session_mode != SessionMode.CLIENT:
 		return
-	world_state_received.emit(state)
+	var estado: Variant = _transporte_mundo.recibir(paquete)
+	if estado is Dictionary: world_state_received.emit(estado)
 
 
 func _is_valid_state(position: Vector3, yaw: float, velocity: Vector3, equipped_slot: int) -> bool:
@@ -407,6 +419,7 @@ func _is_valid_state(position: Vector3, yaw: float, velocity: Vector3, equipped_
 		is_nan(position.x) or is_nan(position.y) or is_nan(position.z)
 		or is_inf(position.x) or is_inf(position.y) or is_inf(position.z)
 		or is_nan(yaw) or is_inf(yaw)
+		or not velocity.is_finite()
 	):
 		return false
 	if absf(position.x) > WORLD_LIMIT or absf(position.z) > WORLD_LIMIT or absf(position.y) > 1800.0:
@@ -422,7 +435,10 @@ func _is_valid_save_snapshot(snapshot: Dictionary) -> bool:
 	if not position is Array or (position as Array).size() != 3 or not inventory is Dictionary:
 		return false
 	var vector := Vector3(float(position[0]), float(position[1]), float(position[2]))
-	if absf(vector.x) > WORLD_LIMIT or absf(vector.z) > WORLD_LIMIT or absf(vector.y) > 1800.0:
+	if not vector.is_finite() or absf(vector.x) > WORLD_LIMIT or absf(vector.z) > WORLD_LIMIT or absf(vector.y) > 1800.0:
+		return false
+	var yaw := float(snapshot.get("yaw",0.0))
+	if not is_finite(yaw):
 		return false
 	var items = (inventory as Dictionary).get("items", {})
 	return items is Dictionary and (items as Dictionary).size() <= 512
@@ -457,7 +473,9 @@ func _broadcast_state(
 	position: Vector3,
 	yaw: float,
 	velocity: Vector3,
-	equipped_slot: int
+	equipped_slot: int,
+	sample_time: float,
+	grounded: bool
 ) -> void:
 	if session_mode != SessionMode.HOST or not multiplayer.is_server():
 		return
@@ -472,17 +490,26 @@ func _broadcast_state(
 				position,
 				yaw,
 				velocity,
-				equipped_slot
+				equipped_slot,
+				sample_time,
+				grounded
 			)
 
 
 func _broadcast_world_state(state: Dictionary) -> void:
 	if session_mode != SessionMode.HOST or not multiplayer.is_server():
 		return
+	var destinos: Array[int] = []
 	for raw_peer_id in players:
 		var peer_id := int(raw_peer_id)
 		if peer_id != 1 and _is_peer_ready(peer_id):
-			_client_receive_world_state.rpc_id(peer_id, state)
+			destinos.append(peer_id)
+	if destinos.is_empty(): return
+	# Se comprime una vez para todos los invitados. El orden de llegada se
+	# resuelve por instantánea: un vecino no invalida partes del mundo.
+	var paquetes: Array[PackedByteArray] = _transporte_mundo.preparar(state)
+	for peer_id in destinos:
+		for paquete in paquetes: _client_receive_world_state.rpc_id(peer_id,paquete)
 
 
 func _is_peer_ready(peer_id: int) -> bool:
@@ -541,3 +568,59 @@ func _sanitize_network_name(value: String) -> String:
 	if clean.is_empty():
 		clean = "Aventurero"
 	return clean.left(24)
+
+
+func enviar_accion_combate(jugador, tipo: String, datos: Dictionary = {}) -> void:
+	if not is_networked() or jugador.network_remote: return
+	_secuencia_combate += 1
+	var accion := datos.duplicate()
+	accion.merge({"tipo":tipo,"secuencia":_secuencia_combate,"posicion":jugador.global_position,
+		"yaw":jugador.get_network_facing_yaw(),"velocidad":jugador.velocity,
+		"ranura":jugador.equipped_slot,"objeto":jugador.equipped_item_id,
+		"hora":float(Time.get_ticks_usec())/1000000.0,"suelo":jugador.is_on_floor()},true)
+	if not paquete_combate_valido(accion): return
+	if is_host(): _difundir_accion_combate(1,accion)
+	else: _servidor_accion_combate.rpc_id(1,accion)
+
+
+func paquete_combate_valido(accion: Dictionary) -> bool:
+	if accion.size()>16 or not accion.get("tipo") is String or not accion.get("secuencia") is int: return false
+	if accion.tipo not in ["equipo","tajo","carga","giro","guardia","esquiva","flecha","tensar","reposo"] or accion.secuencia<=0: return false
+	if not accion.get("posicion") is Vector3 or not accion.get("velocidad") is Vector3 or not accion.get("suelo") is bool: return false
+	if accion.tipo=="esquiva" and (not accion.get("direccion") is Vector3 or not (accion.direccion as Vector3).is_finite()): return false
+	if accion.tipo=="guardia" and not accion.get("activo") is bool: return false
+	if not accion.get("ranura") is int or not accion.get("objeto") is String or String(accion.objeto).length()>96: return false
+	if typeof(accion.get("yaw")) not in [TYPE_FLOAT,TYPE_INT] or typeof(accion.get("hora")) not in [TYPE_FLOAT,TYPE_INT]: return false
+	return _is_valid_state(accion.posicion,float(accion.yaw),accion.velocidad,accion.ranura) and is_finite(float(accion.hora)) and float(accion.hora)>=0.0
+
+
+@rpc("any_peer","call_remote","reliable",3)
+func _servidor_accion_combate(accion: Dictionary) -> void:
+	if not is_host() or not multiplayer.is_server() or not paquete_combate_valido(accion): return
+	var peer := multiplayer.get_remote_sender_id()
+	if peer<=1 or not players.has(peer) or not _is_peer_ready(peer) or not gestor_combate.is_valid(): return
+	if bool(gestor_combate.call(peer,accion)): _difundir_accion_combate(peer,accion)
+
+
+func _difundir_accion_combate(origen: int, accion: Dictionary) -> void:
+	for raw_peer in players:
+		var peer := int(raw_peer)
+		if peer!=1 and _is_peer_ready(peer): _cliente_accion_combate.rpc_id(peer,origen,accion)
+
+
+@rpc("authority","call_remote","reliable",3)
+func _cliente_accion_combate(peer: int, accion: Dictionary) -> void:
+	if session_mode!=SessionMode.CLIENT or not paquete_combate_valido(accion) or peer==multiplayer.get_unique_id(): return
+	accion_combate_recibida.emit(peer,accion)
+
+
+func enviar_dano_combate(peer: int, cantidad: int, origen: Vector3, nombre: String) -> bool:
+	if not is_host() or not multiplayer.is_server() or not _is_peer_ready(peer): return false
+	_cliente_dano_combate.rpc_id(peer,cantidad,origen,nombre)
+	return true
+
+
+@rpc("authority","call_remote","reliable",3)
+func _cliente_dano_combate(cantidad: int, origen: Vector3, nombre: String) -> void:
+	if session_mode==SessionMode.CLIENT and cantidad>0 and cantidad<=1000 and origen.is_finite():
+		dano_combate_recibido.emit(cantidad,origen,nombre.left(96))

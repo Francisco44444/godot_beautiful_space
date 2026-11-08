@@ -969,6 +969,16 @@ func refresh_quest_tracker() -> void:
 			_tracker_line("Habla con los habitantes", Color(0.74, 0.78, 0.82), "›",
 				12, "%d/%d" % [done, RPGSideQuests.QUESTS.size()])
 
+	var wonders := runtime.get_node_or_null("ForestWonders")
+	if wonders != null and int(wonders.guide_stage) in [1,2]:
+		_tracker_gap()
+		_tracker_heading("BOSQUE",Color(0.90,0.76,0.38))
+		_tracker_line("El ciervo de ámbar",Color(0.98,0.91,0.71),"›",12)
+		var hint := "Busca las luces al noreste de Puerto Alba al anochecer."
+		if int(wonders.guide_stage)==2: hint = "Recoge la flor del claro con E."
+		elif float(get_parent().daylight_factor)<0.25: hint = "Camina tras el ciervo. Te espera si te retrasas."
+		_tracker_line(hint,Color(0.8,0.79,0.70),"",11)
+
 
 func _tracked_quests(quests: Node) -> Array:
 	## Sólo los aceptados y sin entregar, y como mucho tres: un seguidor con

@@ -67,13 +67,21 @@ func get_save_state() -> Dictionary:
 
 
 func apply_save_state(state: Dictionary) -> void:
-	if String(state.get("id", gate_id)) == gate_id and bool(state.get("opened", false)):
+	if String(state.get("id", gate_id)) != gate_id: return
+	if bool(state.get("opened", false)):
 		open_gate(null, false)
+	else:
+		opened = false
+		if _collision != null: _collision.set_deferred("disabled",false)
+		if _door_visual != null: _door_visual.position.y = 2.0
 
 
 func _build_arch() -> void:
 	var stone_material := StandardMaterial3D.new()
-	stone_material.albedo_color = Color(0.30, 0.34, 0.39)
+	stone_material.albedo_color = Color(0.50, 0.47, 0.39)
+	stone_material.albedo_texture = preload("res://assets/textures/stylized_terrain/quaternius_rock_albedo_seamless.png")
+	stone_material.uv1_triplanar = true
+	stone_material.uv1_scale = Vector3.ONE*0.18
 	stone_material.roughness = 0.95
 	for side in [-1.0, 1.0]:
 		var pillar := MeshInstance3D.new()
@@ -131,8 +139,8 @@ func _build_arch() -> void:
 func metallic_runes(material: StandardMaterial3D) -> void:
 	material.metallic = 0.18
 	material.emission_enabled = true
-	material.emission = Color(0.03, 0.16, 0.24)
-	material.emission_energy_multiplier = 1.25
+	material.emission = Color(0.12, 0.055, 0.012)
+	material.emission_energy_multiplier = 0.35
 
 
 func _locked_feedback() -> void:

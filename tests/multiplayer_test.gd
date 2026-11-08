@@ -16,6 +16,9 @@ func _run_test() -> void:
 	if settings == null or session == null or directory == null or save_manager == null:
 		_fail("No se cargaron GameSettings, NetworkSession, LobbyDirectory y SaveGameManager.")
 		return
+	save_manager.set_process(false)
+	for singleton in ["InventoryManager","ExplorationManager"]:
+		root.get_node(singleton).set("autosave_enabled",false)
 	if NetworkSession.MAX_PLAYERS != 8 or NetworkSession.PORT != 24567:
 		_fail("La sesión no está limitada a ocho jugadores en el puerto previsto.")
 		return
@@ -32,6 +35,7 @@ func _run_test() -> void:
 	var scene := load("res://scenes/world.tscn") as PackedScene
 	var world := scene.instantiate()
 	root.add_child(world)
+	save_manager.call("bind_world",null)
 	for _frame in range(5):
 		await process_frame
 	var player := world.get_node("Player") as Player
@@ -74,6 +78,26 @@ func _run_test() -> void:
 	):
 		_fail("La autoridad no prepara clima, fauna y recursos persistentes para los invitados.")
 		return
+	var lista_enemigos := get_nodes_in_group("rpg_enemy")+get_nodes_in_group("rpg_boss")
+	if (shared_state.enemies as Array).size()!=lista_enemigos.size():
+		_fail("El índice de red pierde enemigos o jefes del mundo.")
+		return
+	# Un paquete parcial debe resolver su destinatario por id sin modificar al
+	# vecino del grupo; los ids desconocidos no representan otro monstruo.
+	var historia := world.get_node("RPGStoryRuntime")
+	var destinatario := lista_enemigos.back() as RPGEnemy
+	var estado_original := destinatario.get_network_state()
+	var estado_parcial := estado_original.duplicate()
+	estado_parcial["health"] = destinatario.health-1
+	estado_parcial["position"] = destinatario.global_position+Vector3(0.5,0,0.5)
+	session.set("session_mode",NetworkSession.SessionMode.CLIENT)
+	historia.apply_network_enemy_state([{"id":"id_desconocido","health":0},estado_parcial])
+	var recibido: bool = destinatario.health==int(estado_parcial.health) and destinatario.global_position==estado_parcial.position
+	historia.apply_network_enemy_state([estado_original])
+	session.set("session_mode",NetworkSession.SessionMode.HOST)
+	if not recibido:
+		_fail("El índice no aplica un paquete parcial al enemigo indicado.")
+		return
 	var host_save_states := session.call("get_party_save_states") as Dictionary
 	if not host_save_states.has("Lúa") or not (host_save_states["Lúa"] as Dictionary).has("inventory"):
 		_fail("La ranura cooperativa no conserva el inventario independiente del anfitrión.")
@@ -94,6 +118,18 @@ func _run_test() -> void:
 	if not replica.get_node("PlayerName").visible or replica.equipped_slot != 2:
 		_fail("La réplica no muestra nombre o equipo sincronizado.")
 		return
+	replica.call("_update_network_replica",1.0/60.0)
+	if "--break-remote-floor" in OS.get_cmdline_user_args():
+		replica.set("_network_grounded",false)
+		replica.call("_update_locomotion_animation")
+	if replica.animation_player.current_animation == Player.ANIM_JUMP:
+		_fail("El compañero camina con la pose de salto por no tener colisión de suelo.")
+		return
+	replica.apply_network_state(Vector3(12,4,-8),0.7,Vector3(0,4,0),2,-1.0,false)
+	for frame in 20: replica.call("_update_network_replica",1.0/60.0)
+	if replica.animation_player.current_animation != Player.ANIM_JUMP:
+		_fail("La réplica ignora el salto recibido.")
+		return
 	# Una petición remota solo prospera cerca del objeto y con el hacha. El id
 	# aceptado entra inmediatamente en el estado autoritativo que reciben todos.
 	var scatter := world.get_node("VegetationScatter") as VegetationScatter
@@ -101,21 +137,22 @@ func _run_test() -> void:
 	var tree_positions: Array[Vector3] = scatter.get("_harvest_tree_positions")
 	var network_tree_id := resource_ids[0]
 	var network_tree_position := tree_positions[0]
-	replica.global_position = network_tree_position + Vector3(0.0, 0.0, 2.4)
-	replica.equipped_slot = 1
+	replica.apply_network_state(network_tree_position + Vector3(0.0, 0.0, 2.4),0.0,Vector3.ZERO,1)
 	if bool(world.call(
 		"_on_network_world_resource_break_requested", 42, "vegetation", network_tree_id
 	)):
 		_fail("El anfitrión aceptó una tala remota sin el hacha.")
 		return
-	replica.equipped_slot = 2
-	replica.global_position = network_tree_position + Vector3(30.0, 0.0, 0.0)
+	replica.apply_network_state(network_tree_position + Vector3(30.0, 0.0, 0.0),0.0,Vector3.ZERO,2)
+	replica.global_position = network_tree_position + Vector3(0.0,0.0,2.4)
 	if bool(world.call(
 		"_on_network_world_resource_break_requested", 42, "vegetation", network_tree_id
 	)):
 		_fail("El anfitrión aceptó una tala remota desde demasiada distancia.")
 		return
-	replica.global_position = network_tree_position + Vector3(0.0, 0.0, 2.4)
+	replica.apply_network_state(network_tree_position + Vector3(0.0, 0.0, 2.4),0.0,Vector3.ZERO,2)
+	# Desplazar el dibujo no debe cambiar la autoridad de la última muestra.
+	replica.global_position = network_tree_position + Vector3(100.0,0.0,0.0)
 	# La prueba no debe escribir una ranura real del usuario.
 	save_manager.call("bind_world", null)
 	if not bool(world.call(
@@ -143,7 +180,7 @@ func _run_test() -> void:
 	world.queue_free()
 	for _frame in range(8):
 		await process_frame
-	print("MULTIPLAYER TEST OK: lobby, 8 personajes, autoridad del mundo, guardado cooperativo y réplica remota disponibles.")
+	print("MULTIPLAYER TEST OK: lobby, 8 personajes, guardado, réplica con salto y autoridad independiente del dibujo.")
 	quit(0)
 
 

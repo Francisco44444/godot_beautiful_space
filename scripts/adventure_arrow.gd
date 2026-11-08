@@ -29,6 +29,8 @@ const MAX_TRAIL_POINTS := 96
 @export var trail_duration: float = 1.0
 @export var trail_width: float = 0.13
 
+var solo_visual_red := false
+var _terreno_red: Node
 var velocity := Vector3.ZERO
 var shooter: Node3D
 var lifetime := 8.0
@@ -86,9 +88,33 @@ func _physics_process(delta: float) -> void:
 	if shooter != null and is_instance_valid(shooter):
 		query.exclude = [shooter.get_rid()]
 	var result := get_world_3d().direct_space_state.intersect_ray(query)
+	# Terrain3D sólo tiene suelo físico junto al anfitrión. La cota impide
+	# que una flecha remota atraviese una loma fuera de esa ventana de colisión.
+	if shooter!=null and bool(shooter.get("network_remote")) and get_node("/root/NetworkSession").is_world_authority():
+		if _terreno_red==null and get_parent()!=null: _terreno_red = get_parent().get_node_or_null("Terrain3D")
+		if _terreno_red!=null:
+			var punta_inicial := start+travel*absf(TIP_OFFSET)
+			var punta_final := finish+travel*absf(TIP_OFFSET)
+			var suelo: float = _terreno_red.data.get_height(punta_final)
+			if not is_nan(suelo) and not _terreno_red.data.get_control_hole(punta_final) and punta_final.y<suelo:
+				var lo := 0.0
+				var hi := 1.0
+				for paso in 12:
+					var medio := (lo+hi)*0.5
+					var punto := punta_inicial.lerp(punta_final,medio)
+					var altura: float = _terreno_red.data.get_height(punto)
+					if is_nan(altura) or _terreno_red.data.get_control_hole(punto) or punto.y>=altura: lo = medio
+					else: hi = medio
+				var contacto := punta_inicial.lerp(punta_final,hi)
+				if result.is_empty() or punta_inicial.distance_squared_to(contacto)<punta_inicial.distance_squared_to(result.position):
+					_stick_in_place(contacto,Vector3.UP)
+					return
 	if not result.is_empty():
 		var collider := result.collider as Node
-		if collider != null and collider.has_method("receive_projectile_hit"):
+		if collider != null and collider.has_method("receive_projectile_hit") and not solo_visual_red:
+			if shooter!=null and bool(shooter.get("network_remote")) and not collider is RPGEnemy:
+				_stick_in_place(result.position,result.get("normal",Vector3.UP))
+				return
 			collider.call("receive_projectile_hit", result.position, shooter)
 		_stick_in_place(result.position, result.get("normal", Vector3.UP))
 		return

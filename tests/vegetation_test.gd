@@ -16,10 +16,10 @@ const EXPECTED_MOSS_ROCK_COUNT := 0
 const EXPECTED_CACTUS_COUNT := 0
 const EXPECTED_MYSTERY_DEAD_TREE_COUNT := 3360
 const EXPECTED_GRASS_COUNT := 220000
-const EXPECTED_GRASS_CLUMPS_PER_PATCH := 1550
-const MAX_GRASS_FULL_TRIANGLES_PER_PATCH := 6300
-const MAX_GRASS_MID_TRIANGLES_PER_PATCH := 910
-const MAX_GRASS_LOD_TRIANGLES_PER_PATCH := 410
+const EXPECTED_GRASS_CLUMPS_PER_PATCH := 12000
+const MAX_GRASS_FULL_TRIANGLES_PER_PATCH := 12000
+const MAX_GRASS_MID_TRIANGLES_PER_PATCH := 1200
+const MAX_GRASS_LOD_TRIANGLES_PER_PATCH := 192
 const EXPECTED_FERN_COUNT := 800
 const EXPECTED_SHRUB_COUNT := 700
 const EXPECTED_FLOWER_COUNT := 500
@@ -368,7 +368,7 @@ func _run_test() -> void:
 		["rocas", scatter.rock_count, scatter.generated_rock_count, EXPECTED_ROCK_COUNT],
 		["rocas musgosas", scatter.moss_rock_count, scatter.generated_moss_rock_count, EXPECTED_MOSS_ROCK_COUNT],
 		["cactus", scatter.cactus_count, scatter.generated_cactus_count, EXPECTED_CACTUS_COUNT],
-		["hierba", scatter.grass_count, scatter.generated_grass_count + int(scatter.get_meta("urban_grass_removed", 0)), EXPECTED_GRASS_COUNT],
+		["hierba", scatter.grass_count, scatter.generated_grass_count - int(scatter.get_meta("village_grass_added", 0)), EXPECTED_GRASS_COUNT],
 		["helechos", scatter.fern_count, scatter.generated_fern_count + int(scatter.get_meta("urban_ferns_removed", 0)), EXPECTED_FERN_COUNT],
 		["arbustos", scatter.shrub_count, scatter.generated_shrub_count + int(scatter.get_meta("urban_shrubs_removed", 0)), EXPECTED_SHRUB_COUNT],
 		["flores", scatter.flower_count, scatter.generated_flower_count + int(scatter.get_meta("urban_flowers_removed", 0)), EXPECTED_FLOWER_COUNT],
@@ -500,7 +500,7 @@ func _run_test() -> void:
 		or String(grass_lod_cells.get_meta("crossfades_with", "")) != "GrassCells"
 		or scatter.generated_grass_lod_instances != scatter.generated_grass_count
 		or scatter.generated_grass_lod_cells <= 0
-		or String(grass_cells.get_meta("source_model", "")) != "Grass_Common_Short.gltf"
+		or String(grass_cells.get_meta("source_model", "")) != "opaque_meadow_blades"
 		or grass_cells.get_meta("excluded_biomes", PackedStringArray()) != PackedStringArray(["snow", "desert", "mystery_forest"])
 	):
 		_fail("La hierba densa no conserva su modelo, exclusiones y fundido LOD estable.")
@@ -526,6 +526,36 @@ func _run_test() -> void:
 	):
 		_fail("La hierba cercana no combina cobertura continua con una malla GPU barata.")
 		return
+	var blade_arrays := first_grass_patch.surface_get_arrays(0)
+	var blade_vertices: PackedVector3Array = blade_arrays[Mesh.ARRAY_VERTEX]
+	var blade_roots: PackedVector2Array = blade_arrays[Mesh.ARRAY_TEX_UV2]
+	if blade_vertices.size() != EXPECTED_GRASS_CLUMPS_PER_PATCH * 3 or grass_patch_aabb.size.y < 1.30:
+		_fail("La hierba no conserva 12.000 briznas triangulares ni la altura nueva de 0,90–1,34 m.")
+		return
+	for index in range(0, blade_vertices.size(), 3):
+		if blade_roots[index] != blade_roots[index + 1] or blade_roots[index] != blade_roots[index + 2]:
+			_fail("Los vértices de una brizna no comparten raíz y pueden agrietarse sobre el relieve.")
+			return
+	var meadow_shader := first_grass_patch.surface_get_material(0) as ShaderMaterial
+	if meadow_shader.shader.code.contains("discard;") or meadow_shader.shader.code.contains("ALPHA ="):
+		_fail("La pradera ha vuelto al recorte alfa en lugar de briznas opacas.")
+		return
+	# El tamaño de pantalla ya no se compensa ensanchando una brizna hasta
+	# varios metros. Se comprueban las mallas reales y su límite de ensanche.
+	var mallas_hierba: Array[Mesh] = [first_grass_patch]
+	for malla in scatter.get("_grass_mid_lod_meshes"): mallas_hierba.append(malla)
+	for malla in scatter.get("_grass_lod_meshes"): mallas_hierba.append(malla)
+	for malla in mallas_hierba:
+		var material := malla.surface_get_material(0) as ShaderMaterial
+		var ensanche := float(material.get_shader_parameter("max_width_scale"))
+		var posiciones: PackedVector3Array = malla.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		if ensanche<1.0 or ensanche>1.8:
+			_fail("El LOD de hierba no tiene un límite de ensanche válido."); return
+		for indice in range(0,posiciones.size(),3):
+			if posiciones[indice].distance_to(posiciones[indice+1])*ensanche>0.16:
+				_fail("El LOD de hierba vuelve a crear triángulos anchos en el paisaje."); return
+	if float(meadow_shader.get_shader_parameter("full_fade_end"))<28.0:
+		_fail("La hierba cercana desaparece antes de los 28 metros acordados."); return
 	var counted_grass_lod_instances := 0
 	for grass_lod_node in grass_lod_cells.get_children():
 		var grass_lod_cell := grass_lod_node as MultiMeshInstance3D
@@ -572,11 +602,19 @@ func _run_test() -> void:
 	if (
 		mid_field == null
 		or mid_field.multimesh == null
-		or mid_field.multimesh.instance_count <= near_field.multimesh.instance_count
+		or mid_field.multimesh.visible_instance_count <= near_field.multimesh.visible_instance_count
 		or _mesh_triangle_count(mid_field.multimesh.mesh) > MAX_GRASS_MID_TRIANGLES_PER_PATCH
 		or not bool(mid_cells.get_meta("fixed_world_layout", false))
 	):
 		_fail("La corona intermedia no amplía la profundidad con una malla económica.")
+		return
+
+	if not _village_grass_is_valid(scatter, world):
+		return
+	var buffer_capacity := near_field.multimesh.instance_count
+	scatter.call("_update_grass_near_field", VillageLayout.CENTER, true)
+	if near_field.multimesh.instance_count != buffer_capacity or near_field.multimesh.visible_instance_count <= 0:
+		_fail("Caminar hasta la villa realoca el búfer de hierba o deja la villa sin campo cercano.")
 		return
 
 	var tree_cells := scatter.get_node("TreeCells") as Node3D
@@ -851,7 +889,7 @@ func _run_test() -> void:
 		or not grass_material.shader.code.contains("soft_gust")
 		or not grass_material.shader.code.contains("strong_gust")
 		or not grass_material.shader.code.contains("travelling_wave")
-		or not grass_material.shader.code.contains("grass_world_position")
+		or not grass_material.shader.code.contains("world_root")
 		or not grass_material.shader.code.contains("player_position")
 		or not grass_material.shader.code.contains("local_outward")
 	):
@@ -1008,6 +1046,51 @@ func _mesh_triangle_count(mesh: Mesh) -> int:
 			if vertices is PackedVector3Array:
 				triangle_count += vertices.size() / 3
 	return triangle_count
+
+
+func _village_grass_is_valid(scatter: Node, world: Node) -> bool:
+	var texture := scatter.get_meta("grass_urban_mask", null) as ImageTexture
+	if texture == null or int(scatter.get_meta("village_grass_added", 0)) < 100:
+		_fail("La villa no recupera los parches de hierba eliminados por los claros antiguos.")
+		return false
+	var image := texture.get_image()
+	if image == null:
+		_fail("La máscara de casas no contiene una imagen comprobable.")
+		return false
+	# Inyección deliberada para comprobar que el contrato detecta hierba en casas.
+	if "--break-urban-mask" in OS.get_cmdline_user_args():
+		image.fill(Color.WHITE)
+	var checked := 0
+	for node in world.find_children("*", "StaticBody3D", true, false):
+		var body := node as StaticBody3D
+		if not body.has_meta("grass_exclusion_rects"):
+			continue
+		for rect_value in body.get_meta("grass_exclusion_rects"):
+			var rect: Rect2 = rect_value
+			var center := rect.get_center()
+			var at := body.to_global(Vector3(center.x, 0.0, center.y))
+			if _grass_mask_value(image, Vector2(at.x, at.z)) > 0.1:
+				_fail("La hierba invade la planta o la rampa de %s." % body.name)
+				return false
+		checked += 1
+	var free_patches := 0
+	var cells: Dictionary = scatter.get("_grass_near_transform_cells")
+	for transforms in cells.values():
+		for value in transforms:
+			var transform: Transform3D = value
+			var point := Vector2(transform.origin.x, transform.origin.z)
+			if point.distance_to(VillageLayout.CENTER) < 300.0 and _grass_mask_value(image, point) > 0.9:
+				free_patches += 1
+	if checked < 100 or free_patches < 100:
+		_fail("La villa no combina casas protegidas con jardines plantados: %d casas y %d parches libres." % [checked, free_patches])
+		return false
+	print("VILLAGE GRASS TEST OK: %d casas y rampas sin hierba, %d parches libres en Villa Robledal." % [checked, free_patches])
+	return true
+
+
+func _grass_mask_value(image: Image, point: Vector2) -> float:
+	var pixel := (point + Vector2.ONE * 6000.0) * (4096.0 / 12000.0)
+	return image.get_pixel(clampi(floori(pixel.x), 0, 4095), clampi(floori(pixel.y), 0, 4095)).r
 
 
 func _illustrated_cloud_field_is_valid(

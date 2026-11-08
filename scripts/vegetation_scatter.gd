@@ -52,223 +52,7 @@ const CACTUS_FILES: PackedStringArray = [
 ]
 const DENSE_GRASS_SOURCE_INDEX := 0
 const UPRIGHT_GRASS_TRIAL := true
-const GRASS_WIND_SHADER := """
-shader_type spatial;
-render_mode cull_disabled;
-
-uniform vec4 grass_tint : source_color = vec4(0.55, 0.82, 0.20, 1.0);
-uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic;
-uniform float breeze_strength = 0.055;
-uniform float gust_strength = 0.19;
-uniform float storm_bend = 0.0;
-uniform vec3 player_position = vec3(0.0, -10000.0, 0.0);
-uniform float interaction_radius = 1.35;
-uniform vec3 shockwave_position = vec3(0.0, -10000.0, 0.0);
-uniform float shockwave_radius = 0.0;
-uniform float shockwave_strength = 0.0;
-uniform float lod_role = 0.0;
-uniform float full_fade_start = 32.0;
-uniform float full_fade_end = 55.0;
-uniform float proxy_fade_start = 32.0;
-uniform float proxy_fade_end = 55.0;
-uniform float mid_fade_out_start = 95.0;
-uniform float mid_fade_out_end = 125.0;
-uniform float proxy_far_fade_start = 155.0;
-uniform float proxy_far_fade_end = 195.0;
-uniform float terrain_follow = 0.0;
-uniform float ground_sink = -0.045;
-uniform float procedural_blade = 0.0;
-
-uniform float _vertex_density = 1.0;
-uniform float _region_size = 1024.0;
-uniform float _region_texel_size = 0.0009765625;
-uniform int _region_map_size = 32;
-uniform int _region_map[1024];
-uniform highp sampler2DArray _height_maps : repeat_disable, filter_linear;
-
-varying vec3 grass_world_position;
-varying vec3 grass_anchor_position;
-varying float grass_lod_visibility;
-
-ivec3 terrain_index_coord(vec2 terrain_grid_position) {
-	vec2 texel_position = floor(terrain_grid_position);
-	ivec2 region_position = ivec2(floor(texel_position * _region_texel_size))
-		+ ivec2(_region_map_size / 2);
-	int in_bounds = int(uint(region_position.x | region_position.y) < uint(_region_map_size));
-	ivec2 safe_position = clamp(
-		region_position,
-		ivec2(0),
-		ivec2(_region_map_size - 1)
-	);
-	int layer_index = _region_map[safe_position.y * _region_map_size + safe_position.x]
-		* in_bounds - 1;
-	return ivec3(ivec2(mod(texel_position, _region_size)), layer_index);
-}
-
-float terrain_height_at(vec2 world_xz, float fallback_height) {
-	vec2 terrain_grid_position = world_xz * _vertex_density;
-	ivec3 terrain_index = terrain_index_coord(terrain_grid_position);
-	if (terrain_index.z < 0) {
-		return fallback_height;
-	}
-	vec2 height_uv = (mod(terrain_grid_position, _region_size) + vec2(0.5)) / _region_size;
-	return textureLod(_height_maps, vec3(height_uv, float(terrain_index.z)), 0.0).r;
-}
-
-void vertex() {
-	mat3 inverse_model_basis = inverse(mat3(MODEL_MATRIX));
-	vec3 world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	vec2 wind_direction = normalize(vec2(0.84, 0.54));
-	float wave_position = dot(world_position.xz, wind_direction);
-	float height_mask = smoothstep(0.03, 0.88, VERTEX.y);
-	if (terrain_follow > 0.5) {
-		vec3 local_root = vec3(VERTEX.x, -0.10, VERTEX.z);
-		vec3 world_root = (MODEL_MATRIX * vec4(local_root, 1.0)).xyz;
-		float terrain_height = terrain_height_at(world_root.xz, world_root.y);
-		vec3 local_ground_correction = inverse_model_basis
-			* vec3(0.0, terrain_height - world_root.y + ground_sink, 0.0);
-		VERTEX += local_ground_correction;
-		world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	}
-	grass_anchor_position = world_position;
-	float spatial_phase = world_position.x * 0.006 + world_position.z * 0.004;
-	float soft_cycle = sin(TIME * 0.36 - spatial_phase) * 0.5 + 0.5;
-	float strong_cycle = sin(TIME * 0.095 - spatial_phase * 0.43 + 1.7) * 0.5 + 0.5;
-	float soft_gust = smoothstep(0.56, 0.91, soft_cycle);
-	float strong_gust = smoothstep(0.84, 0.985, strong_cycle);
-	float travelling_wave = sin(wave_position * 0.052 - TIME * (0.92 + strong_gust * 0.34));
-	float fine_wave = sin(wave_position * 0.137 - TIME * 1.64 + soft_gust * 1.2);
-	float gust_amplitude = breeze_strength
-		+ gust_strength * (soft_gust * 0.38 + strong_gust * 1.08);
-	float bend = gust_amplitude * (travelling_wave * 0.78 + fine_wave * 0.22) * height_mask;
-	// El vendaval de la fuerza especial necesita su propio termino. Subir
-	// `gust_strength` no movia nada durante la carga porque solo actua cuando el
-	// ciclo natural de rachas esta en su cresta, y eso ocurre una vez por minuto.
-	// Este empuje va aparte: siempre activo, rapido y con una componente
-	// constante que deja la hierba tumbada hacia el viento.
-	float storm_wave = sin(wave_position * 0.11 - TIME * 5.2) * 0.5
-		+ sin(wave_position * 0.27 - TIME * 8.9) * 0.5;
-	bend += storm_bend * (0.62 + storm_wave * 0.38) * height_mask;
-	vec3 local_wind_direction = normalize(
-		inverse_model_basis * vec3(wind_direction.x, 0.0, wind_direction.y)
-	);
-	VERTEX += local_wind_direction * bend;
-	VERTEX.y -= storm_bend * 0.34 * height_mask;
-	vec2 player_delta = world_position.xz - player_position.xz;
-	float player_distance = length(player_delta);
-	float interaction = 1.0 - smoothstep(interaction_radius * 0.28, interaction_radius, player_distance);
-	vec2 outward = player_delta / max(player_distance, 0.001);
-	vec3 local_outward = normalize(
-		inverse_model_basis * vec3(outward.x, 0.0, outward.y)
-	);
-	VERTEX += local_outward * interaction * 0.52 * height_mask;
-	VERTEX.y -= interaction * 0.13 * height_mask;
-	vec2 blast_delta = world_position.xz - shockwave_position.xz;
-	float blast_distance = length(blast_delta);
-	float blast = shockwave_strength
-		* (1.0 - smoothstep(max(shockwave_radius, 0.01) * 0.30, max(shockwave_radius, 0.01), blast_distance));
-	vec2 blast_outward = blast_delta / max(blast_distance, 0.001);
-	vec3 local_blast = normalize(
-		inverse_model_basis * vec3(blast_outward.x, 0.0, blast_outward.y)
-	);
-	VERTEX += local_blast * blast * 1.15 * height_mask;
-	VERTEX.y -= blast * 0.62 * height_mask;
-	grass_world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	float camera_distance = distance(CAMERA_POSITION_WORLD.xz, grass_world_position.xz);
-	if (lod_role < 0.5) {
-		grass_lod_visibility = 1.0 - smoothstep(full_fade_start, full_fade_end, camera_distance);
-	} else if (lod_role > 1.5) {
-		float near_visibility = smoothstep(proxy_fade_start, proxy_fade_end, camera_distance);
-		float far_visibility = 1.0 - smoothstep(
-			mid_fade_out_start,
-			mid_fade_out_end,
-			camera_distance
-		);
-		grass_lod_visibility = near_visibility * far_visibility;
-	} else {
-		float near_visibility = smoothstep(mid_fade_out_start, mid_fade_out_end, camera_distance);
-		float far_visibility = 1.0 - smoothstep(
-			proxy_far_fade_start,
-			proxy_far_fade_end,
-			camera_distance
-		);
-		grass_lod_visibility = near_visibility * far_visibility;
-	}
-}
-
-void fragment() {
-	vec2 dither_cell = floor(grass_anchor_position.xz * 3.75 + grass_anchor_position.y * 0.37);
-	float stable_dither = fract(sin(dot(dither_cell, vec2(12.9898, 78.233))) * 43758.5453);
-	if (grass_lod_visibility <= stable_dither) {
-		discard;
-	}
-	vec4 tex = texture(albedo_texture, UV);
-	if (procedural_blade > 0.5) {
-		float normalized_height = clamp(UV.y, 0.0, 1.0);
-		float blade_count = lod_role < 0.5 ? 2.0 : (lod_role > 1.5 ? 4.0 : 6.0);
-		float blade_slot = UV.x * blade_count;
-		float blade_index = floor(blade_slot);
-		float blade_seed = fract(
-			sin((blade_index + 1.0) * 27.619 + lod_role * 13.417) * 43758.5453
-		);
-		float blade_height = mix(0.64, 1.0, blade_seed);
-		float blade_y = normalized_height / blade_height;
-		float curved_center = sin(blade_y * 2.15 + blade_seed * 4.0)
-			* 0.045 * blade_y;
-		float local_x = abs(fract(blade_slot) - 0.5 - curved_center);
-		float body_progress = min(blade_y / 0.88, 1.0);
-		float body_half_width = mix(0.49, 0.22, pow(body_progress, 0.68));
-		float cap_progress = clamp((blade_y - 0.88) / 0.12, 0.0, 1.0);
-		float rounded_cap_width = 0.22 * sqrt(max(1.0 - cap_progress * cap_progress, 0.0));
-		float half_width = blade_y < 0.88 ? body_half_width : rounded_cap_width;
-		float blade_edge = 1.0 - smoothstep(
-			max(half_width - 0.055, 0.0),
-			half_width,
-			local_x
-		);
-		float rounded_base = smoothstep(0.0, 0.035, blade_y);
-		float blade_mask = blade_edge * rounded_base * step(blade_y, 1.0);
-		if (blade_mask < 0.42) {
-			discard;
-		}
-		float palette_selector = fract(
-			sin(dot(floor(grass_anchor_position.xz * 5.0), vec2(39.346, 11.135)))
-			* 18431.271
-		);
-		float palette_u = palette_selector < 0.54 ? 0.083 : 0.198;
-		tex = texture(albedo_texture, vec2(palette_u, 1.0 - normalized_height));
-	} else if (tex.a < 0.32) {
-		discard;
-	}
-
-/*
-	float broad_tint = sin(grass_world_position.x * 0.018)
-		* sin(grass_world_position.z * 0.014) * 0.065;
-	NORMAL = normalize(FRONT_FACING ? NORMAL : -NORMAL);
-	ALBEDO = tex.rgb * (0.84 + broad_tint);
-	EMISSION = tex.rgb * 0.025;
-*/
-	// Unifica toda la hierba al mismo tono que la pradera.
-	tex.rgb = grass_tint.rgb;
-
-	// Variación MUY ligera, para que no parezca completamente plana.
-	float broad_tint = sin(grass_world_position.x * 0.018)
-		* sin(grass_world_position.z * 0.014) * 0.012;
-
-	//NORMAL = normalize(FRONT_FACING ? NORMAL : -NORMAL);
-	//NORMAL = normalize(mix(NORMAL, vec3(0.0, 1.0, 0.0), 0.45));
-	vec3 face_normal = normalize(FRONT_FACING ? NORMAL : -NORMAL);
-	NORMAL = normalize(mix(face_normal, vec3(0.0, 1.0, 0.0), 0.25));
-	ALBEDO = grass_tint.rgb;
-	EMISSION = tex.rgb * 0.01;
-	//EMISSION = grass_tint.rgb * 0.03;
-
-	ROUGHNESS = 0.98;
-	SPECULAR = 0.08;
-
-
-}
-"""
+const GRASS_WIND_SHADER = preload("res://shaders/meadow_blades.gdshader")
 const TREE_WIND_SHADER := """
 shader_type spatial;
 render_mode cull_disabled;
@@ -460,13 +244,13 @@ const REDUCED_VEGETATION_LOD_CATEGORIES := [
 	"MushroomCells", "ForestDetailCells", "MysteryDeadTreeCells",
 ]
 const GRASS_CELL_SIZE := 96.0
-const GRASS_FULL_FADE_START := 50.0
-const GRASS_FULL_FADE_END := 80.0
+const GRASS_FULL_FADE_START := 16.0
+const GRASS_FULL_FADE_END := 28.0
 const GRASS_NEAR_INDEX_CELL_SIZE := 24.0
-const GRASS_NEAR_PRELOAD_RADIUS := 94.0
+const GRASS_NEAR_PRELOAD_RADIUS := 44.0
 const GRASS_NEAR_REFRESH_DISTANCE := 2.25
-const GRASS_PROXY_FADE_START := 42.0
-const GRASS_PROXY_FADE_END := 72.0
+const GRASS_PROXY_FADE_START := 16.0
+const GRASS_PROXY_FADE_END := 28.0
 const GRASS_MID_FADE_OUT_START := 120.0
 const GRASS_MID_FADE_OUT_END := 160.0
 const GRASS_MID_PRELOAD_RADIUS := 174.0
@@ -476,10 +260,10 @@ const EXPLICIT_LOD_REFRESH_SECONDS := 0.12
 const DETAIL_CELL_SIZE := 440.0
 const GROUND_CELL_SIZE := 380.0
 const GRASS_COVERAGE_SPACING := 13.0
-const DENSE_GRASS_CLUSTER_COPIES := 1550
+const DENSE_GRASS_CLUSTER_COPIES := 12000
 const DENSE_GRASS_PATCH_RADIUS := 11.0
-const GRASS_MID_CLUSTER_COPIES := 220
-const GRASS_LOD_CLUSTER_COPIES := 96
+const GRASS_MID_CLUSTER_COPIES := 1200
+const GRASS_LOD_CLUSTER_COPIES := 192
 const MYSTERY_DEAD_TREE_COUNT := 3360
 const LAYOUT_CACHE_PATH := "res://generated/vegetation_layout_cache.res"
 const LAYOUT_CACHE_SCHEMA := 12
@@ -615,6 +399,7 @@ var _streamed_tree_collision_elapsed := 0.0
 var _streamed_tree_collision_active := 0
 var _grass_wind_materials: Array[ShaderMaterial] = []
 var _tree_wind_materials: Array[ShaderMaterial] = []
+var _render_bosque: Node
 var _tree_wind_material_count := 0
 var _storm_strength := 0.0
 var _grass_interaction_target: Node3D
@@ -635,6 +420,10 @@ var _grass_blast_duration := 0.0
 
 
 func _ready() -> void:
+	_render_bosque = preload("res://scripts/render_bosque.gd").new()
+	_render_bosque.name = "RenderBosque"
+	_render_bosque.activo = DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="forward_plus"
+	add_child(_render_bosque)
 	var startup_stage := Time.get_ticks_msec()
 	_bake_layout_cache = "--bake-vegetation" in OS.get_cmdline_user_args()
 	_profile_vegetation_startup = _bake_layout_cache or "--profile-vegetation" in OS.get_cmdline_user_args()
@@ -660,25 +449,10 @@ func _ready() -> void:
 	_rock_meshes = _load_mesh_library(ROCK_FILES)
 	_cactus_meshes = _make_cactus_mesh_library()
 	_grass_meshes = _load_mesh_library(GRASS_FILES)
-	var dense_grass_source := _grass_meshes[DENSE_GRASS_SOURCE_INDEX] if _grass_meshes.size() > DENSE_GRASS_SOURCE_INDEX else null
-	if dense_grass_source != null:
-		dense_grass_source = _make_grass_card_source(dense_grass_source)
-		_dense_grass_offset = _grass_meshes.size()
-		_grass_meshes.append(_make_dense_grass_patch_mesh(dense_grass_source))
-	_grass_mid_lod_meshes = [
-		_make_grass_mid_lod_mesh(
-			dense_grass_source,
-			GRASS_MID_CLUSTER_COPIES,
-			DENSE_GRASS_PATCH_RADIUS
-		),
-	]
-	_grass_lod_meshes = [
-		_make_grass_lod_mesh(
-			dense_grass_source,
-			GRASS_LOD_CLUSTER_COPIES,
-			DENSE_GRASS_PATCH_RADIUS
-		),
-	]
+	_dense_grass_offset = _grass_meshes.size()
+	_grass_meshes.append(_make_meadow_blades(DENSE_GRASS_CLUSTER_COPIES, Vector2(0.035, 0.065), Vector2(0.90, 1.34)))
+	_grass_mid_lod_meshes = [_make_meadow_blades(GRASS_MID_CLUSTER_COPIES, Vector2(0.05, 0.09), Vector2(0.90, 1.34))]
+	_grass_lod_meshes = [_make_meadow_blades(GRASS_LOD_CLUSTER_COPIES, Vector2(0.075, 0.13), Vector2(0.80, 1.14))]
 	_fern_meshes = _load_mesh_library(FERN_FILES)
 	_snow_fern_offset = _fern_meshes.size()
 	_fern_meshes.append_array(_make_snow_mesh_library(_fern_meshes.duplicate()))
@@ -724,7 +498,9 @@ func _ready() -> void:
 	_build_streamed_tree_collision_pool()
 	_startup_checkpoint("árboles secos", startup_stage)
 	_finalize_tree_collision_mesh()
+	call_deferred("_build_village_grass_mask")
 	call_deferred("_update_explicit_lod_visibility", true)
+	_render_bosque.call_deferred("iniciar")
 	print(
 		"QUATERNIUS VALLEY READY: %d árboles verdes, %d nevados, %d rojos tenebrosos, %d otoñales y %d secos tenebrosos; %d rocas desérticas, %d rocas hundidas desérticas, %d cactus grandes y %d parches densos de hierba exclusivamente verde en %d celdas."
 		% [generated_green_tree_count, generated_snow_tree_count, generated_mystery_tree_count, generated_autumn_tree_count, generated_mystery_dead_tree_count, generated_rock_count, generated_moss_rock_count, generated_cactus_count, generated_grass_count, generated_cell_count]
@@ -1273,6 +1049,114 @@ func _scatter_desert_cacti() -> void:
 	root.set_meta("desert_core_only", true)
 
 
+func _add_village_grass_patches(buckets: Dictionary) -> void:
+	# Los claros de árboles no son claros de hierba. El cache antiguo deja villas
+	# enteras vacías: completar sólo esos huecos conserva TODO el bosque horneado.
+	var regions: Array[Vector3] = VILLAGE_CLEARINGS.duplicate()
+	regions.append_array(RURAL_CLEARINGS)
+	var added := 0
+	for region in regions:
+		var center := Vector2(region.x, region.y)
+		var radius := maxf(region.z + 25.0, 85.0)
+		if center.distance_to(VillageLayout.CENTER) < 1.0:
+			radius = VillageLayout.RADIUS + 55.0
+		var steps := ceili(radius / GRASS_COVERAGE_SPACING)
+		for z in range(-steps, steps + 1):
+			for x in range(-steps, steps + 1):
+				var point := center + Vector2(x, z) * GRASS_COVERAGE_SPACING
+				if point.distance_to(center) > radius or _inside_desert(point) or _inside_mystery_forest(point):
+					continue
+				var height := _height_at(point)
+				if not is_finite(height) or height < 2.5 or _snow_probability(point, height) > 0.06:
+					continue
+				var paint := terrain.data.get_texture_id(Vector3(point.x, height, point.y))
+				if not ((int(paint.x) == 0 and paint.z < 0.5) or (int(paint.y) == 0 and paint.z >= 0.5)):
+					continue
+				if _has_nearby_grass_patch(point):
+					continue
+				var phase := sin(point.dot(Vector2(12.9898, 78.233))) * 43758.5453
+				var transform := _make_transform(Vector3(point.x, height + 0.02, point.y), fposmod(phase, TAU), Vector3.ONE)
+				_index_near_grass_transform(point, transform)
+				_bucket_transform(buckets, 0, point, GRASS_CELL_SIZE, transform)
+				generated_grass_count += 1
+				added += 1
+	set_meta("village_grass_added", added)
+
+
+func _has_nearby_grass_patch(point: Vector2) -> bool:
+	var cell := Vector2i(floori(point.x / GRASS_NEAR_INDEX_CELL_SIZE), floori(point.y / GRASS_NEAR_INDEX_CELL_SIZE))
+	for z in range(cell.y - 1, cell.y + 2):
+		for x in range(cell.x - 1, cell.x + 2):
+			for value in _grass_near_transform_cells.get(Vector2i(x, z), []):
+				var transform: Transform3D = value
+				if point.distance_squared_to(Vector2(transform.origin.x, transform.origin.z)) < 81.0:
+					return true
+	return false
+
+
+func _build_village_grass_mask() -> void:
+	# Un R8 para toda la isla (16 MB), consultado por RAÍZ en GPU. Un parche de
+	# 11 m ya no puede borrar un jardín entero ni asomar dentro de una vivienda.
+	var image := Image.create(4096, 4096, false, Image.FORMAT_R8)
+	image.fill(Color.WHITE)
+	var buildings := 0
+	for node in get_parent().find_children("*", "StaticBody3D", true, false):
+		var body := node as StaticBody3D
+		if not body.has_meta("grass_exclusion_rects"):
+			continue
+		for rect_value in body.get_meta("grass_exclusion_rects"):
+			var rect: Rect2 = rect_value
+			_paint_grass_mask_rect(image, body.global_transform, rect.grow(1.5))
+		buildings += 1
+	# Los pavimentos de las calles tienen geometría propia encima del terreno.
+	# Su ancho real basta: no se reservan parcelas ni círculos de villa.
+	for village in STONE_VILLAGES:
+		var transform := Transform3D(Basis(Vector3.UP, -village.z), Vector3(village.x, 0.0, village.y))
+		_paint_grass_mask_rect(image, transform, Rect2(-7.0, -58.0, 14.0, 122.0))
+		_paint_grass_mask_rect(image, transform, Rect2(-58.0, -7.0, 116.0, 14.0))
+	var village_transform := Transform3D(Basis(Vector3.UP, -VillageLayout.YAW), Vector3(VillageLayout.CENTER.x, 0.0, VillageLayout.CENTER.y))
+	for node in get_parent().find_children("*", "MeshInstance3D", true, false):
+		if not node.has_meta("grass_road_segments"):
+			continue
+		var center: Vector2 = node.get_meta("grass_road_center")
+		var yaw: float = node.get_meta("grass_road_yaw")
+		for segment in node.get_meta("grass_road_segments"):
+			var begin: Vector2 = segment[0]
+			var end: Vector2 = segment[1]
+			var width: float = segment[2]
+			var middle := center + ((begin + end) * 0.5).rotated(yaw)
+			var transform := Transform3D(Basis(Vector3.UP, -yaw - (end - begin).angle()), Vector3(middle.x, 0.0, middle.y))
+			_paint_grass_mask_rect(image, transform, Rect2(-(end - begin).length() * 0.5 - 1.0, -width - 0.75, (end - begin).length() + 2.0, width * 2.0 + 1.5))
+	_paint_grass_mask_rect(image, village_transform, VillageLayout.CASTLE)
+	var texture := ImageTexture.create_from_image(image)
+	for material in _grass_wind_materials:
+		material.set_shader_parameter("urban_mask", texture)
+		material.set_shader_parameter("use_urban_mask", true)
+	set_meta("grass_mask_buildings", buildings)
+	set_meta("grass_urban_mask", texture)
+	print("VILLAGE GRASS READY: %d parches nuevos, %d casas protegidas por su planta real." % [get_meta("village_grass_added", 0), buildings])
+
+
+func _paint_grass_mask_rect(image: Image, transform: Transform3D, rect: Rect2) -> void:
+	var world_bounds := Rect2()
+	var first := true
+	for point in [rect.position, rect.position + Vector2(rect.size.x, 0.0), rect.end, rect.position + Vector2(0.0, rect.size.y)]:
+		var world: Vector3 = transform * Vector3(point.x, 0.0, point.y)
+		var pixel := (Vector2(world.x, world.z) + Vector2.ONE * 6000.0) * (4096.0 / 12000.0)
+		if first:
+			world_bounds = Rect2(pixel, Vector2.ZERO)
+			first = false
+		else:
+			world_bounds = world_bounds.expand(pixel)
+	var inverse := transform.affine_inverse()
+	for y in range(maxi(floori(world_bounds.position.y) - 1, 0), mini(ceili(world_bounds.end.y) + 1, 4096)):
+		for x in range(maxi(floori(world_bounds.position.x) - 1, 0), mini(ceili(world_bounds.end.x) + 1, 4096)):
+			var world := (Vector2(x, y) + Vector2.ONE * 0.5) * (12000.0 / 4096.0) - Vector2.ONE * 6000.0
+			var local := inverse * Vector3(world.x, transform.origin.y, world.y)
+			if rect.has_point(Vector2(local.x, local.z)):
+				image.set_pixel(x, y, Color.BLACK)
+
+
 func _scatter_ground_cover() -> void:
 	var profile_stage := Time.get_ticks_msec()
 	_grass_near_transform_cells.clear()
@@ -1282,11 +1166,6 @@ func _scatter_ground_cover() -> void:
 		for offset in range(0, records.size(), GRASS_CACHE_STRIDE):
 			var position := Vector3(records[offset], records[offset + 1], records[offset + 2])
 			var point := Vector2(position.x, position.z)
-			# Excluir la extensión de la mata, no sólo su centro: mide 11 m
-			# de radio y puede atravesar una pared desde una parcela vecina.
-			if VillageLayout.occupies(point, DENSE_GRASS_PATCH_RADIUS * maxf(records[offset + 4], records[offset + 6]) + 1.0):
-				set_meta("urban_grass_removed", int(get_meta("urban_grass_removed", 0)) + 1)
-				continue
 			var transform := _make_ground_aligned_transform(
 				position,
 				records[offset + 3],
@@ -1324,6 +1203,7 @@ func _scatter_ground_cover() -> void:
 					_grass_cache_records.append(float(value))
 			generated_grass_count += 1
 		_grass_cache_rng_state = _random.state
+	_add_village_grass_patches(grass_lod_buckets)
 	profile_stage = _startup_checkpoint("hierba/distribución", profile_stage)
 	_install_grass_near_field()
 	profile_stage = _startup_checkpoint("hierba/campo cercano", profile_stage)
@@ -1332,7 +1212,7 @@ func _scatter_ground_cover() -> void:
 	var grass_root := get_node("GrassCells") as Node3D
 	grass_root.set_meta("coverage", "all_green_terrain")
 	grass_root.set_meta("excluded_biomes", PackedStringArray(["snow", "desert", "mystery_forest"]))
-	grass_root.set_meta("source_model", GRASS_FILES[DENSE_GRASS_SOURCE_INDEX])
+	grass_root.set_meta("source_model", "opaque_meadow_blades")
 	grass_root.set_meta("clumps_per_instance", DENSE_GRASS_CLUSTER_COPIES)
 	grass_root.set_meta("effective_clump_count", generated_grass_count * DENSE_GRASS_CLUSTER_COPIES)
 
@@ -1644,245 +1524,42 @@ func _load_obj_mesh(path: String) -> Mesh:
 	return null
 
 
-func _make_dense_grass_patch_mesh(source: Mesh) -> Mesh:
-	# Mil quinientas cincuenta matas en X: dos tarjetas cruzadas impiden que la vegetación se
-	# convierta en líneas de un píxel al mirarla de canto. Cada plano contiene dos
-	# siluetas curvas y conserva volumen desde cualquier ángulo.
-	return _make_grass_model_patch(
-		source,
-		DENSE_GRASS_CLUSTER_COPIES,
-		DENSE_GRASS_PATCH_RADIUS,
-		Vector2(2.70, 4.05),
-		Vector2(0.74, 1.16)
-	)
-
-
-func _make_grass_card_source(source: Mesh) -> Mesh:
-	# La malla es deliberadamente un quad barato; la forma visible se obtiene en
-	# GRASS_WIND_SHADER mediante alpha-test y termina en una punta estrecha curva.
-	# Se conserva la textura/paleta original de Grass_Common_Short.
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var quad_positions := [
-		PackedVector3Array([
-			Vector3(-0.055, 0.0, 0.0),
-			Vector3(0.055, 0.0, 0.0),
-			Vector3(0.055, 1.0, 0.0),
-			Vector3(-0.055, 1.0, 0.0),
-		]),
-		PackedVector3Array([
-			Vector3(0.0, 0.0, -0.055),
-			Vector3(0.0, 0.0, 0.055),
-			Vector3(0.0, 1.0, 0.055),
-			Vector3(0.0, 1.0, -0.055),
-		]),
-	]
-	var quad_normals := [Vector3.FORWARD, Vector3.RIGHT]
-	var uvs := PackedVector2Array([
-		Vector2(0.0, 0.0),
-		Vector2(1.0, 0.0),
-		Vector2(1.0, 1.0),
-		Vector2(0.0, 1.0),
-	])
-	for quad_index in 2:
-		var positions: PackedVector3Array = quad_positions[quad_index]
-		for vertex_index in [0, 1, 2, 0, 2, 3]:
-			surface.set_normal(quad_normals[quad_index])
-			surface.set_uv(uvs[vertex_index])
-			surface.add_vertex(positions[vertex_index])
-	surface.index()
-	var source_material := source.surface_get_material(0) if source.get_surface_count() > 0 else null
-	if source_material != null:
-		surface.set_material(source_material)
-	return surface.commit()
-
-
-func _make_upright_grass_source(source: Mesh) -> Mesh:
-	# Cada hoja del modelo Quaternius es una isla de triángulos independiente.
-	# Conservamos su base y centramos progresivamente el tallo sobre ella; así se
-	# elimina la inclinación estática sin sustituir el modelo ni añadir geometría.
-	var result := ArrayMesh.new()
-	for surface_index in source.get_surface_count():
-		var arrays := source.surface_get_arrays(surface_index)
-		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-		if vertices.is_empty():
-			continue
-		var parents := PackedInt32Array()
-		parents.resize(vertices.size())
-		for vertex_index in vertices.size():
-			parents[vertex_index] = vertex_index
-		for triangle_start in range(0, indices.size(), 3):
-			_grass_union_vertices(parents, indices[triangle_start], indices[triangle_start + 1])
-			_grass_union_vertices(parents, indices[triangle_start + 1], indices[triangle_start + 2])
-		var components: Dictionary = {}
-		for vertex_index in vertices.size():
-			var root := _grass_vertex_root(parents, vertex_index)
-			var component: PackedInt32Array = components.get(root, PackedInt32Array())
-			component.append(vertex_index)
-			components[root] = component
-		for component_value in components.values():
-			var component: PackedInt32Array = component_value
-			var minimum_y := INF
-			var maximum_y := -INF
-			for vertex_index in component:
-				minimum_y = minf(minimum_y, vertices[vertex_index].y)
-				maximum_y = maxf(maximum_y, vertices[vertex_index].y)
-			var height := maxf(maximum_y - minimum_y, 0.001)
-			var base_limit := minimum_y + height * 0.12
-			var base_center := Vector2.ZERO
-			var base_count := 0
-			for vertex_index in component:
-				var vertex := vertices[vertex_index]
-				if vertex.y <= base_limit:
-					base_center += Vector2(vertex.x, vertex.z)
-					base_count += 1
-			if base_count == 0:
-				continue
-			base_center /= float(base_count)
-			for vertex_index in component:
-				var vertex := vertices[vertex_index]
-				var normalized_height := clampf((vertex.y - minimum_y) / height, 0.0, 1.0)
-				var straightening := smoothstep(0.08, 0.92, normalized_height)
-				vertex.x = lerpf(vertex.x, base_center.x, straightening)
-				vertex.z = lerpf(vertex.z, base_center.y, straightening)
-				vertices[vertex_index] = vertex
-		arrays[Mesh.ARRAY_VERTEX] = vertices
-		result.add_surface_from_arrays(source.surface_get_primitive_type(surface_index), arrays)
-		result.surface_set_material(result.get_surface_count() - 1, source.surface_get_material(surface_index))
-	return result
-
-
-func _grass_vertex_root(parents: PackedInt32Array, vertex_index: int) -> int:
-	var root := vertex_index
-	while parents[root] != root:
-		root = parents[root]
-	var current := vertex_index
-	while parents[current] != current:
-		var next := parents[current]
-		parents[current] = root
-		current = next
-	return root
-
-
-func _grass_union_vertices(parents: PackedInt32Array, first: int, second: int) -> void:
-	var first_root := _grass_vertex_root(parents, first)
-	var second_root := _grass_vertex_root(parents, second)
-	if first_root != second_root:
-		parents[second_root] = first_root
-
-
-func _make_lightweight_grass_blade_source(source: Mesh) -> Mesh:
-	# Grass_Common_Short contiene nueve hojas y 155 triángulos. Para una pradera
-	# masiva se conserva una hoja auténtica del mismo asset (UV, textura, color y
-	# curvatura), escogiendo la isla ligera más alta de siete triángulos.
-	var result := ArrayMesh.new()
-	for surface_index in source.get_surface_count():
-		var arrays := source.surface_get_arrays(surface_index)
-		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-		if vertices.is_empty() or indices.is_empty():
-			continue
-		var parents := PackedInt32Array()
-		parents.resize(vertices.size())
-		for vertex_index in vertices.size():
-			parents[vertex_index] = vertex_index
-		for triangle_start in range(0, indices.size(), 3):
-			_grass_union_vertices(parents, indices[triangle_start], indices[triangle_start + 1])
-			_grass_union_vertices(parents, indices[triangle_start + 1], indices[triangle_start + 2])
-		var components: Dictionary = {}
-		for vertex_index in vertices.size():
-			var root := _grass_vertex_root(parents, vertex_index)
-			var component: PackedInt32Array = components.get(root, PackedInt32Array())
-			component.append(vertex_index)
-			components[root] = component
-		var selected_root := -1
-		var selected_height := -INF
-		for root_value in components:
-			var root := int(root_value)
-			var component: PackedInt32Array = components[root]
-			if component.size() > 12:
-				continue
-			var minimum_y := INF
-			var maximum_y := -INF
-			for vertex_index in component:
-				minimum_y = minf(minimum_y, vertices[vertex_index].y)
-				maximum_y = maxf(maximum_y, vertices[vertex_index].y)
-			var component_height := maximum_y - minimum_y
-			if component_height > selected_height:
-				selected_height = component_height
-				selected_root = root
-		if selected_root < 0:
-			return source
-		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-		var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
-		var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
-		var surface := SurfaceTool.new()
-		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for triangle_start in range(0, indices.size(), 3):
-			if _grass_vertex_root(parents, indices[triangle_start]) != selected_root:
-				continue
-			for corner in 3:
-				var vertex_index := indices[triangle_start + corner]
-				if normals.size() == vertices.size():
-					surface.set_normal(normals[vertex_index])
-				if colors.size() == vertices.size():
-					surface.set_color(colors[vertex_index])
-				if uvs.size() == vertices.size():
-					surface.set_uv(uvs[vertex_index])
-				surface.add_vertex(vertices[vertex_index])
-		surface.index()
-		surface.set_material(source.surface_get_material(surface_index))
-		surface.commit(result)
-	return result if result.get_surface_count() > 0 else source
-
-
-func _make_grass_model_patch(
-	source: Mesh,
-	cluster_count: int,
-	patch_radius: float,
-	horizontal_scale_range: Vector2,
-	vertical_scale_range: Vector2
-) -> Mesh:
-	var result := ArrayMesh.new()
-	for surface_index in source.get_surface_count():
-		var surface := SurfaceTool.new()
-		surface.begin(source.surface_get_primitive_type(surface_index))
-		var tuft_size := 5
-		var tuft_count := ceili(float(cluster_count) / float(tuft_size))
-		for cluster_index in cluster_count:
-			var tuft_index := cluster_index / tuft_size
-			var tuft_slot := cluster_index % tuft_size
-			var normalized := (float(tuft_index) + 0.43) / float(tuft_count)
-			var radial_angle := TAU * fmod(float(tuft_index) * 0.61803398875 + 0.137, 1.0)
-			var tuft_radius := sqrt(normalized) * maxf(patch_radius - 0.68, 0.1)
-			var local_angle := TAU * (
-				float(tuft_slot) / float(tuft_size)
-				+ fmod(float(tuft_index) * 0.38196601125, 1.0)
-			)
-			var local_radius := sqrt((float(tuft_slot) + 0.35) / float(tuft_size)) * 0.68
-			var local_offset := Vector2(cos(local_angle), sin(local_angle)) * local_radius
-			var facing := TAU * fmod(float(cluster_index) * 0.38196601125 + 0.29, 1.0)
-			var variation := sin(float(cluster_index) * 12.9898 + 1.73) * 0.5 + 0.5
-			var horizontal_scale := lerpf(horizontal_scale_range.x, horizontal_scale_range.y, variation)
-			var vertical_scale := lerpf(vertical_scale_range.x, vertical_scale_range.y, 1.0 - variation)
-			var lean := lerpf(-0.085, 0.085, fmod(variation * 1.61803398875, 1.0))
-			var lean_axis := Vector3(cos(local_angle), 0.0, sin(local_angle))
-			var basis := (Basis(lean_axis, lean) * Basis(Vector3.UP, facing)).scaled(
-				Vector3(horizontal_scale, vertical_scale, horizontal_scale)
-			)
-			var transform := Transform3D(
-				basis,
-				Vector3(
-					cos(radial_angle) * tuft_radius + local_offset.x,
-					-0.08,
-					sin(radial_angle) * tuft_radius + local_offset.y
-				)
-			)
-			surface.append_from(source, surface_index, transform)
-		surface.set_material(source.surface_get_material(surface_index))
-		surface.commit(result)
-	return result
+func _make_meadow_blades(count: int, width: Vector2, height: Vector2) -> ArrayMesh:
+	# Como en Duelo de Sables: una brizna opaca cuesta un triángulo; UV2 conserva
+	# la raíz para pegarla al relieve sin inclinar ni desenterrar la base.
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var roots := PackedVector2Array()
+	var random := RandomNumberGenerator.new()
+	random.seed = 20260927 + count
+	for index in count:
+		var angle := random.randf() * TAU
+		var radius := sqrt(random.randf()) * DENSE_GRASS_PATCH_RADIUS
+		var base := Vector3(cos(angle) * radius, -0.08, sin(angle) * radius)
+		var facing := random.randf() * TAU
+		var side := Vector3(cos(facing), 0.0, sin(facing))
+		var front := Vector3(-side.z, 0.0, side.x)
+		var variation := random.randf()
+		var blade_width := lerpf(width.x, width.y, variation)
+		var blade_height := lerpf(height.x, height.y, 1.0 - variation)
+		var lean := blade_height * random.randf_range(0.06, 0.34)
+		var tip := base + Vector3.UP * (blade_height - lean * lean / (2.0 * blade_height)) + front * lean
+		var normal := side.cross(tip - base).normalized()
+		vertices.append_array(PackedVector3Array([base - side * blade_width * 0.5, base + side * blade_width * 0.5, tip]))
+		uvs.append_array(PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2(0.5, 1.0)]))
+		for corner in 3:
+			normals.append(normal)
+			roots.append(Vector2(base.x, base.z))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = roots
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 func _make_snow_mesh_library(source_meshes: Array[Mesh]) -> Array[Mesh]:
@@ -2135,8 +1812,7 @@ func _apply_tree_wind_materials() -> void:
 
 func _apply_grass_wind_materials() -> void:
 	_grass_wind_materials.clear()
-	var shader := Shader.new()
-	shader.code = GRASS_WIND_SHADER
+	var shader: Shader = GRASS_WIND_SHADER
 	for mesh_index in _grass_meshes.size():
 		_apply_grass_material_to_mesh(
 			_grass_meshes[mesh_index],
@@ -2148,7 +1824,7 @@ func _apply_grass_wind_materials() -> void:
 	for mesh in _grass_mid_lod_meshes:
 		_apply_grass_material_to_mesh(mesh, shader, 2.0, true, true)
 	for mesh in _grass_lod_meshes:
-		_apply_grass_material_to_mesh(mesh, shader, 1.0, false, true)
+		_apply_grass_material_to_mesh(mesh, shader, 1.0, true, true)
 
 
 func _apply_grass_material_to_mesh(
@@ -2159,16 +1835,14 @@ func _apply_grass_material_to_mesh(
 	procedural_blade: bool = false
 ) -> void:
 	for surface_index in mesh.get_surface_count():
-		var source_material := mesh.surface_get_material(surface_index) as BaseMaterial3D
-		if source_material == null or source_material.albedo_texture == null:
-			continue
 		var wind_material := ShaderMaterial.new()
 		wind_material.shader = shader
-		wind_material.set_shader_parameter("albedo_texture", source_material.albedo_texture)
+		wind_material.set_shader_parameter("geometric_blade", procedural_blade)
+		wind_material.set_shader_parameter("density_distance", 10.0 if lod_role < 0.5 else (28.0 if lod_role > 1.5 else 80.0))
+		wind_material.set_shader_parameter("max_width_scale", 1.8 if lod_role < 0.5 else (1.35 if lod_role > 1.5 else 1.15))
 		wind_material.set_shader_parameter("interaction_radius", 1.35)
 		wind_material.set_shader_parameter("lod_role", lod_role)
 		wind_material.set_shader_parameter("terrain_follow", 1.0 if follow_terrain else 0.0)
-		wind_material.set_shader_parameter("procedural_blade", 1.0 if procedural_blade else 0.0)
 		wind_material.set_shader_parameter("full_fade_start", GRASS_FULL_FADE_START)
 		wind_material.set_shader_parameter("full_fade_end", GRASS_FULL_FADE_END)
 		wind_material.set_shader_parameter("proxy_fade_start", GRASS_PROXY_FADE_START)
@@ -2192,6 +1866,18 @@ func _set_grass_terrain_shader_parameters(material: ShaderMaterial) -> void:
 	RenderingServer.material_set_param(material_rid, "_region_map_size", 32)
 	RenderingServer.material_set_param(material_rid, "_region_map", terrain.data.get_region_map())
 	RenderingServer.material_set_param(material_rid, "_height_maps", terrain.data.get_height_maps_rid())
+
+	RenderingServer.material_set_param(material_rid, "_color_maps", terrain.data.get_color_maps_rid())
+	RenderingServer.material_set_param(material_rid, "_control_maps", terrain.data.get_control_maps_rid())
+	# Compartir la textura GPU y los valores del terreno evita una segunda paleta
+	# y también la copia de un albedo de 1024² para cada material de vegetación.
+	RenderingServer.material_set_param(material_rid, "ground_texture", terrain.assets.get_albedo_array_rid())
+	var colors := terrain.assets.get_texture_colors()
+	var scales := terrain.assets.get_texture_uv_scales()
+	if not colors.is_empty() and not scales.is_empty():
+		RenderingServer.material_set_param(material_rid, "ground_tint", colors[0])
+		material.set_shader_parameter("ground_scale", scales[0] * 0.5)
+
 
 
 func _load_gltf_scene(path: String) -> Node3D:
@@ -2244,11 +1930,13 @@ func _install_grass_near_field() -> void:
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.mesh = _grass_meshes[_dense_grass_offset]
-	multimesh.instance_count = 0
+	multimesh.instance_count = 4096
+	multimesh.visible_instance_count = 0
 	multimesh.custom_aabb = AABB(Vector3.ZERO, Vector3.ONE * 0.01)
 	_grass_near_instance = MultiMeshInstance3D.new()
 	_grass_near_instance.name = "FixedNearField"
 	_grass_near_instance.multimesh = multimesh
+	_grass_near_instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_grass_near_instance.lod_bias = 0.75
 	_grass_near_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_grass_near_instance.set_meta("imported_mesh_lod_bias", 0.75)
@@ -2263,11 +1951,13 @@ func _install_grass_near_field() -> void:
 	var mid_multimesh := MultiMesh.new()
 	mid_multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	mid_multimesh.mesh = _grass_mid_lod_meshes[0]
-	mid_multimesh.instance_count = 0
+	mid_multimesh.instance_count = 4096
+	mid_multimesh.visible_instance_count = 0
 	mid_multimesh.custom_aabb = AABB(Vector3.ZERO, Vector3.ONE * 0.01)
 	_grass_mid_instance = MultiMeshInstance3D.new()
 	_grass_mid_instance.name = "FixedMidField"
 	_grass_mid_instance.multimesh = mid_multimesh
+	_grass_mid_instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_grass_mid_instance.lod_bias = 0.75
 	_grass_mid_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_grass_mid_instance.set_meta("imported_mesh_lod_bias", 0.75)
@@ -2313,16 +2003,20 @@ func _update_grass_near_field(focus: Vector2, force: bool) -> void:
 				if distance_squared <= mid_radius_squared:
 					mid_transforms.append(transform)
 	var multimesh := _grass_near_instance.multimesh
-	multimesh.instance_count = active_transforms.size()
+	if active_transforms.size() > multimesh.instance_count:
+		multimesh.instance_count = active_transforms.size() + 256
+	multimesh.visible_instance_count = active_transforms.size()
 	for index in active_transforms.size():
 		multimesh.set_instance_transform(index, active_transforms[index])
-	multimesh.custom_aabb = _transforms_aabb(active_transforms, multimesh.mesh)
+	multimesh.custom_aabb = _transforms_aabb(active_transforms, multimesh.mesh).grow(2.5)
 	_grass_near_active_instances = active_transforms.size()
 	var mid_multimesh := _grass_mid_instance.multimesh
-	mid_multimesh.instance_count = mid_transforms.size()
+	if mid_transforms.size() > mid_multimesh.instance_count:
+		mid_multimesh.instance_count = mid_transforms.size() + 256
+	mid_multimesh.visible_instance_count = mid_transforms.size()
 	for index in mid_transforms.size():
 		mid_multimesh.set_instance_transform(index, mid_transforms[index])
-	mid_multimesh.custom_aabb = _transforms_aabb(mid_transforms, mid_multimesh.mesh)
+	mid_multimesh.custom_aabb = _transforms_aabb(mid_transforms, mid_multimesh.mesh).grow(2.5)
 	_grass_mid_active_instances = mid_transforms.size()
 
 
@@ -2373,6 +2067,7 @@ func _install_cell_buckets(root_name: String, buckets: Dictionary, meshes: Array
 		var instance := MultiMeshInstance3D.new()
 		instance.name = "Cell_%d_%d_v%d" % [cell.x, cell.y, variant]
 		instance.multimesh = multimesh
+		instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		instance.position = anchor
 		instance.visibility_range_end = visibility_distance
 		instance.visibility_range_end_margin = 0.0
@@ -2389,6 +2084,7 @@ func _install_cell_buckets(root_name: String, buckets: Dictionary, meshes: Array
 		category.add_child(instance)
 		_installed_multimeshes["%s|%s" % [root_name, String(key)]] = instance
 		if root_name == "TreeCells":
+			_render_bosque.registrar(instance,local_transforms)
 			instance.set_meta("explicit_lod_role", "full")
 			_register_lod_instance(_tree_full_cells, cell, instance)
 		elif root_name == "GrassCells":
@@ -2427,6 +2123,7 @@ func _install_tree_lod_buckets(buckets: Dictionary) -> void:
 		var instance := MultiMeshInstance3D.new()
 		instance.name = "LOD_%d_%d_v%d" % [cell.x, cell.y, variant]
 		instance.multimesh = multimesh
+		instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		instance.position = anchor
 		# El gestor de celda decide la representación de forma atómica. No se usan
 		# rangos superpuestos del motor: proxy y malla completa nunca coexisten.
@@ -2477,10 +2174,11 @@ func _install_grass_lod_buckets(buckets: Dictionary) -> void:
 		multimesh.instance_count = local_transforms.size()
 		for index in local_transforms.size():
 			multimesh.set_instance_transform(index, local_transforms[index])
-		multimesh.custom_aabb = _transforms_aabb(local_transforms, _grass_lod_meshes[variant])
+		multimesh.custom_aabb = _transforms_aabb(local_transforms, _grass_lod_meshes[variant]).grow(2.5)
 		var instance := MultiMeshInstance3D.new()
 		instance.name = "LOD_%d_%d_v%d" % [cell.x, cell.y, variant]
 		instance.multimesh = multimesh
+		instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		instance.position = anchor
 		instance.visibility_range_begin = 0.0
 		instance.visibility_range_begin_margin = 0.0
@@ -2651,36 +2349,6 @@ func _localize_transforms(transforms: Array, anchor: Vector3) -> Array[Transform
 		transform.origin -= anchor
 		localized[index] = transform
 	return localized
-
-
-func _make_grass_mid_lod_mesh(
-	source: Mesh,
-	cluster_count: int,
-	patch_radius: float
-) -> Mesh:
-	# Segunda corona: misma silueta y terreno, con menos briznas algo más anchas.
-	return _make_grass_model_patch(
-		source,
-		cluster_count,
-		patch_radius,
-		Vector2(4.90, 7.15),
-		Vector2(0.65, 1.01)
-	)
-
-
-func _make_grass_lod_mesh(
-	source: Mesh,
-	cluster_count: int,
-	patch_radius: float
-) -> Mesh:
-	# El LOD lejano mantiene una alfombra continua; sólo baja la densidad geométrica.
-	return _make_grass_model_patch(
-		source,
-		cluster_count,
-		patch_radius,
-		Vector2(7.80, 12.30),
-		Vector2(0.48, 0.78)
-	)
 
 
 func _make_transform(position: Vector3, yaw: float, scale_value: Vector3) -> Transform3D:
@@ -3151,6 +2819,29 @@ func _finalize_tree_collision_mesh() -> void:
 	_startup_checkpoint("colisión forestal unificada", started)
 
 
+var _story_tree_exclusions: Dictionary = {}
+
+func _resource_unavailable(id: String) -> bool:
+	return _destroyed_resource_ids.has(id) or _story_tree_exclusions.has(id)
+
+
+func reserve_story_corridors(corridors: Array[Transform3D]) -> void:
+	# Se reserva sólo el acceso construido, sin alterar el reparto horneado ni
+	# registrar talas o botín por árboles retirados para integrar una gruta.
+	for index in _harvest_tree_positions.size():
+		var point := _harvest_tree_positions[index]
+		for transform in corridors:
+			if Vector2(point.x-transform.origin.x,point.z-transform.origin.z).length_squared()>120*120: continue
+			var local := transform.affine_inverse()*point
+			if absf(local.x)<23 and local.z>-48 and local.z<60:
+				_story_tree_exclusions[_harvest_tree_ids[index]] = true
+				_set_harvest_tree_hidden(index,true)
+				break
+	_refresh_tree_collision_mesh()
+	_update_streamed_tree_collisions(true)
+	set_meta("story_corridor_trees",_story_tree_exclusions.size())
+
+
 func _refresh_tree_collision_mesh() -> void:
 	if _forest_collision_shape == null:
 		return
@@ -3165,7 +2856,7 @@ func _refresh_tree_collision_mesh() -> void:
 			if collision_index < _tree_collision_resource_ids.size()
 			else ""
 		)
-		if not resource_id.is_empty() and _destroyed_resource_ids.has(resource_id):
+		if not resource_id.is_empty() and _resource_unavailable(resource_id):
 			continue
 		var base := Vector3(
 			_tree_collision_records[offset],
@@ -3325,7 +3016,7 @@ func _update_streamed_tree_collisions(force: bool = false) -> void:
 			for index_value in _harvest_tree_cells.get(Vector2i(cell_x, cell_y), []):
 				var tree_index := int(index_value)
 				var resource_id := _harvest_tree_ids[tree_index]
-				if _destroyed_resource_ids.has(resource_id):
+				if _resource_unavailable(resource_id):
 					continue
 				var tree_position := _harvest_tree_positions[tree_index]
 				var distance_squared := focus.distance_squared_to(
@@ -3389,7 +3080,7 @@ func try_hit_nearest_tree(
 			for index_value in _harvest_tree_cells.get(Vector2i(cell_x, cell_y), []):
 				var tree_index := int(index_value)
 				var resource_id := _harvest_tree_ids[tree_index]
-				if _destroyed_resource_ids.has(resource_id):
+				if _resource_unavailable(resource_id):
 					continue
 				var tree_position := _harvest_tree_positions[tree_index]
 				if absf(tree_position.y - player_position.y) > 5.0:
@@ -3440,7 +3131,7 @@ func _animate_harvest_tree_hit(tree_index: int, wrong_tool: bool) -> void:
 
 func _break_harvest_tree(tree_index: int, player_forward: Vector2, player: Player) -> void:
 	var resource_id := _harvest_tree_ids[tree_index]
-	if _destroyed_resource_ids.has(resource_id):
+	if _resource_unavailable(resource_id):
 		return
 	var network := get_node_or_null("/root/NetworkSession")
 	if _is_network_client(network):
@@ -3529,9 +3220,11 @@ func _set_harvest_tree_instance_pose(
 		original.origin
 	)
 	multimesh_instance.multimesh.set_instance_transform(instance_index, pose)
+	if _render_bosque!=null: _render_bosque.actualizar(multimesh_instance,instance_index,pose)
 
 
 func _set_harvest_tree_hidden(tree_index: int, hidden: bool) -> void:
+	hidden = hidden or _story_tree_exclusions.has(_harvest_tree_ids[tree_index])
 	_set_harvest_tree_instance_hidden(
 		_harvest_tree_full_keys[tree_index],
 		_harvest_tree_full_indices[tree_index],
@@ -3566,6 +3259,7 @@ func _set_harvest_tree_instance_hidden(
 		pose.basis = Basis.from_scale(Vector3.ONE * 0.001)
 		pose.origin.y -= 10000.0
 	multimesh_instance.multimesh.set_instance_transform(instance_index, pose)
+	if _render_bosque!=null: _render_bosque.actualizar(multimesh_instance,instance_index,pose)
 
 
 func _ensure_tree_stump(tree_index: int) -> void:
@@ -3689,7 +3383,7 @@ func _add_scatter_breakable(spec: Dictionary) -> void:
 	breakable_root.add_child(resource)
 	_breakable_resources[resource_id] = resource
 	generated_breakable_resource_count += 1
-	if _destroyed_resource_ids.has(resource_id):
+	if _resource_unavailable(resource_id):
 		_apply_destroyed_scatter_resource(resource)
 
 
@@ -3717,7 +3411,7 @@ func break_resource(resource: AdventureResource, player: Player) -> void:
 	if resource == null or not resource.broken:
 		return
 	var resource_id := resource.zone_id
-	if _destroyed_resource_ids.has(resource_id):
+	if _resource_unavailable(resource_id):
 		return
 	var network := get_node_or_null("/root/NetworkSession")
 	if _is_network_client(network):
@@ -3761,17 +3455,18 @@ func network_break_resource(resource_id: String, remote_player: Player) -> bool:
 		not _is_network_host(get_node_or_null("/root/NetworkSession"))
 		or remote_player == null
 		or remote_player.equipped_slot != 2
-		or _destroyed_resource_ids.has(resource_id)
+		or _resource_unavailable(resource_id)
 	):
 		return false
 	if _harvest_tree_index_by_id.has(resource_id):
 		var tree_index := int(_harvest_tree_index_by_id[resource_id])
 		var tree_position := _harvest_tree_positions[tree_index]
-		if not _network_break_reachable(remote_player.global_position, tree_position):
+		var peer_position := remote_player.get_network_authoritative_position()
+		if not _network_break_reachable(peer_position, tree_position):
 			return false
 		var fall_direction := Vector2(
-			tree_position.x - remote_player.global_position.x,
-			tree_position.z - remote_player.global_position.z
+			tree_position.x - peer_position.x,
+			tree_position.z - peer_position.z
 		).normalized()
 		_break_harvest_tree(tree_index, fall_direction, remote_player)
 		return true
@@ -3779,7 +3474,7 @@ func network_break_resource(resource_id: String, remote_player: Player) -> bool:
 	if (
 		resource == null
 		or resource.broken
-		or not _network_break_reachable(remote_player.global_position, resource.global_position)
+		or not _network_break_reachable(remote_player.get_network_authoritative_position(), resource.global_position)
 	):
 		return false
 	resource.health = 0
@@ -3937,13 +3632,13 @@ func apply_save_state(state: Dictionary) -> void:
 		_destroyed_resource_ids[String(id_value)] = true
 	for resource_id in _breakable_resources:
 		var resource := _breakable_resources[resource_id] as AdventureResource
-		if _destroyed_resource_ids.has(resource_id):
+		if _resource_unavailable(resource_id):
 			_apply_destroyed_scatter_resource(resource)
 		else:
 			_restore_scatter_resource(resource)
 	for old_id_value in previous_destroyed.keys():
 		var old_id := String(old_id_value)
-		if _destroyed_resource_ids.has(old_id) or not _harvest_tree_index_by_id.has(old_id):
+		if _resource_unavailable(old_id) or not _harvest_tree_index_by_id.has(old_id):
 			continue
 		var restored_index := int(_harvest_tree_index_by_id[old_id])
 		_set_harvest_tree_hidden(restored_index, false)

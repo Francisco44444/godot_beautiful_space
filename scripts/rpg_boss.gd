@@ -83,14 +83,16 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if dead or not _is_authority():
 		return
-	if not is_instance_valid(_target):
-		_target = get_tree().get_first_node_in_group("local_player") as Node3D
+	_retarget -= delta
+	if _retarget<=0.0 or not is_instance_valid(_target):
+		_retarget = 1.4
+		_pick_target()
 	if not is_instance_valid(_target):
 		return
 	var flat := Vector3(
-		_target.global_position.x - global_position.x,
+		_posicion_objetivo().x - global_position.x,
 		0.0,
-		_target.global_position.z - global_position.z
+		_posicion_objetivo().z - global_position.z
 	)
 	var distance := flat.length()
 	if distance > sleep_radius:
@@ -170,7 +172,7 @@ func _resolve_strike() -> void:
 	stance = Stance.STRIKE
 	_stance_left = 0.85 if demand == Demand.DODGE else 0.35
 	if demand == Demand.DODGE:
-		var towards := _target.global_position - global_position
+		var towards := _posicion_objetivo() - global_position
 		towards.y = 0.0
 		_dive_origin = towards.normalized() if towards.length() > 0.01 else Vector3.FORWARD
 		return
@@ -179,8 +181,8 @@ func _resolve_strike() -> void:
 		_open(_reward_line())
 		return
 	var reach := strike_radius
-	if global_position.distance_to(_target.global_position) <= reach and story_runtime != null:
-		story_runtime.call("damage_player", strike_damage, global_position, display_name)
+	if global_position.distance_to(_posicion_objetivo()) <= reach and story_runtime != null:
+		_danar_objetivo(strike_damage)
 
 
 func _player_answered() -> bool:
@@ -214,12 +216,12 @@ func _dive(delta: float) -> void:
 	velocity.x = _dive_origin.x * move_speed * 3.4
 	velocity.z = _dive_origin.z * move_speed * 3.4
 	var flat := Vector3(
-		_target.global_position.x - global_position.x, 0.0,
-		_target.global_position.z - global_position.z
+		_posicion_objetivo().x - global_position.x, 0.0,
+		_posicion_objetivo().z - global_position.z
 	)
 	if flat.length() <= strike_radius * 0.62 and not bool(_target.get("is_rolling")):
 		if story_runtime != null:
-			story_runtime.call("damage_player", strike_damage, global_position, display_name)
+			_danar_objetivo(strike_damage)
 			# Sacude aunque falle: el mazazo se oye en el suelo.
 			story_runtime.call("shake_camera", global_position, 0.30, 95.0)
 		_stance_left = 0.0
@@ -268,7 +270,7 @@ func _update_phase() -> void:
 
 
 func receive_tool_hit(category: String, item_id: String, hit_position: Vector3, attacker: Node) -> void:
-	if dead or sealed:
+	if dead or sealed or not _is_authority():
 		return
 	var spinning := attacker != null and attacker.has_method("is_spin_attacking") \
 		and bool(attacker.call("is_spin_attacking"))
@@ -295,7 +297,7 @@ func receive_tool_hit(category: String, item_id: String, hit_position: Vector3, 
 
 
 func receive_projectile_hit(hit_position: Vector3, shooter: Node) -> void:
-	if dead or sealed:
+	if dead or sealed or not _is_authority():
 		return
 	if _ward > 0:
 		if demand in [Demand.BOW, Demand.TRIAL]:
@@ -384,4 +386,20 @@ func set_sealed(value: bool) -> void:
 		return
 	sealed = value
 	_announced = false
+	_refresh_health_label()
+
+
+func get_network_state() -> Dictionary:
+	var estado := super.get_network_state()
+	estado.merge({"ward":_ward,"sealed":sealed,"stance":stance,"phase":phase})
+	return estado
+
+
+func apply_network_state(estado: Dictionary) -> void:
+	if _is_authority(): return
+	super.apply_network_state(estado)
+	_ward = int(estado.get("ward",_ward))
+	sealed = bool(estado.get("sealed",sealed))
+	stance = int(estado.get("stance",stance))
+	phase = int(estado.get("phase",phase))
 	_refresh_health_label()

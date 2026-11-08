@@ -12,6 +12,8 @@ __pycache__/
 *.pyc
 /web-game/
 /web-game-live/
+/generated/reviews/
+/generated/caves/cave_surface.json
 
 # Dependencias locales opcionales del servidor MCP.
 tools/godot-mcp/

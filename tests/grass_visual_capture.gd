@@ -19,6 +19,9 @@ func _capture_meadow() -> void:
 	await process_frame
 	await process_frame
 
+	if "--grass-full-work" in OS.get_cmdline_user_args():
+		for material in world.get_node("VegetationScatter").get("_grass_wind_materials"):
+			material.set_shader_parameter("skip_hidden_work", false)
 	var terrain := world.get_node("Terrain3D") as Terrain3D
 	var player := world.get_node("Player") as CharacterBody3D
 	var meadow_point := _find_open_meadow()
@@ -141,5 +144,5 @@ func _visible_multimesh_instances(root_node: Node) -> int:
 	for child in root_node.get_children():
 		var instance := child as MultiMeshInstance3D
 		if instance != null and instance.visible:
-			result += instance.multimesh.instance_count
+			result += instance.multimesh.visible_instance_count if instance.multimesh.visible_instance_count >= 0 else instance.multimesh.instance_count
 	return result

@@ -10,6 +10,8 @@ const SUN_DISTANCE := 20000.0
 const MOON_RISE_START_DAYLIGHT := 0.11
 const MOON_FULL_DAYLIGHT := 0.018
 const MOON_SHADOW_HANDOFF := 0.42
+const RANGO_FUNDIDO_SOMBRA_SOL := Vector2(0.10, 0.28)
+const NOCHE_SOMBRA_LUNA_COMPLETA := 0.95
 const FOG_STREAM_REFRESH_SECONDS := 0.40
 const FOG_VOLUME_BUDGET := 2
 const MOON_TEXTURE: Texture2D = preload("res://assets/textures/moon/moon_craters_lowpoly.png")
@@ -237,6 +239,15 @@ func _process(delta: float) -> void:
 	sync_celestial_sources(camera)
 	if camera != null:
 		_update_fog_streaming(camera, delta)
+	sincronizar_luz_celeste(daylight, camera)
+	if _ocean_material != null:
+		var ocean_night := Color(0.035, 0.075, 0.16, 1.0)
+		var ocean_day := Color(0.34, 0.64, 0.76, 1.0)
+		_ocean_material.set_shader_parameter("horizon_color", ocean_night.lerp(ocean_day, daylight))
+
+
+func sincronizar_luz_celeste(daylight: float, camera: Camera3D = null) -> void:
+	if camera == null: camera = get_viewport().get_camera_3d()
 	if sun_visual != null:
 		# El radio aparente del astro exige mantener su centro visible unos grados
 		# bajo el horizonte; así no desaparece antes de completar la puesta.
@@ -260,17 +271,16 @@ func _process(delta: float) -> void:
 		moon_light.light_energy = night * 0.72
 		var moon_owns_shadows := night >= MOON_SHADOW_HANDOFF
 		moon_light.shadow_enabled = moon_owns_shadows
+		moon_light.shadow_opacity = smoothstep(MOON_SHADOW_HANDOFF, NOCHE_SOMBRA_LUNA_COMPLETA, night)
 		var directional_sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
 		if directional_sun != null:
-			# Una sola luz direccional genera mapas de sombras. El color de ambas
-			# puede fundirse, pero nunca se vuelven a renderizar sol y luna a la vez.
+			# El relevo sucede con ambas opacidades a cero. Antes la sombra de una
+			# luna ya intensa sustituía de golpe a la del sol, en otra dirección.
+			# Se mantiene un único mapa direccional; día y noche recuperan opacidad 1.
 			directional_sun.shadow_enabled = not moon_owns_shadows
+			directional_sun.shadow_opacity = smoothstep(RANGO_FUNDIDO_SOMBRA_SOL.x, RANGO_FUNDIDO_SOMBRA_SOL.y, daylight)
 		set_meta("moon_shadow_owner", moon_owns_shadows)
 		set_meta("exclusive_celestial_shadows", true)
-	if _ocean_material != null:
-		var ocean_night := Color(0.035, 0.075, 0.16, 1.0)
-		var ocean_day := Color(0.34, 0.64, 0.76, 1.0)
-		_ocean_material.set_shader_parameter("horizon_color", ocean_night.lerp(ocean_day, daylight))
 
 
 func sync_celestial_sources(camera: Camera3D = null) -> void:

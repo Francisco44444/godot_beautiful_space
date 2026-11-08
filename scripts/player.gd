@@ -40,6 +40,7 @@ const ARCHER_ARMS_SCRIPT: Script = preload("res://scripts/archer_arms_modifier.g
 const WEAPON_ARM_SCRIPT: Script = preload("res://scripts/weapon_arm_modifier.gd")
 const CHARGE_STORM_SCRIPT: Script = preload("res://scripts/charge_storm.gd")
 const LIBRARY_ANIMATION_SCRIPT: Script = preload("res://scripts/library_animation.gd")
+const NETWORK_MOTION_SCRIPT: Script = preload("res://scripts/network_motion.gd")
 ## Animaciones tomadas de la Universal Animation Library 2. Sustituyen a las de
 ## Quaternius allí donde esta trae un gesto mucho mejor: el rig no tiene ninguna
 ## pose de escudo ni un tajo de espada decente.
@@ -519,9 +520,10 @@ var _last_arrow_direction := Vector3.FORWARD
 var player_display_name := "Aventurero"
 var character_index := 0
 var _network_target_position := Vector3.ZERO
-var _network_target_yaw := 0.0
-var _network_target_velocity := Vector3.ZERO
+var _yaw_red_autoritativo := 0.0
 var _network_state_ready := false
+var _network_grounded := true
+var _network_motion = NETWORK_MOTION_SCRIPT.new()
 var _nameplate: Label3D
 
 
@@ -536,6 +538,7 @@ func _ready() -> void:
 		quaternius_hero_path = _character_path(character_index)
 		add_to_group("local_player")
 	else:
+		add_to_group("network_player")
 		collision_layer = 0
 		collision_mask = 0
 		collision.disabled = true
@@ -569,6 +572,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	# Una réplica no tiene colisión: puede presentarse a la frecuencia de dibujo,
+	# incluso por encima de los 60 pasos de física del héroe local.
+	if network_remote: _update_network_replica(delta)
 	_update_realistic_visual(delta)
 	_update_ride_pose(delta)
 	_update_library_pose(delta)
@@ -601,7 +607,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	if network_remote:
-		_update_network_replica(delta)
+		_attack_cooldown = maxf(_attack_cooldown-delta,0.0)
+		_slash_chain_window = maxf(_slash_chain_window-delta,0.0)
+		if is_rolling: _update_dodge(delta)
+		if is_drawing_bow:
+			_bow_draw_time += delta
+			_bow_draw_strength = clampf(_bow_draw_time/maxf(bow_full_draw_time,0.01),0.0,1.0)
+		if attack_phase==AttackPhase.CHARGING:
+			_charge_time += delta
+			_charge_strength = clampf(_charge_time/maxf(charge_full_time,0.05),0.0,1.0)
+		_update_attack(delta,_sesion_red().is_world_authority())
 		return
 	_attack_cooldown = maxf(_attack_cooldown - delta, 0.0)
 	_slash_chain_window = maxf(_slash_chain_window - delta, 0.0)
@@ -715,6 +730,7 @@ func start_dodge_roll(lateral: float) -> bool:
 	velocity = _roll_direction * dodge_speed + Vector3.UP * dodge_hop
 	_play_animation(ANIM_ROLL, 0.05, 1.0)
 	dodge_started.emit(_roll_direction)
+	_notificar_combate("esquiva",{"direccion":_roll_direction})
 	return true
 
 
@@ -778,6 +794,7 @@ func start_charge() -> bool:
 	if _charge_effect != null:
 		_charge_effect.set_charge(0.0)
 	charge_changed.emit(0.0, false)
+	_notificar_combate("carga")
 	return true
 
 
@@ -812,6 +829,7 @@ func start_spin_attack() -> bool:
 	charge_changed.emit(0.0, false)
 	attack_started.emit(attacks_performed)
 	spin_attack_started.emit()
+	_notificar_combate("giro")
 	return true
 
 
@@ -959,6 +977,7 @@ func _start_slash() -> void:
 		_slash_hit_end = attack_hit_end
 		_play_animation(ANIM_ATTACK, 0.06, attack_animation_rate)
 	attack_started.emit(attacks_performed)
+	_notificar_combate("tajo")
 
 
 func is_mounted() -> bool:
@@ -1003,19 +1022,27 @@ func apply_identity(name_value: String, index_value: int) -> void:
 		_reload_quaternius_hero()
 
 
-func apply_network_state(position_value: Vector3, yaw_value: float, velocity_value: Vector3, slot_value: int) -> void:
+func apply_network_state(position_value: Vector3, yaw_value: float, velocity_value: Vector3, slot_value: int, sample_time: float = -1.0, grounded: bool = true) -> void:
+	var arrival_time := float(Time.get_ticks_usec())/1000000.0
+	if sample_time<0.0: sample_time = arrival_time
+	var previous_generation: int = _network_motion.generation
+	if not _network_motion.push_sample(position_value,yaw_value,velocity_value,sample_time,arrival_time,grounded): return
 	_network_target_position = position_value
-	_network_target_yaw = yaw_value
-	_network_target_velocity = velocity_value
-	if not _network_state_ready:
+	_yaw_red_autoritativo = yaw_value
+	if not _network_state_ready or previous_generation!=_network_motion.generation:
 		global_position = position_value
 		visual.rotation.y = yaw_value
+		reset_physics_interpolation()
 		_network_state_ready = true
 	if slot_value != equipped_slot:
 		if slot_value > 0:
 			equip_item(slot_value)
 		else:
 			_clear_equipped_item()
+
+
+func get_network_authoritative_position() -> Vector3:
+	return _network_target_position if network_remote and _network_state_ready else global_position
 
 
 func get_camera_target() -> Node3D:
@@ -1077,7 +1104,7 @@ func dismount() -> bool:
 	return true
 
 
-func _update_attack(delta: float) -> void:
+func _update_attack(delta: float, aplicar_impactos: bool = true) -> void:
 	match attack_phase:
 		AttackPhase.CHARGING:
 			attack_shape.disabled = true
@@ -1091,7 +1118,7 @@ func _update_attack(delta: float) -> void:
 			_attack_time += delta
 			var active := _attack_time >= _slash_hit_start and _attack_time <= _slash_hit_end
 			attack_shape.disabled = not active
-			if active:
+			if active and aplicar_impactos:
 				_apply_melee_hits()
 			if _attack_time >= _slash_duration:
 				_finish_attack()
@@ -1113,7 +1140,7 @@ func _update_attack(delta: float) -> void:
 				)
 			var active_spin := progress <= 0.9
 			attack_shape.disabled = not active_spin
-			if active_spin:
+			if active_spin and aplicar_impactos:
 				_apply_melee_hits(true)
 			if progress >= 1.0:
 				_finish_attack()
@@ -1534,28 +1561,30 @@ func _update_weapon_stabilizer(delta: float) -> void:
 
 
 func _apply_melee_hits(full_circle: bool = false) -> void:
+	var origen := get_network_authoritative_position()
 	var candidates: Array[Node] = []
-	for body in attack_area.get_overlapping_bodies():
-		candidates.append(body)
+	if not network_remote:
+		for body in attack_area.get_overlapping_bodies(): candidates.append(body)
 
 	# La consulta física adicional evita perder golpes si el arma cruza un
 	# objetivo entre dos actualizaciones del monitor de Area3D. El giro cargado
 	# usa una esfera porque alcanza a todo lo que rodea al héroe, no solo a lo
 	# que tiene delante.
-	var forward := -visual.global_basis.z.normalized()
+	var base := Basis(Vector3.UP,_yaw_red_autoritativo) if network_remote else visual.global_basis.orthonormalized()
+	var forward := -base.z.normalized()
 	var query := PhysicsShapeQueryParameters3D.new()
 	if full_circle:
 		var sphere := SphereShape3D.new()
 		sphere.radius = spin_reach * spin_area_overreach
 		query.shape = sphere
-		query.transform = Transform3D(Basis.IDENTITY, global_position + Vector3.UP * 1.05)
+		query.transform = Transform3D(Basis.IDENTITY, origen + Vector3.UP * 1.05)
 	else:
 		var query_shape := BoxShape3D.new()
 		query_shape.size = Vector3(1.65, 2.05, _attack_reach)
 		query.shape = query_shape
 		query.transform = Transform3D(
-			visual.global_basis.orthonormalized(),
-			global_position + Vector3.UP * 1.05 + forward * (_attack_reach * 0.52)
+			base,
+			origen + Vector3.UP * 1.05 + forward * (_attack_reach * 0.52)
 		)
 	query.collision_mask = 5
 	query.collide_with_bodies = true
@@ -1573,7 +1602,7 @@ func _apply_melee_hits(full_circle: bool = false) -> void:
 	# Los bosques usan MultiMesh y una única malla física para decenas de miles
 	# de troncos. Consultar su índice espacial al blandir el arma permite talar
 	# cualquier árbol sin convertir cada ejemplar en un nodo/collider individual.
-	if not hit_world_target:
+	if not hit_world_target and not network_remote:
 		var vegetation := get_node_or_null("../VegetationScatter")
 		if vegetation != null and vegetation.has_method("try_hit_nearest_tree"):
 			vegetation.call(
@@ -1590,8 +1619,28 @@ func _apply_melee_hits(full_circle: bool = false) -> void:
 func _apply_hit_to_body(body: Node, impacts: int = 1) -> bool:
 	if body == self or _attack_hits.has(body.get_instance_id()):
 		return false
+	if body is RPGEnemy:
+		if network_remote and not _sesion_red().is_world_authority(): return false
+		var origen := get_network_authoritative_position()+Vector3.UP*1.05
+		var rayo := PhysicsRayQueryParameters3D.create(origen,(body as Node3D).global_position+Vector3.UP,1)
+		rayo.exclude = [get_rid()]
+		# Los personajes no son muros: el barrido puede alcanzar varios enemigos.
+		for filtro in 24:
+			var obstaculo := get_world_3d().direct_space_state.intersect_ray(rayo)
+			if obstaculo.is_empty() or obstaculo.collider==body: break
+			if not obstaculo.collider is CharacterBody3D: return false
+			var excluidos := rayo.exclude
+			excluidos.append(obstaculo.collider.get_rid())
+			rayo.exclude = excluidos
+			if filtro==23: return false
+	elif network_remote:
+		return false
 	_attack_hits[body.get_instance_id()] = true
+	if body is RPGEnemy and not network_remote and not _sesion_red().is_world_authority():
+		melee_hit.emit(body)
+		return true
 	var hit_position := _equipped_mesh.global_position if _equipped_mesh != null else attack_area.global_position
+	if network_remote: hit_position = get_network_authoritative_position()+Vector3.UP
 	# El giro cargado reparte varios impactos por objetivo. Repetir la llamada
 	# mantiene intacta la firma que ya implementan enemigos, vetas y props.
 	if body.has_method("receive_tool_hit"):
@@ -1690,7 +1739,9 @@ func _update_locomotion_animation() -> void:
 	# brazo armado, así que las piernas siguen dando pasos debajo.
 	if attack_phase == AttackPhase.SLASH or is_rolling:
 		return
-	if not is_on_floor():
+	# Las réplicas no chocan con el suelo y is_on_floor() siempre daría false.
+	var grounded := _network_grounded if network_remote else is_on_floor()
+	if not grounded:
 		_play_animation(ANIM_JUMP, 0.1)
 		return
 	var horizontal_speed := Vector2(velocity.x, velocity.z).length()
@@ -1819,6 +1870,7 @@ func _update_weapon_grip_alignment(blend: float) -> void:
 
 
 func get_aim_direction() -> Vector3:
+	if network_remote and (is_drawing_bow or _bow_release_time>0.0) and _last_arrow_direction.length_squared()>0.001: return _last_arrow_direction.normalized()
 	## Al tensar el arco manda la cámara; el resto del tiempo, el frente del
 	## héroe. Así el arco descansa vertical junto al cuerpo sin dar tirones.
 	if is_drawing_bow or _bow_release_time > 0.0:
@@ -1831,6 +1883,7 @@ func get_aim_direction() -> Vector3:
 
 
 func get_aim_point() -> Vector3:
+	if network_remote: return get_arrow_launch_origin()+get_aim_direction()*80.0
 	## Punto exacto de la retícula. Trazar el rayo desde la cámara por el centro
 	## de la pantalla es lo que hace que la flecha se clave donde el jugador
 	## está mirando, en vez de salir 14° hacia el suelo con el ángulo de cámara.
@@ -2279,24 +2332,25 @@ func _update_ride_pose(delta: float) -> void:
 func _update_shield_carry(delta: float) -> void:
 	# Las réplicas de red no leen el ratón: sin esta guarda, el escudo de los
 	# demás jugadores subía cuando el jugador local pulsaba el botón derecho.
-	if network_remote or is_mounted() or _ride_influence > 0.001:
+	if is_mounted() or _ride_influence > 0.001:
 		return
-	# Sin escudo en el inventario el héroe para con la espada: la biblioteca
-	# trae `Sword_Block` justo para eso.
-	var has_shield := _shield_mesh != null and is_instance_valid(_shield_mesh)
-	var wants_guard := (
-		Input.is_action_pressed("block")
-		and (has_shield or equipped_category == "sword")
-		and not is_mounted()
-		and not is_rolling
-		and not is_playing_gesture()
-		and equipped_category != "bow"
-		and attack_phase != AttackPhase.SPIN
-	)
-	if wants_guard and not is_guarding:
-		_raise_shield()
-	elif not wants_guard and is_guarding:
-		_lower_shield()
+	if not network_remote:
+		# Sin escudo en el inventario el héroe para con la espada: la biblioteca
+		# trae `Sword_Block` justo para eso.
+		var has_shield := _shield_mesh != null and is_instance_valid(_shield_mesh)
+		var wants_guard := (
+			Input.is_action_pressed("block")
+			and (has_shield or equipped_category == "sword")
+			and not is_mounted()
+			and not is_rolling
+			and not is_playing_gesture()
+			and equipped_category != "bow"
+			and attack_phase != AttackPhase.SPIN
+		)
+		if wants_guard and not is_guarding:
+			_raise_shield()
+		elif not wants_guard and is_guarding:
+			_lower_shield()
 	# Con la pose de escudo de la biblioteca en marcha, el IK del brazo estorba:
 	# la propia animación ya coloca el antebrazo como debe.
 	var wants_arm_ik := is_guarding and not is_playing_library_animation()
@@ -2344,6 +2398,7 @@ func _raise_shield() -> void:
 	if _shield_grip != null and _shield_mesh != null:
 		_start_mesh_move(_shield_mesh, _shield_grip, _guard_shield_pose(), shield_transition, Callable())
 	guard_changed.emit(true)
+	_notificar_combate("guardia",{"activo":true})
 
 
 func _lower_shield() -> void:
@@ -2355,6 +2410,7 @@ func _lower_shield() -> void:
 			shield_transition, Callable()
 		)
 	guard_changed.emit(false)
+	_notificar_combate("guardia",{"activo":false})
 
 
 func get_damage_multiplier() -> float:
@@ -2445,13 +2501,13 @@ func _update_weapon_carry(delta: float) -> void:
 		stow_weapon()
 
 
-func equip_item(slot: int) -> bool:
+func equip_item(slot: int, objeto_remoto: String = "") -> bool:
 	if not EQUIPMENT_SPECS.has(slot) or _weapon_grip == null:
 		return false
 	var inventory := _inventory_manager()
 	if inventory == null:
 		return false
-	var item_id := String(inventory.call("get_quick_slot_item", slot))
+	var item_id := objeto_remoto if network_remote and not objeto_remoto.is_empty() else String(inventory.call("get_quick_slot_item", slot))
 	if item_id.is_empty():
 		action_feedback.emit("Todavía no posees ese objeto")
 		return false
@@ -2523,7 +2579,7 @@ func equip_item(slot: int) -> bool:
 	_equipped_mesh.mesh = equipment_mesh.duplicate() as ArrayMesh
 	# La escala de la ranura por la corrección propia de la pieza: sin ella las
 	# armas del pack medieval salen al triple de tamaño que las del pack RPG.
-	_equipped_mesh.scale = Vector3.ONE * float(spec.scale) * _item_mesh_scale(equipped_item_id)
+	_equipped_mesh.scale = Vector3.ONE * float(spec.scale) * _item_mesh_scale(item_id)
 	_equipped_mesh.set_meta("equipment_slot", slot)
 	var target_hand := String(spec.get("hand", "right"))
 	var target_socket: BoneAttachment3D = _left_weapon_socket if target_hand == "left" else _weapon_socket
@@ -2587,6 +2643,7 @@ func equip_item(slot: int) -> bool:
 	if _charge_effect != null and is_instance_valid(_charge_effect):
 		_charge_effect.attach_to_weapon(_equipped_mesh)
 	equipment_changed.emit(equipped_slot, equipped_item_name)
+	_notificar_combate("equipo")
 	return true
 
 
@@ -2640,6 +2697,7 @@ func _begin_bow_draw() -> bool:
 	_set_camera_aiming(true)
 	_create_nocked_arrow()
 	bow_draw_changed.emit(0.0, get_arrow_count())
+	_notificar_combate("tensar",{"direccion":get_aim_direction()})
 	return true
 
 
@@ -2681,6 +2739,8 @@ func _release_bow_arrow() -> bool:
 	arrow.global_position = origin
 	arrow.set_physics_process(true)
 	arrow.launch(direction, speed, self, strength)
+	if _sesion_red().is_networked(): _attack_cooldown = 0.20
+	_notificar_combate("flecha",{"origen":origin,"direccion":direction,"fuerza":strength})
 	_bow_release_strength = strength
 	_bow_release_time = bow_release_pose_duration
 	_aim_hold_time = aim_follow_after_shot
@@ -2704,6 +2764,7 @@ func _cancel_bow_draw() -> void:
 	if _aim_hold_time <= 0.0:
 		_set_camera_aiming(false)
 	bow_draw_changed.emit(0.0, get_arrow_count())
+	_notificar_combate("reposo")
 
 
 func _set_camera_aiming(active: bool) -> void:
@@ -2938,10 +2999,11 @@ func _build_nameplate() -> void:
 func _update_network_replica(delta: float) -> void:
 	if not _network_state_ready:
 		return
-	var position_blend := 1.0 - exp(-11.0 * delta)
-	global_position = global_position.lerp(_network_target_position, position_blend)
-	visual.rotation.y = lerp_angle(visual.rotation.y, _network_target_yaw, position_blend)
-	velocity = _network_target_velocity
+	_network_motion.advance(delta,float(Time.get_ticks_usec())/1000000.0)
+	global_position = _network_motion.position
+	if attack_phase!=AttackPhase.SPIN and not is_rolling: visual.rotation.y = _network_motion.yaw
+	velocity = _network_motion.velocity
+	_network_grounded = _network_motion.grounded
 	_update_locomotion_animation()
 
 
@@ -2968,3 +3030,11 @@ func _character_path(index_value: int) -> String:
 func _respawn() -> void:
 	global_position = spawn_position
 	velocity = Vector3.ZERO
+
+
+func _notificar_combate(tipo: String, datos: Dictionary = {}) -> void:
+	if not network_remote: _sesion_red().enviar_accion_combate(self,tipo,datos)
+
+
+func _sesion_red() -> Node:
+	return get_node("/root/NetworkSession")

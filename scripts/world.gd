@@ -88,6 +88,10 @@ func _ready() -> void:
 	GameSettings.lod_distance_changed.connect(_apply_lod_distance)
 	_apply_lod_distance(GameSettings.lod_distance_metres)
 	_setup_network_players()
+	var combate = preload("res://scripts/combate_cooperativo.gd").new()
+	combate.name = "CombateCooperativo"
+	combate.configurar(self,player,network_players,get_node("RPGStoryRuntime"))
+	add_child(combate)
 	NetworkSession.world_state_received.connect(_on_network_world_state_received)
 	NetworkSession.world_resource_break_requested.connect(
 		_on_network_world_resource_break_requested
@@ -129,6 +133,7 @@ func _atmosphere_storm_dimming() -> float:
 
 
 func _process(delta: float) -> void:
+	sincronizar_camara_terreno()
 	if NetworkSession.is_world_authority():
 		_update_sun_cycle(delta)
 	var exploration := get_node_or_null("/root/ExplorationManager")
@@ -139,6 +144,14 @@ func _process(delta: float) -> void:
 func _sync_exploration_time(exploration: Node) -> void:
 	_last_exploration_time_of_day = time_of_day
 	exploration.call("update_time_of_day", time_of_day)
+
+
+func sincronizar_camara_terreno() -> void:
+	# Terrain3D conserva la cámara inicial. Una cinemática o una cámara de
+	# revisión nueva dejaba el LOD lejos del observador y agrandaba los agujeros.
+	var camara := get_viewport().get_camera_3d()
+	if camara!=null and terrain.get_camera()!=camara:
+		terrain.set_camera(camara)
 
 
 func _physics_process(delta: float) -> void:
@@ -303,7 +316,9 @@ func _on_remote_state_received(
 	position: Vector3,
 	yaw: float,
 	velocity: Vector3,
-	equipped_slot: int
+	equipped_slot: int,
+	sample_time: float,
+	grounded: bool
 ) -> void:
 	if network_players == null:
 		return
@@ -315,7 +330,7 @@ func _on_remote_state_received(
 		replica.configure_network_replica(String(identity.name), int(identity.character_index))
 		replica.set_meta("network_peer_id", peer_id)
 		network_players.add_child(replica)
-	replica.apply_network_state(position, yaw, velocity, equipped_slot)
+	replica.apply_network_state(position, yaw, velocity, equipped_slot, sample_time, grounded)
 
 
 func _clear_network_players() -> void:
@@ -451,9 +466,8 @@ func _on_network_world_resource_break_requested(
 	domain: String,
 	resource_id: String
 ) -> bool:
-	## Solo se ejecuta en el anfitrión. La réplica contiene la última posición y
-	## ranura de equipo recibidas de ese peer; los sistemas de recursos vuelven a
-	## comprobar distancia, existencia y que la ranura 2 sea realmente el hacha.
+	## Solo se ejecuta en el anfitrión. El alcance usa la última muestra recibida,
+	## sin el retraso visual del búfer; también se validan objeto y herramienta.
 	if (
 		NetworkSession.session_mode != NetworkSession.SessionMode.HOST
 		or not multiplayer.is_server()
@@ -716,6 +730,8 @@ func _update_sun_cycle(delta: float) -> void:
 	var storm_dimming := _atmosphere_storm_dimming()
 	sun.light_energy = daylight_factor * lerpf(0.62, 1.35, maxf(solar_height, 0.0)) * storm_dimming
 	sun.light_color = Color(1.0, 0.58, 0.32).lerp(Color(1.0, 0.93, 0.79), smoothstep(0.05, 0.62, solar_height))
+	if island_environment != null:
+		island_environment.sincronizar_luz_celeste(daylight_factor)
 	sky_fill.light_energy = lerpf(0.19, 0.22, daylight_factor) * storm_dimming
 	sky_fill.light_color = Color(0.34, 0.44, 0.78).lerp(Color(0.58, 0.7, 0.92), daylight_factor)
 	if daylight_factor < 0.14:

@@ -85,6 +85,8 @@ func _ready() -> void:
 	_build_collision()
 	_build_visual()
 	_build_nameplate()
+	if story_runtime!=null and story_runtime.has_method("registrar_enemigo_red"):
+		story_runtime.registrar_enemigo_red(self)
 
 
 func _physics_process(delta: float) -> void:
@@ -97,9 +99,9 @@ func _physics_process(delta: float) -> void:
 	if not is_instance_valid(_target):
 		return
 	var flat := Vector3(
-		_target.global_position.x - global_position.x,
+		_posicion_objetivo().x - global_position.x,
 		0.0,
-		_target.global_position.z - global_position.z
+		_posicion_objetivo().z - global_position.z
 	)
 	var distance := flat.length()
 	if distance > sleep_radius:
@@ -203,8 +205,8 @@ func _advance_lunge(delta: float) -> void:
 	if not is_instance_valid(_target):
 		return
 	var reach := Vector3(
-		_target.global_position.x - global_position.x, 0.0,
-		_target.global_position.z - global_position.z
+		_posicion_objetivo().x - global_position.x, 0.0,
+		_posicion_objetivo().z - global_position.z
 	).length()
 	if reach <= attack_radius * 1.25:
 		_hit_player()
@@ -239,7 +241,7 @@ func _blink_behind() -> void:
 	## no baste con mirar al frente.
 	if not is_instance_valid(_target):
 		return
-	var behind := _target.global_position - (-_target.global_basis.z) * 2.1
+	var behind := _posicion_objetivo() - (-_target.global_basis.z) * 2.1
 	global_position = Vector3(behind.x, global_position.y, behind.z)
 	_stand_on_terrain()
 	_set_fade(false)
@@ -271,28 +273,47 @@ func _face(flat: Vector3) -> void:
 ## claramente más cerca: si cualquiera valiera igual, llamar a los tuyos
 ## convertiría la pelea en un espectáculo que miras desde atrás.
 func _pick_target() -> void:
-	var hero := get_tree().get_first_node_in_group("local_player") as Node3D
-	var chosen := hero
-	var best := 1e9 if hero == null else global_position.distance_to(hero.global_position)
-	for node in get_tree().get_nodes_in_group("rpg_companion"):
-		var mate := node as Node3D
-		if mate == null or not mate.visible or bool(mate.get("downed")):
-			continue
-		var span := global_position.distance_to(mate.global_position)
-		if span < best - COMPANION_AGGRO_EDGE and span < COMPANION_AGGRO_RANGE:
-			best = span
-			chosen = mate
-	if chosen != null:
-		_target = chosen
+	var chosen: Node3D
+	var best := INF
+	for node in get_tree().get_nodes_in_group("local_player")+get_tree().get_nodes_in_group("network_player"):
+		var hero := node as Node3D
+		if hero==null: continue
+		if hero.has_meta("network_peer_id") and not bool(hero.get("_network_state_ready")): continue
+		var point: Vector3 = hero.get_network_authoritative_position() if hero.has_method("get_network_authoritative_position") else hero.global_position
+		var distance := global_position.distance_squared_to(point)
+		if distance<best:
+			best = distance
+			chosen = hero
+	best = sqrt(best)
+	if not is_in_group("rpg_boss"):
+		for node in get_tree().get_nodes_in_group("rpg_companion"):
+			var mate := node as Node3D
+			if mate==null or not mate.visible or bool(mate.get("downed")): continue
+			var span := global_position.distance_to(mate.global_position)
+			if span<best-COMPANION_AGGRO_EDGE and span<COMPANION_AGGRO_RANGE:
+				best = span
+				chosen = mate
+	_target = chosen
+
+
+func _posicion_objetivo() -> Vector3:
+	if _target!=null and _target.has_method("get_network_authoritative_position"):
+		return _target.get_network_authoritative_position()
+	return _target.global_position if _target!=null else global_position
+
+
+func _danar_objetivo(cantidad: int) -> void:
+	if _target!=null and _target.is_in_group("rpg_companion"):
+		if _target.has_method("take_hit"): _target.take_hit(cantidad)
+		return
+	if _target!=null and _target.has_meta("network_peer_id"):
+		get_node("/root/NetworkSession").enviar_dano_combate(int(_target.get_meta("network_peer_id")),cantidad,global_position,display_name)
+	elif story_runtime!=null:
+		story_runtime.damage_player(cantidad,global_position,display_name)
 
 
 func _hit_player() -> void:
-	if _target != null and _target.is_in_group("rpg_companion"):
-		if _target.has_method("take_hit"):
-			_target.call("take_hit", attack_damage)
-		return
-	if story_runtime != null:
-		story_runtime.call("damage_player", attack_damage, global_position, display_name)
+	_danar_objetivo(attack_damage)
 
 
 func _set_guard(up: bool) -> void:
@@ -335,7 +356,7 @@ func _stand_on_terrain() -> void:
 
 
 func receive_tool_hit(category: String, item_id: String, hit_position: Vector3, attacker: Node) -> void:
-	if dead:
+	if dead or not _is_authority():
 		return
 	# El grado del arma manda. Con la regla vieja —un `+2` si el nombre contenía
 	# "Golden" o "big"— la espada dorada grande pegaba lo mismo que la dorada, y
@@ -366,6 +387,7 @@ func _hit_from_front(hit_position: Vector3) -> bool:
 
 
 func receive_projectile_hit(hit_position: Vector3, shooter: Node) -> void:
+	if not _is_authority(): return
 	_take_damage(3, hit_position, shooter)
 
 
@@ -373,15 +395,22 @@ func get_network_state() -> Dictionary:
 	return {
 		"id": enemy_id, "position": global_position, "yaw": rotation.y,
 		"health": health, "dead": dead,
+		"anim": String(_animator.current_animation) if _animator!=null else "",
 	}
 
 
 func apply_network_state(state: Dictionary) -> void:
 	if _is_authority():
 		return
-	global_position = state.get("position", global_position)
-	rotation.y = float(state.get("yaw", rotation.y))
+	var posicion: Vector3 = state.get("position",global_position)
+	var giro := float(state.get("yaw",rotation.y))
+	# La mayoría están quietos. Reescribir su transformación enviaba trabajo a
+	# física y render aunque el paquete no hubiese cambiado ni un vértice.
+	if posicion!=global_position: global_position = posicion
+	if giro!=rotation.y: rotation.y = giro
 	health = int(state.get("health", health))
+	var animation := String(state.get("anim",""))
+	if not dead and not animation.is_empty(): _play_animation([animation])
 	if bool(state.get("dead", false)) and not dead:
 		_die()
 
@@ -431,7 +460,7 @@ func _try_attack() -> void:
 		return
 	_attack_cooldown = 1.25
 	_play_animation(["Attack", "Bite", "Idle"])
-	story_runtime.call("damage_player", attack_damage, global_position, display_name)
+	_danar_objetivo(attack_damage)
 
 
 func _is_authority() -> bool:

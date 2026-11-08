@@ -57,10 +57,10 @@ const NPC_SPECS: Array[Dictionary] = [
 	{"id":"noa", "name":"Noa", "role":"Recolectora del bosque rojo", "file":"Goblin_Female.gltf", "point":Vector2(4260, -1510)},
 ]
 const GATE_SPECS: Array[Dictionary] = [
-	{"id":"roots", "name":"Gruta de las Raíces", "key":"Key1", "point":Vector2(-2530, 1090), "yaw":0.55, "hint":"Cripta del Corazón de Roble"},
-	{"id":"frost", "name":"Observatorio Sepultado", "key":"Key2", "point":Vector2(690, -3370), "yaw":-0.15, "hint":"Cámara de las Constelaciones"},
-	{"id":"sun", "name":"Santuario bajo la Arena", "key":"Key3", "point":Vector2(3190, 2290), "yaw":1.15, "hint":"Cámara del Mediodía"},
-	{"id":"echo", "name":"Cámara sin Eco", "key":"Key4", "point":Vector2(4970, -1510), "yaw":-1.25, "hint":"Guarida de Vaelor"},
+	{"id":"roots", "name":"Gruta de las Raíces", "key":"Key1", "point":Vector2(-2530, 1090), "yaw":0.0, "hint":"Cripta del Corazón de Roble"},
+	{"id":"frost", "name":"Observatorio Sepultado", "key":"Key2", "point":Vector2(690, -3370), "yaw":3.14159265359, "hint":"Cámara de las Constelaciones"},
+	{"id":"sun", "name":"Santuario bajo la Arena", "key":"Key3", "point":Vector2(2750, 1700), "yaw":0.0, "hint":"Cámara del Mediodía"},
+	{"id":"echo", "name":"Cámara sin Eco", "key":"Key4", "point":Vector2(4700, -1450), "yaw":0.0, "hint":"Guarida de Vaelor"},
 ]
 const ENEMY_PATHS: PackedStringArray = [
 	"Blob/glTF/GreenSpikyBlob.gltf", "Blob/glTF/Mushnub_Evolved.gltf",
@@ -114,6 +114,7 @@ var _pending: Dictionary = {}
 var _act_answered: Dictionary = {}
 var _act_hinted: Dictionary = {}
 var _vegetation: Node = null
+var wonders: Node
 var generated_gate_count := 0
 var generated_cave_count := 0
 var player_health := 100
@@ -124,6 +125,7 @@ var _inventory: Node
 var _exploration: Node
 var _awarded_chapters: Dictionary = {}
 var _damage_cooldown := 0.0
+var _indice_enemigos_red: Dictionary = {}
 
 
 func _ready() -> void:
@@ -145,8 +147,14 @@ func _build_story_world() -> void:
 	await get_tree().process_frame
 	for spec in NPC_SPECS:
 		_spawn_npc(spec)
+	wonders = preload("res://scripts/forest_wonders.gd").new()
+	wonders.name = "ForestWonders"
+	add_child(wonders)
 	for spec in GATE_SPECS:
 		_spawn_gate_and_cave(spec)
+	_terrain.data.update_maps(Terrain3DRegion.TYPE_HEIGHT)
+	_terrain.data.update_maps(Terrain3DRegion.TYPE_CONTROL)
+	wonders.finish_caves()
 	_populate_bestiary()
 	_build_campaign()
 	_build_sidequests()
@@ -175,62 +183,9 @@ func _spawn_npc(spec: Dictionary) -> void:
 
 
 func _spawn_gate_and_cave(spec: Dictionary) -> void:
-	var cave := StaticBody3D.new()
-	cave.name = "Cave_%s" % String(spec.id)
-	cave.collision_layer = 1
-	cave.collision_mask = 0
-	add_child(cave)
-	cave.global_position = _grounded_position(spec.point, 0.02)
-	cave.rotation.y = float(spec.yaw)
-	_build_cave_rocks(cave)
-	var gate := RPGCaveGate.new()
-	gate.name = "Gate_%s" % String(spec.id)
-	gate.gate_id = String(spec.id)
-	gate.display_name = String(spec.name)
-	gate.key_item_id = String(spec.key)
-	gate.destination_hint = String(spec.hint)
-	gate.story_runtime = self
-	cave.add_child(gate)
-	gate.position = Vector3(0.0, 0.0, 1.1)
+	wonders.create_cave(spec, generated_cave_count)
 	generated_gate_count += 1
 	generated_cave_count += 1
-
-
-func _build_cave_rocks(cave: StaticBody3D) -> void:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.20, 0.22, 0.25)
-	material.roughness = 0.98
-	for index in 16:
-		var angle := PI * float(index) / 15.0
-		var rock := MeshInstance3D.new()
-		var mesh := SphereMesh.new()
-		mesh.radius = 1.45 + float(index % 3) * 0.34
-		mesh.height = mesh.radius * 1.7
-		mesh.radial_segments = 7
-		mesh.rings = 4
-		mesh.material = material
-		rock.mesh = mesh
-		rock.scale = Vector3(1.5, 1.25, 1.0)
-		rock.position = Vector3(cos(angle) * 4.0, sin(angle) * 4.2 + 0.3, -0.15 + absf(cos(angle)) * 0.7)
-		cave.add_child(rock)
-		var collision := CollisionShape3D.new()
-		collision.name = "CaveRockCollision%02d" % index
-		var shape := SphereShape3D.new()
-		shape.radius = mesh.radius * 1.08
-		collision.shape = shape
-		collision.position = rock.position
-		cave.add_child(collision)
-	var darkness := MeshInstance3D.new()
-	darkness.name = "CaveDepth"
-	var depth_mesh := BoxMesh.new()
-	depth_mesh.size = Vector3(7.0, 5.2, 18.0)
-	var dark_material := StandardMaterial3D.new()
-	dark_material.albedo_color = Color(0.012, 0.015, 0.025)
-	dark_material.roughness = 1.0
-	depth_mesh.material = dark_material
-	darkness.mesh = depth_mesh
-	darkness.position = Vector3(0.0, 2.4, -8.5)
-	cave.add_child(darkness)
 
 
 func _populate_bestiary() -> void:
@@ -947,6 +902,7 @@ func chronicle() -> String:
 			if String(ending["id"]) == last_ending:
 				lines.append("  %s" % String(ending["title"]))
 				break
+	if wonders != null: lines.append(wonders.chronicle())
 	return "\n".join(lines)
 
 
@@ -1309,6 +1265,7 @@ func get_save_state() -> Dictionary:
 		"health": player_health,
 		"awarded_chapters": _awarded_chapters.keys(),
 		"gates": gates,
+		"wonders": wonders.save_state() if wonders != null else {},
 		# Con quién has hablado y a quién has ayudado: sin esto, cargar una
 		# partida hacía que todo el mundo volviera a presentarse desde cero.
 		"met": _met.duplicate(true),
@@ -1325,6 +1282,8 @@ func get_save_state() -> Dictionary:
 
 
 func apply_save_state(state: Dictionary) -> void:
+	if wonders != null:
+		wonders.load_state(state.get("wonders", {}))
 	player_health = clampi(int(state.get("health", player_max_health)), 1, player_max_health)
 	_awarded_chapters.clear()
 	for raw_chapter in state.get("awarded_chapters", []):
@@ -1353,32 +1312,32 @@ func apply_save_state(state: Dictionary) -> void:
 			by_id[String(gate_state.get("id", ""))] = gate_state
 	for node in get_tree().get_nodes_in_group("rpg_cave_gate"):
 		var gate := node as RPGCaveGate
-		if by_id.has(gate.gate_id):
-			gate.apply_save_state(by_id[gate.gate_id])
+		gate.apply_save_state(by_id.get(gate.gate_id, {"id":gate.gate_id,"opened":false}))
 	player_health_changed.emit(player_health, player_max_health)
 
 
+func registrar_enemigo_red(enemigo: Node) -> void:
+	_indice_enemigos_red[String(enemigo.enemy_id)] = enemigo
+
+
 func get_network_enemy_state() -> Array[Dictionary]:
-	## Los jefes van en su propio grupo para poder distinguirlos, pero en
-	## cooperativo tienen que viajar igual que el resto: si no, el invitado ve
-	## un jefe a vida completa mientras el anfitrión ya lo ha tumbado.
-	var result: Array[Dictionary] = []
-	for node in get_tree().get_nodes_in_group("rpg_enemy"):
-		result.append((node as RPGEnemy).get_network_state())
-	for node in get_tree().get_nodes_in_group("rpg_boss"):
-		result.append((node as RPGEnemy).get_network_state())
-	return result
+	var estados: Array[Dictionary] = []
+	var retirados: Array[String] = []
+	for id in _indice_enemigos_red:
+		var enemigo = _indice_enemigos_red[id]
+		if is_instance_valid(enemigo): estados.append(enemigo.get_network_state())
+		else: retirados.append(id)
+	for id in retirados: _indice_enemigos_red.erase(id)
+	return estados
 
 
-func apply_network_enemy_state(states: Array) -> void:
-	var by_id := {}
-	for state in states:
-		if state is Dictionary:
-			by_id[String(state.get("id", ""))] = state
-	for node in get_tree().get_nodes_in_group("rpg_enemy") + get_tree().get_nodes_in_group("rpg_boss"):
-		var enemy := node as RPGEnemy
-		if by_id.has(enemy.enemy_id):
-			enemy.apply_network_state(by_id[enemy.enemy_id])
+func apply_network_enemy_state(estados: Array) -> void:
+	# El índice se construye al nacer cada enemigo. Un paquete ya identifica sus
+	# objetivos: reconstruir otro diccionario y recorrer ambos grupos era redundante.
+	for estado in estados:
+		if not estado is Dictionary: continue
+		var enemigo = _indice_enemigos_red.get(String(estado.get("id","")))
+		if is_instance_valid(enemigo): enemigo.apply_network_state(estado)
 
 
 func _grounded_position(point: Vector2, offset: float) -> Vector3:

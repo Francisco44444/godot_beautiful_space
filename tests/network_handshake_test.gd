@@ -18,6 +18,8 @@ class DummyPlayer:
 var _settings: Node
 var _session: Node
 var _remote_states: Dictionary = {}
+var _remote_sample_times: Dictionary = {}
+var _remote_grounded: Dictionary = {}
 var _resource_break_requests: Array[Dictionary] = []
 var _port := 24681
 
@@ -199,16 +201,21 @@ func _on_remote_state_received(
 	position: Vector3,
 	_yaw: float,
 	_velocity: Vector3,
-	_equipped_slot: int
+	_equipped_slot: int,
+	sample_time: float,
+	grounded: bool
 ) -> void:
 	_remote_states[peer_id] = position
+	_remote_sample_times[peer_id] = sample_time
+	_remote_grounded[peer_id] = grounded
 
 
 func _wait_for_remote_state(expected_position: Vector3, timeout_seconds: float) -> bool:
 	var start := Time.get_ticks_msec()
 	while float(Time.get_ticks_msec() - start) / 1000.0 < timeout_seconds:
-		for position in _remote_states.values():
-			if (position as Vector3).distance_to(expected_position) < 0.01:
+		for peer_id in _remote_states:
+			var position: Vector3 = _remote_states[peer_id]
+			if position.distance_to(expected_position) < 0.01 and float(_remote_sample_times.get(peer_id,0.0))>0.0 and not bool(_remote_grounded.get(peer_id,true)):
 				return true
 		await process_frame
 	return false
