@@ -123,6 +123,9 @@ func _ready() -> void:
 	for hamlet in RURAL_HAMLETS:
 		_build_hamlet(hamlet)
 	_build_starting_props()
+	if DisplayServer.get_name()!="headless":
+		var oclusion = preload("res://scripts/oclusion_edificios.gd").new()
+		set_meta("oclusion_estructura",oclusion.construir(self))
 	print("MEDIEVAL WORLD READY: %d villas, %d caseríos, %d casas accesibles (%d de tres pisos), %d castillos, %d vecinos, %d piezas y %d colisiones." % [generated_village_count, generated_hamlet_count, generated_house_count, generated_three_storey_count, generated_castle_count, generated_folk_count, generated_prop_count, generated_collision_count])
 
 

@@ -94,14 +94,19 @@ func _emit_floor_tiles(catalog: Dictionary) -> void:
 	multi.transform_format = MultiMesh.TRANSFORM_3D
 	multi.mesh = tile
 	multi.instance_count = _floor_tiles.size()
+	var poses: Array[Transform3D] = []
 	for index in _floor_tiles.size():
-		multi.set_instance_transform(index, Transform3D(
+		var pose := Transform3D(
 			Basis(Vector3.UP, float((index * 7) % 4) * PI * 0.5),
 			_floor_tiles[index] + origin_shift - Vector3(0.0, FLOOR_TILE_TOP, 0.0)
-		))
+		)
+		multi.set_instance_transform(index,pose)
+		poses.append(pose)
 	var node := MultiMeshInstance3D.new()
 	node.name = "Solado"
 	node.multimesh = multi
+	node.set_meta("oclusion_estructura",true)
+	node.set_meta("poses_oclusion",poses)
 	dressing.add_child(node)
 	mesh_count += _floor_tiles.size()
 
@@ -446,6 +451,7 @@ func _add_roof_mesh(mesh_name: String, placement: Transform3D, roof: Dictionary,
 	var visual := MeshInstance3D.new()
 	visual.name = "%sTrimmed%03d" % [mesh_name, mesh_count]
 	visual.mesh = mesh
+	visual.set_meta("oclusion_estructura",true)
 	visual.position = placement.origin + origin_shift
 	dressing.add_child(visual)
 	mesh_count += 1
@@ -513,6 +519,7 @@ func _add_mesh(parent: Node3D, mesh_name: String, placement: Transform3D, catalo
 		return
 	node.name = "%s%03d" % [mesh_name, mesh_count]
 	node.transform = placement.translated(origin_shift)
+	node.set_meta("oclusion_estructura",true)
 	parent.add_child(node)
 	mesh_count += 1
 
