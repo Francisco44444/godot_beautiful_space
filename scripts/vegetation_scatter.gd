@@ -3663,6 +3663,42 @@ func get_save_state() -> Dictionary:
 	return {"destroyed_resource_ids": Array(ids)}
 
 
+func apply_network_resource_state(state: Dictionary) -> void:
+	# Una instantánea de red no es una carga de partida: repetirla a 5 Hz
+	# borraba golpes parciales, cortaba las caídas y reconstruía colisiones.
+	var recibidos := {}
+	for id_value in state.get("destroyed_resource_ids", []): recibidos[String(id_value)] = true
+	if recibidos==_destroyed_resource_ids: return
+	var anteriores := _destroyed_resource_ids
+	_destroyed_resource_ids = recibidos
+	var cambiados: Array = []
+	for id in anteriores:
+		if not recibidos.has(id): cambiados.append(id)
+	for id in recibidos:
+		if not anteriores.has(id): cambiados.append(id)
+	var actualizar_colisiones := false
+	for id in cambiados:
+		var destruido := recibidos.has(id)
+		var recurso := _breakable_resources.get(id) as AdventureResource
+		if is_instance_valid(recurso):
+			_kill_resource_tween(id)
+			if destruido: _apply_destroyed_scatter_resource(recurso)
+			else: _restore_scatter_resource(recurso)
+			actualizar_colisiones = true
+		if not _harvest_tree_index_by_id.has(id): continue
+		if not destruido and _story_tree_exclusions.has(id): continue
+		var indice := int(_harvest_tree_index_by_id[id])
+		_kill_tree_tween(indice)
+		_harvest_tree_health.erase(indice)
+		_set_harvest_tree_hidden(indice,destruido)
+		if destruido: _ensure_tree_stump(indice)
+		else: _remove_tree_stump(id)
+		actualizar_colisiones = true
+	if actualizar_colisiones:
+		_refresh_tree_collision_mesh()
+		_update_streamed_tree_collisions(true)
+
+
 func apply_save_state(state: Dictionary) -> void:
 	var previous_destroyed := _destroyed_resource_ids.duplicate()
 	for tween_value in _tree_hit_tweens.values():

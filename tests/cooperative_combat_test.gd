@@ -50,6 +50,8 @@ var es_host := false
 var terminar_host := false
 var puerto := 24685
 var monedas_antes := 0
+var estados_mundo := 0
+var arbol_red := ""
 
 func _init() -> void: call_deferred("_run_test")
 
@@ -63,6 +65,7 @@ func _run_test() -> void:
 	for singleton in ["InventoryManager","ExplorationManager"]: root.get_node(singleton).set("autosave_enabled",false)
 	root.get_node("InventoryManager").reset_inventory_for_tests(false)
 	sesion = root.get_node("NetworkSession")
+	sesion.world_state_received.connect(func(_estado: Dictionary): estados_mundo+=1)
 	mundo = load("res://scenes/world.tscn").instantiate()
 	root.add_child(mundo)
 	current_scene = mundo
@@ -84,6 +87,7 @@ func _run_test() -> void:
 	heroe.global_position = Vector3(20 if es_host else 0,800.02,0)
 	heroe.visual.rotation.y = 0
 	var motor := MotorPrueba.new()
+	motor.name = "MotorPrueba"
 	motor.jugador = heroe
 	mundo.add_child(motor)
 	heroe.equip_item(1)
@@ -209,6 +213,7 @@ func _run_test() -> void:
 		if not await _esperar(func(): return root.get_node("InventoryManager").get_count("Coin_Skull")==monedas_antes+1): _fallar("El invitado no recibe la recompensa una vez."); return
 		await create_timer(0.5).timeout
 		if root.get_node("InventoryManager").get_count("Coin_Skull")!=monedas_antes+1 or not is_equal_approx(Engine.time_scale,1.0): _fallar("Se duplica botín o la cámara ralentiza la sesión."); return
+		if not await _probar_recursos(): return
 		if not await _etapa("fin"): return
 		print("COOP COMBAT CLIENT PASS: tajo, giro, coraza, pared, flecha, daño dirigido, guardia, esquiva, arma propia y recompensa.")
 	sesion.leave_session()
@@ -240,6 +245,27 @@ func _evaluar(nombre: String) -> Dictionary:
 	var replica := mundo.get_node("NetworkPlayers").get_children()[0] as Player
 	var correcto := true
 	match nombre:
+		"recurso_elegir":
+			var vegetacion := mundo.get_node("VegetationScatter")
+			for indice in vegetacion.get("_harvest_tree_ids").size():
+				var id: String = vegetacion.get("_harvest_tree_ids")[indice]
+				var punto: Vector3 = vegetacion.get("_harvest_tree_positions")[indice]
+				if Vector2(punto.x,punto.z).distance_squared_to(Vector2(0,190))>200*200: continue
+				if not vegetacion.call("_resource_unavailable",id):
+					arbol_red = id
+					return {"ok":true,"id":id,"posicion":vegetacion.get("_harvest_tree_positions")[indice]}
+			return {"ok":false}
+		"recurso_talado":
+			var vegetacion := mundo.get_node("VegetationScatter")
+			correcto = vegetacion.get("_destroyed_resource_ids").has(arbol_red) and vegetacion.get("_harvest_stumps").has(arbol_red)
+		"recurso_restaurar":
+			var vegetacion := mundo.get_node("VegetationScatter")
+			var estado: Dictionary = vegetacion.get_save_state()
+			estado.destroyed_resource_ids.erase(arbol_red)
+			vegetacion.apply_save_state(estado)
+			sesion.broadcast_world_state_now()
+			correcto = not vegetacion.get("_destroyed_resource_ids").has(arbol_red) and not vegetacion.get("_harvest_stumps").has(arbol_red)
+			if correcto: print("COOP RESOURCE HOST PASS: tala validada y restauración autoritativa.")
 		"anfitrion": correcto = heroe.start_attack()
 		"tajo", "invalidos": correcto = enemigos.frente.health==27 and enemigos.espalda.health==30 and enemigos.arco.health==30
 		"giro": correcto = enemigos.frente.health==21 and enemigos.espalda.health==24 and int(enemigos.jefe.get("_ward"))==1
@@ -266,9 +292,63 @@ func _evaluar(nombre: String) -> Dictionary:
 		"fin":
 			correcto = _probar_terreno_lejano(replica)
 			terminar_host = correcto
-	var datos := {"ok":correcto,"frente":enemigos.frente.health,"espalda":enemigos.espalda.health,"arco":enemigos.arco.health,"ward":enemigos.jefe.get("_ward"),"arma":replica.equipped_item_id}
+	var salud_frente: int = enemigos.frente.health if is_instance_valid(enemigos.frente) else 0
+	var datos := {"ok":correcto,"frente":salud_frente,"espalda":enemigos.espalda.health,"arco":enemigos.arco.health,"ward":enemigos.jefe.get("_ward"),"arma":replica.equipped_item_id}
 	print("COOP STAGE ",nombre," ",JSON.stringify(datos))
 	return datos
+
+
+func _probar_recursos() -> bool:
+	mundo.get_node("MotorPrueba").set_physics_process(false)
+	if not await _etapa("recurso_elegir"): return false
+	var datos: Dictionary = respuestas.recurso_elegir
+	var vegetacion := mundo.get_node("VegetationScatter")
+	var id := String(datos.id)
+	var indice := int(vegetacion.get("_harvest_tree_index_by_id").get(id,-1))
+	if indice<0: _fallar("El invitado no identifica el árbol del anfitrión."); return false
+	heroe.global_position = (datos.posicion as Vector3)+Vector3(0,0,2.4)
+	heroe.equip_item(2)
+	if "--capture-resources" in OS.get_cmdline_user_args():
+		root.get_node("GameSettings").set_resolution(Vector2i(1600,900),false)
+		root.always_on_top = true
+		mundo.get_node("HUD").visible = false
+		var camara := Camera3D.new()
+		mundo.add_child(camara)
+		camara.fov = 62
+		camara.current = true
+		camara.global_position = (datos.posicion as Vector3)+Vector3(8,5,11)
+		camara.look_at((datos.posicion as Vector3)+Vector3(0,5,0))
+		mundo.sincronizar_camara_terreno()
+		for fotograma in 50: await process_frame
+		await _capturar_recurso("antes")
+	await create_timer(0.5).timeout
+	var salud := VegetationScatter.TREE_HARVEST_HEALTH
+	for golpe in salud:
+		heroe.attacks_performed += 1
+		var recibidos := estados_mundo
+		if not vegetacion.try_hit_nearest_tree("axe","Axe_small",heroe.global_position,Vector3.FORWARD,3.0,heroe): _fallar("El hacha no alcanza el árbol en la sesión real."); return false
+		await create_timer(0.5).timeout
+		if golpe==salud-1: await _capturar_recurso("caida")
+		if not await _esperar(func(): return estados_mundo-recibidos>=2): _fallar("La prueba de tala no cruza dos instantáneas periódicas."); return false
+		if golpe<salud-1 and int(vegetacion.get("_harvest_tree_health").get(indice,salud))!=salud-golpe-1: _fallar("Los estados periódicos borran el daño parcial de la tala."); return false
+		print("COOP RESOURCE SAMPLE: golpe %d, %d estados recibidos."%[golpe+1,estados_mundo-recibidos])
+	await create_timer(0.5).timeout
+	if not vegetacion.get("_destroyed_resource_ids").has(id) or not vegetacion.get("_harvest_stumps").has(id): _fallar("La confirmación interrumpe la caída y no aparece el tocón."); return false
+	if not await _etapa("recurso_talado"): return false
+	await _capturar_recurso("tocon")
+	if not await _etapa("recurso_restaurar"): return false
+	if not await _esperar(func(): return not vegetacion.get("_destroyed_resource_ids").has(id) and not vegetacion.get("_harvest_stumps").has(id)): _fallar("El invitado no restaura el árbol y su tocón."); return false
+	await _capturar_recurso("restaurado")
+	print("COOP RESOURCE CLIENT PASS: %d golpes con estados intermedios a 5 Hz, caída completa, tocón y restauración compartida."%salud)
+	return true
+
+
+func _capturar_recurso(etapa: String) -> void:
+	if "--capture-resources" not in OS.get_cmdline_user_args(): return
+	await RenderingServer.frame_post_draw
+	var carpeta := "res://generated/reviews/2026-11-09/recursos-red/imagenes"
+	DirAccess.make_dir_recursive_absolute(carpeta)
+	root.get_texture().get_image().save_png(carpeta.path_join(etapa+".png"))
 
 func _paquete() -> Dictionary:
 	return {"tipo":"tajo","secuencia":1,"posicion":heroe.global_position,"velocidad":Vector3.ZERO,
@@ -294,7 +374,7 @@ func _probar_terreno_lejano(replica: Player) -> bool:
 func _etapa(nombre: String) -> bool:
 	control.pedir.rpc_id(1,nombre)
 	if not await _esperar(func(): return respuestas.has(nombre)): _fallar("No llega la etapa "+nombre); return false
-	if not bool(respuestas[nombre].ok): _fallar("Etapa "+nombre+": "+JSON.stringify(respuestas[nombre])); return false
+	if not bool(respuestas[nombre].get("ok",false)): _fallar("Etapa "+nombre+": "+JSON.stringify(respuestas[nombre])); return false
 	return true
 
 func _reposo() -> void:

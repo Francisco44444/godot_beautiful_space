@@ -466,10 +466,10 @@ func _on_network_world_state_received(state: Dictionary) -> void:
 		story.call("apply_network_enemy_state", state.get("enemies", []))
 	var vegetation := get_node_or_null("VegetationScatter")
 	if vegetation != null:
-		vegetation.call("apply_save_state", state.get("vegetation_resources", {}))
+		vegetation.call("apply_network_resource_state", state.get("vegetation_resources", {}))
 	var adventure := get_node_or_null("AdventureSystem")
 	if adventure != null:
-		adventure.call("apply_save_state", state.get("adventure_resources", {}))
+		adventure.call("apply_network_resource_state", state.get("adventure_resources", {}))
 
 
 func _on_network_world_resource_break_requested(

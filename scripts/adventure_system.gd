@@ -37,6 +37,7 @@ var _inventory: Node
 var _exploration: Node
 var _resources_by_id: Dictionary = {}
 var _destroyed_resource_ids: Dictionary = {}
+var _roturas_recursos: Dictionary = {}
 
 
 func _ready() -> void:
@@ -189,14 +190,17 @@ func break_resource(resource: AdventureResource, player: Player) -> void:
 	):
 		network.call("request_world_resource_break", "adventure", resource.zone_id)
 	_destroyed_resource_ids[resource.zone_id] = true
+	_cancelar_rotura(resource.zone_id)
 	resource.disable_collisions()
 	if resource.label != null:
 		resource.label.visible = false
 	if resource.kind == "tree":
 		player.action_feedback.emit("Árbol talado: recoge el tronco")
 		var tween := resource.create_tween()
+		_roturas_recursos[resource.zone_id] = tween
 		tween.tween_property(resource, "rotation:z", resource.rotation.z + deg_to_rad(86.0), 0.72).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		tween.tween_callback(func() -> void:
+			_roturas_recursos.erase(resource.zone_id)
 			resource.visible = false
 			_spawn_stump(resource.global_position)
 			spawn_pickup("WoodLog", 1, resource.global_position + Vector3(1.2, 0.45, 0.0), resource.zone_id, "chop_tree")
@@ -204,8 +208,10 @@ func break_resource(resource: AdventureResource, player: Player) -> void:
 	elif resource.kind == "rock":
 		player.action_feedback.emit("Veta rota: recoge los rubíes")
 		var tween := resource.create_tween()
+		_roturas_recursos[resource.zone_id] = tween
 		tween.tween_property(resource, "scale", Vector3(1.35, 0.12, 1.35), 0.28).set_trans(Tween.TRANS_BACK)
 		tween.tween_callback(func() -> void:
+			_roturas_recursos.erase(resource.zone_id)
 			resource.visible = false
 			# Crystal4 es el cristal rojo del pack: se usa como rubí real, no una
 			# mezcla arbitraria de gemas moradas, verdes y cian.
@@ -260,6 +266,7 @@ func get_save_state() -> Dictionary:
 
 
 func apply_save_state(state: Dictionary) -> void:
+	for id in _roturas_recursos.keys(): _cancelar_rotura(id)
 	_destroyed_resource_ids.clear()
 	for id_value in state.get("destroyed_resource_ids", []):
 		_destroyed_resource_ids[String(id_value)] = true
@@ -269,6 +276,7 @@ func apply_save_state(state: Dictionary) -> void:
 			_apply_saved_resource_state(resource)
 		else:
 			resource.broken = false
+			if resource.kind in ["tree","rock"]: resource.health = 3
 			resource.visible = true
 			resource.set_collisions_enabled(true)
 			var initial_transform = resource.get_meta("initial_transform", null)
@@ -276,6 +284,39 @@ func apply_save_state(state: Dictionary) -> void:
 				resource.transform = initial_transform as Transform3D
 			if resource.label != null:
 				resource.label.visible = true
+
+
+func apply_network_resource_state(state: Dictionary) -> void:
+	# Conservar los recursos sin cambios evita restaurar cada cofre, veta y
+	# árbol a cada pulso y mantiene los golpes parciales del invitado.
+	var recibidos := {}
+	for id_value in state.get("destroyed_resource_ids", []): recibidos[String(id_value)] = true
+	if recibidos==_destroyed_resource_ids: return
+	var anteriores := _destroyed_resource_ids
+	_destroyed_resource_ids = recibidos
+	for id in recibidos:
+		if anteriores.has(id): continue
+		_cancelar_rotura(id)
+		var recurso = _resources_by_id.get(id)
+		if is_instance_valid(recurso): _apply_saved_resource_state(recurso)
+	for id in anteriores:
+		if recibidos.has(id): continue
+		_cancelar_rotura(id)
+		var recurso = _resources_by_id.get(id)
+		if not is_instance_valid(recurso): continue
+		recurso.broken = false
+		if recurso.kind in ["tree","rock"]: recurso.health = 3
+		recurso.visible = true
+		recurso.set_collisions_enabled(true)
+		var inicial = recurso.get_meta("initial_transform",null)
+		if inicial is Transform3D: recurso.transform = inicial
+		if recurso.label!=null: recurso.label.visible = true
+
+
+func _cancelar_rotura(id: String) -> void:
+	var animacion = _roturas_recursos.get(id)
+	if animacion is Tween and animacion.is_valid(): animacion.kill()
+	_roturas_recursos.erase(id)
 
 
 func spawn_pickup(item_id: String, amount: int, world_position: Vector3, zone_id: String = "", action_key: String = "") -> AdventurePickup:
