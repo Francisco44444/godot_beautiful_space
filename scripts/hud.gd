@@ -17,6 +17,7 @@ var settings_open := false
 var settings_overlay: ColorRect
 var settings_controls: RichTextLabel
 var resolution_selector: OptionButton
+var vsync_toggle: CheckButton
 var lod_slider: HSlider
 var lod_value_label: Label
 var settings_status: Label
@@ -125,6 +126,7 @@ func _ready() -> void:
 	inventory_manager = get_node_or_null("/root/InventoryManager")
 	GameSettings.resolution_changed.connect(_sync_resolution_selector)
 	GameSettings.lod_distance_changed.connect(_sync_lod_slider)
+	GameSettings.vsync_changed.connect(_sync_vsync_toggle)
 	GameSettings.identity_changed.connect(_sync_identity_controls)
 	NetworkSession.session_started.connect(_on_network_session_started)
 	NetworkSession.session_status_changed.connect(_on_network_status_changed)
@@ -334,6 +336,7 @@ func _set_settings_open(open: bool) -> void:
 		settings_controls.text = _controls_summary()
 		_sync_resolution_selector(GameSettings.resolution)
 		_sync_lod_slider(GameSettings.lod_distance_metres)
+		_sync_vsync_toggle(GameSettings.vsync_enabled)
 		_sync_identity_controls(GameSettings.player_name, GameSettings.character_index)
 		_update_network_status_label()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -1116,7 +1119,13 @@ func _build_settings_overlay() -> void:
 	var content := VBoxContainer.new()
 	content.name = "Content"
 	content.add_theme_constant_override("separation", 12)
-	padding.add_child(content)
+	# El panel también debe caber en la resolución admitida de 1280×720.
+	var scroll := ScrollContainer.new()
+	scroll.name = "SettingsScroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	padding.add_child(scroll)
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(content)
 
 	var title := Label.new()
 	title.name = "Title"
@@ -1183,6 +1192,13 @@ func _build_settings_overlay() -> void:
 		resolution_selector.add_item("%d × %d" % [resolution.x, resolution.y])
 	resolution_selector.item_selected.connect(_on_resolution_selected)
 	resolution_row.add_child(resolution_selector)
+	vsync_toggle = CheckButton.new()
+	vsync_toggle.name = "VSyncToggle"
+	vsync_toggle.text = "Sincronizar con la pantalla (VSync)"
+	vsync_toggle.tooltip_text = "Evita cortes horizontales. Desactívalo para medir FPS sin el límite de frecuencia de la pantalla."
+	vsync_toggle.add_theme_font_size_override("font_size",18)
+	vsync_toggle.toggled.connect(_on_vsync_changed)
+	content.add_child(vsync_toggle)
 
 	var lod_row := HBoxContainer.new()
 	lod_row.name = "LodDistanceRow"
@@ -1246,6 +1262,7 @@ func _build_settings_overlay() -> void:
 	button_row.add_child(close_button)
 	_sync_resolution_selector(GameSettings.resolution)
 	_sync_lod_slider(GameSettings.lod_distance_metres)
+	_sync_vsync_toggle(GameSettings.vsync_enabled)
 	_sync_identity_controls(GameSettings.player_name, GameSettings.character_index)
 	_update_network_status_label()
 
@@ -2347,6 +2364,16 @@ func _on_resolution_selected(index: int) -> void:
 func _on_lod_distance_changed(value: float) -> void:
 	GameSettings.set_lod_distance(value)
 	settings_status.text = "Distancia LOD aplicada a todo el mundo"
+
+
+func _on_vsync_changed(value: bool) -> void:
+	GameSettings.set_vsync_enabled(value)
+
+
+func _sync_vsync_toggle(value: bool) -> void:
+	if vsync_toggle!=null: vsync_toggle.set_pressed_no_signal(value)
+	if settings_status!=null:
+		settings_status.text = "VSync activada" if value else "VSync desactivada · FPS sin el límite de la pantalla"
 
 
 func _sync_resolution_selector(resolution: Vector2i) -> void:

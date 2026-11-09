@@ -213,6 +213,17 @@ func _show_graphics() -> void:
 		lod_label.text = "Distancia de detalle: %.0f m" % value
 	)
 	_page_content.add_child(lod)
+	var vsync := CheckButton.new()
+	vsync.name = "VSyncToggle"
+	vsync.text = "Sincronizar con la pantalla (VSync)"
+	vsync.button_pressed = GameSettings.vsync_enabled
+	vsync.toggled.connect(GameSettings.set_vsync_enabled)
+	GameSettings.vsync_changed.connect(vsync.set_pressed_no_signal)
+	_page_content.add_child(vsync)
+	var ayuda_vsync := Label.new()
+	ayuda_vsync.text = "Evita cortes horizontales. Desactívalo para medir FPS sin el límite de frecuencia de la pantalla."
+	ayuda_vsync.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_page_content.add_child(ayuda_vsync)
 	var hint := Label.new()
 	hint.text = "El LOD cambia automáticamente modelos lejanos por versiones ligeras."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

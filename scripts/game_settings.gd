@@ -6,6 +6,7 @@ extends Node
 
 signal resolution_changed(resolution: Vector2i)
 signal lod_distance_changed(distance_metres: float)
+signal vsync_changed(enabled: bool)
 signal identity_changed(player_name: String, character_index: int)
 
 const SETTINGS_PATH := "user://graphics_settings.cfg"
@@ -36,6 +37,8 @@ const SUPPORTED_RESOLUTIONS: Array[Vector2i] = [
 
 var resolution := DEFAULT_RESOLUTION
 var lod_distance_metres := DEFAULT_LOD_DISTANCE
+var vsync_enabled := true
+var settings_path := SETTINGS_PATH
 var player_name := DEFAULT_PLAYER_NAME
 var character_index := DEFAULT_CHARACTER_INDEX
 var _settings_need_migration_save := false
@@ -45,6 +48,7 @@ func _ready() -> void:
 	_load_settings()
 	if _settings_need_migration_save:
 		_save_settings()
+	_apply_vsync()
 	call_deferred("_apply_resolution")
 
 
@@ -61,6 +65,13 @@ func set_lod_distance(value: float, persist: bool = true) -> void:
 	lod_distance_changed.emit(lod_distance_metres)
 	if persist:
 		_save_settings()
+
+
+func set_vsync_enabled(value: bool, persist: bool = true) -> void:
+	vsync_enabled = value
+	_apply_vsync()
+	vsync_changed.emit(vsync_enabled)
+	if persist: _save_settings()
 
 
 func set_player_identity(name_value: String, index_value: int, persist: bool = true) -> void:
@@ -88,6 +99,7 @@ func get_character_path(index: int) -> String:
 func reset_defaults(persist: bool = true) -> void:
 	set_resolution(DEFAULT_RESOLUTION, false)
 	set_lod_distance(DEFAULT_LOD_DISTANCE, false)
+	set_vsync_enabled(true, false)
 	set_player_identity(DEFAULT_PLAYER_NAME, DEFAULT_CHARACTER_INDEX, false)
 	if persist:
 		_save_settings()
@@ -111,7 +123,7 @@ func action_keys(action: StringName) -> String:
 
 func _load_settings() -> void:
 	var config := ConfigFile.new()
-	if config.load(SETTINGS_PATH) != OK:
+	if config.load(settings_path) != OK:
 		return
 	var stored_schema := int(config.get_value("general", "schema_version", 1))
 	var stored_width := int(config.get_value("video", "width", DEFAULT_RESOLUTION.x))
@@ -123,6 +135,7 @@ func _load_settings() -> void:
 	if stored_schema < SETTINGS_SCHEMA_VERSION and stored_resolution == LEGACY_DEFAULT_RESOLUTION:
 		stored_resolution = DEFAULT_RESOLUTION
 	resolution = _closest_supported_resolution(stored_resolution)
+	vsync_enabled = bool(config.get_value("video", "vsync_enabled", true))
 	lod_distance_metres = snappedf(clampf(
 		float(config.get_value("graphics", "lod_distance_metres", DEFAULT_LOD_DISTANCE)),
 		MIN_LOD_DISTANCE,
@@ -142,12 +155,18 @@ func _save_settings() -> void:
 	config.set_value("general", "schema_version", SETTINGS_SCHEMA_VERSION)
 	config.set_value("video", "width", resolution.x)
 	config.set_value("video", "height", resolution.y)
+	config.set_value("video", "vsync_enabled", vsync_enabled)
 	config.set_value("graphics", "lod_distance_metres", lod_distance_metres)
 	config.set_value("identity", "player_name", player_name)
 	config.set_value("identity", "character_index", character_index)
-	var error := config.save(SETTINGS_PATH)
+	var error := config.save(settings_path)
 	if error != OK:
 		push_warning("No se pudieron guardar los ajustes gráficos: %s" % error_string(error))
+
+
+func _apply_vsync() -> void:
+	if DisplayServer.get_name().to_lower()=="headless": return
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync_enabled else DisplayServer.VSYNC_DISABLED)
 
 
 func _apply_resolution() -> void:

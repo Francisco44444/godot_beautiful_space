@@ -2,13 +2,15 @@ extends Node
 
 ## El MultiMesh conserva la identidad de cada árbol. Color y sombras se
 ## descartan por ejemplar y aprovechan la agrupación nativa de Forward+.
-## Compensar la distancia y escala evita degradar su LOD.
+## La referencia del grupo se conserva hasta el detalle automático individual.
 const MARGEN_CAMARA := 2.0
 const CELDAS_POR_FRAME := 12
 const DETALLE_COMPLETO := 1000000.0
+const SESGO_INDIVIDUAL := 1.0
 
 var activo := true
 var sombras_individuales := true
+var lod_individual := true
 var _preparado := false
 var _celdas: Dictionary = {}
 var _visibles: Dictionary = {}
@@ -17,6 +19,7 @@ var _mallas: Dictionary = {}
 var _camara_anterior := Vector3(INF,INF,INF)
 var _proyeccion_anterior := -1
 var _camara_id := 0
+var _limite_anterior := -1.0
 var _pendiente := true
 var _poses_pendientes := false
 var _creadas := 0
@@ -28,7 +31,7 @@ func registrar(celda: MultiMeshInstance3D, poses: Array[Transform3D]) -> void:
 	if celda.cast_shadow!=GeometryInstance3D.SHADOW_CASTING_SETTING_ON: return
 	var id := celda.get_instance_id()
 	var datos := {"nodo":celda,"poses":poses.duplicate(),"ids":[],"cajas":[],"escalas":[],"bias":[],
-		"camara":Vector3(INF,INF,INF),"sucio":true,"completo":false,
+		"camara":Vector3(INF,INF,INF),"sucio":true,"completo":false,"limite":-1.0,
 		"sombra":celda.cast_shadow,"capas":celda.layers,"malla":celda.multimesh.mesh.get_instance_id()}
 	_celdas[id] = datos
 	_mallas[datos.malla] = celda.multimesh.mesh
@@ -76,6 +79,15 @@ func establecer_sombras_individuales(valor: bool) -> void:
 			RenderingServer.instance_geometry_set_cast_shadows_setting(instancia,int(datos.sombra) if valor else RenderingServer.SHADOW_CASTING_SETTING_OFF)
 
 
+func establecer_lod_individual(valor: bool) -> void:
+	if lod_individual==valor: return
+	lod_individual = valor
+	for datos in _celdas.values():
+		datos.completo = false
+		datos.sucio = true
+	_pendiente = true
+
+
 func _al_cambiar_visibilidad(id: int) -> void:
 	if not _preparado or not _celdas.has(id): return
 	var datos: Dictionary = _celdas[id]
@@ -91,7 +103,6 @@ func _al_cambiar_visibilidad(id: int) -> void:
 				_creadas += 1
 			else: instancia = banco.pop_back()
 			RenderingServer.instance_geometry_set_cast_shadows_setting(instancia,int(datos.sombra) if sombras_individuales else RenderingServer.SHADOW_CASTING_SETTING_OFF)
-			RenderingServer.instance_geometry_set_lod_bias(instancia,DETALLE_COMPLETO)
 			RenderingServer.instance_set_layer_mask(instancia,int(datos.capas))
 			RenderingServer.instance_attach_object_instance_id(instancia,id)
 			ids.append(instancia)
@@ -127,8 +138,9 @@ func _actualizar_pose(datos: Dictionary, indice: int) -> void:
 	var instancia: RID = datos.ids[indice]
 	RenderingServer.instance_set_visible(instancia,mostrar)
 	RenderingServer.instance_set_transform(instancia,pose)
-	RenderingServer.instance_geometry_set_lod_bias(instancia,DETALLE_COMPLETO)
-	datos.bias[indice] = DETALLE_COMPLETO
+	var bias_inicial := _limite_detalle() if lod_individual else DETALLE_COMPLETO
+	RenderingServer.instance_geometry_set_lod_bias(instancia,bias_inicial)
+	datos.bias[indice] = bias_inicial
 	datos.completo = false
 	# La ráfaga máxima desplaza menos de dos unidades locales. El margen evita
 	# recortar copas que el viento saque del volumen del árbol sin deformar.
@@ -140,7 +152,7 @@ func _actualizar_pose(datos: Dictionary, indice: int) -> void:
 func _process(_delta: float) -> void:
 	var camara := get_viewport().get_camera_3d()
 	if not activo or camara==null or _visibles.is_empty(): return
-	var forzar := _pendiente or _camara_id!=camara.get_instance_id() or _proyeccion_anterior!=camara.projection
+	var forzar := _pendiente or _camara_id!=camara.get_instance_id() or _proyeccion_anterior!=camara.projection or _limite_anterior!=_limite_detalle()
 	if not forzar and not _poses_pendientes and _camara_anterior==camara.global_position: return
 	var celdas := _visibles.values()
 	var revisadas := {}
@@ -167,6 +179,7 @@ func _recordar_camara(camara: Camera3D) -> void:
 	_camara_anterior = camara.global_position
 	_camara_id = camara.get_instance_id()
 	_proyeccion_anterior = camara.projection
+	_limite_anterior = _limite_detalle()
 	_pendiente = false
 	_poses_pendientes = false
 
@@ -176,15 +189,17 @@ func _actualizar_detalle_celda(datos: Dictionary, camara: Camera3D) -> void:
 	var caja: AABB = celda.global_transform*celda.multimesh.custom_aabb
 	var distancia := distancia_caja(camara.global_position,caja)
 	var completo := distancia<=MARGEN_CAMARA and camara.projection!=Camera3D.PROJECTION_ORTHOGONAL
+	var limite := _limite_detalle()
 	datos.camara = camara.global_position
 	datos.sucio = false
-	if completo and bool(datos.completo): return
+	if completo and bool(datos.completo) and float(datos.limite)==limite: return
 	datos.completo = completo
+	datos.limite = limite
 	var escala := celda.global_basis.get_scale().abs()
 	var escala_celda := escala[escala.max_axis_index()]
 	for indice in datos.ids.size():
 		var distancia_individual := distancia_caja(camara.global_position,datos.cajas[indice])
-		var bias := compensar_lod(celda.lod_bias,escala_celda,float(datos.escalas[indice]),distancia,distancia_individual,camara.projection==Camera3D.PROJECTION_ORTHOGONAL)
+		var bias := compensar_lod(celda.lod_bias,escala_celda,float(datos.escalas[indice]),distancia,distancia_individual,camara.projection==Camera3D.PROJECTION_ORTHOGONAL,lod_individual,limite)
 		if float(datos.bias[indice])!=bias:
 			RenderingServer.instance_geometry_set_lod_bias(datos.ids[indice],bias)
 			datos.bias[indice] = bias
@@ -194,13 +209,22 @@ static func distancia_caja(punto: Vector3, caja: AABB) -> float:
 	return punto.distance_to(punto.clamp(caja.position,caja.end))
 
 
-static func compensar_lod(bias: float, escala_celda: float, escala_arbol: float, distancia_celda: float, distancia_arbol: float, ortogonal: bool = false) -> float:
+func _limite_detalle() -> float:
+	# Al reducir distancia, el Viewport aumenta su umbral. El límite acompaña
+	# ese ajuste para no introducir un error nuevo mayor de un píxel.
+	return maxf(SESGO_INDIVIDUAL,get_viewport().mesh_lod_threshold) if is_inside_tree() else SESGO_INDIVIDUAL
+
+
+static func compensar_lod(bias: float, escala_celda: float, escala_arbol: float, distancia_celda: float, distancia_arbol: float, ortogonal: bool = false, individual: bool = true, limite: float = 1.0) -> float:
 	var proporcion := escala_celda/maxf(escala_arbol,0.000001)
-	if ortogonal: return bias*proporcion
+	if ortogonal: return minf(bias*proporcion,limite) if individual else bias*proporcion
 	# La distancia a una caja varía como máximo lo que se desplaza la cámara.
 	# Estas cotas conservan el detalle hasta la siguiente actualización.
-	if distancia_celda<=MARGEN_CAMARA: return DETALLE_COMPLETO
-	return maxf(bias*proporcion*(distancia_arbol+MARGEN_CAMARA)/(distancia_celda-MARGEN_CAMARA)*1.0001,0.000001)
+	# La celda puede contener la cámara y árboles muy lejanos. Obligarlos todos
+	# al máximo costaba geometría que el LOD individual puede simplificar con
+	# el umbral de pantalla del juego. No se fuerza una malla a distancia fija.
+	var referencia := DETALLE_COMPLETO if distancia_celda<=MARGEN_CAMARA else maxf(bias*proporcion*(distancia_arbol+MARGEN_CAMARA)/(distancia_celda-MARGEN_CAMARA)*1.0001,0.000001)
+	return minf(referencia,limite) if individual else referencia
 
 
 func _retirar(datos: Dictionary) -> void:
