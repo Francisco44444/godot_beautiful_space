@@ -10,6 +10,7 @@ signal player_health_changed(current: int, maximum: int)
 signal dialogue_with_choices(
 	speaker: String, role: String, title: String, body: String, choices: Array)
 signal chapter_reward_granted(chapter: int, item_id: String, display_name: String)
+signal terreno_preparado
 
 const NPC_SCRIPT: Script = preload("res://scripts/rpg_npc.gd")
 const ENEMY_SCRIPT: Script = preload("res://scripts/rpg_enemy.gd")
@@ -155,6 +156,7 @@ func _build_story_world() -> void:
 	_terrain.data.update_maps(Terrain3DRegion.TYPE_HEIGHT)
 	_terrain.data.update_maps(Terrain3DRegion.TYPE_CONTROL)
 	wonders.finish_caves()
+	terreno_preparado.emit()
 	_populate_bestiary()
 	_build_campaign()
 	_build_sidequests()

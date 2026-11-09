@@ -106,6 +106,17 @@ func _ready() -> void:
 	_build_desert_breeze()
 	set_meta("systematic_mesh_lod", true)
 	set_meta("lod_sources", "imported glTF/OBJ + explicit vegetation HLOD")
+	if DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="forward_plus":
+		# Las grutas esculpen el suelo de forma diferida. Validar el cache antes
+		# de ese momento usaría las alturas y los agujeros de la isla sin accesos.
+		get_node("RPGStoryRuntime").terreno_preparado.connect(_preparar_oclusion_terreno,CONNECT_ONE_SHOT)
+
+
+func _preparar_oclusion_terreno() -> void:
+	var oclusion = preload("res://scripts/oclusion_terreno.gd").new()
+	oclusion.name = "OclusionTerreno"
+	add_child(oclusion)
+	oclusion.iniciar(terrain)
 
 
 func _build_desert_breeze() -> void:
