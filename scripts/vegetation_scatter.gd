@@ -402,6 +402,7 @@ var _streamed_tree_collision_active := 0
 var _grass_wind_materials: Array[ShaderMaterial] = []
 var _tree_wind_materials: Array[ShaderMaterial] = []
 var _render_bosque: Node
+var _render_secos: Node
 var _render_hierba: Node
 var _tree_wind_material_count := 0
 var _storm_strength := 0.0
@@ -427,6 +428,10 @@ func _ready() -> void:
 	_render_bosque.name = "RenderBosque"
 	_render_bosque.activo = DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="forward_plus"
 	add_child(_render_bosque)
+	_render_secos = preload("res://scripts/render_arboles_secos.gd").new()
+	_render_secos.name = "RenderArbolesSecos"
+	_render_secos.activo = _render_bosque.activo
+	add_child(_render_secos)
 	_render_hierba = preload("res://scripts/render_hierba.gd").new()
 	_render_hierba.name = "RenderHierba"
 	_render_hierba.activo = _render_bosque.activo
@@ -2121,6 +2126,8 @@ func _install_cell_buckets(root_name: String, buckets: Dictionary, meshes: Array
 		elif root_name == "GrassCells":
 			instance.set_meta("explicit_lod_role", "full")
 			_register_lod_instance(_grass_full_cells, cell, instance)
+		elif root_name == "MysteryDeadTreeCells":
+			_render_secos.registrar(instance,local_transforms)
 		generated_cell_count += 1
 
 
@@ -3259,6 +3266,7 @@ func _set_harvest_tree_instance_pose(
 	)
 	multimesh_instance.multimesh.set_instance_transform(instance_index, pose)
 	if _render_bosque!=null: _render_bosque.actualizar(multimesh_instance,instance_index,pose)
+	if _render_secos!=null: _render_secos.actualizar(multimesh_instance,instance_index,pose)
 
 
 func _set_harvest_tree_hidden(tree_index: int, hidden: bool) -> void:
@@ -3298,6 +3306,7 @@ func _set_harvest_tree_instance_hidden(
 		pose.origin.y -= 10000.0
 	multimesh_instance.multimesh.set_instance_transform(instance_index, pose)
 	if _render_bosque!=null: _render_bosque.actualizar(multimesh_instance,instance_index,pose)
+	if _render_secos!=null: _render_secos.actualizar(multimesh_instance,instance_index,pose)
 
 
 func _ensure_tree_stump(tree_index: int) -> void:

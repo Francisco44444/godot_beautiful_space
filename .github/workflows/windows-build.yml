@@ -99,6 +99,8 @@ jobs:
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/forest_render_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/dry_tree_render_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/lod_activity_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/grass_render_test.gd
