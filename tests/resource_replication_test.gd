@@ -4,7 +4,6 @@ var mundo: Node3D
 var vegetacion: Node
 var aventura: Node
 var sesion: Node
-var cambios_colision := [0]
 var estado: Dictionary
 
 func _init() -> void: call_deferred("comprobar")
@@ -45,18 +44,19 @@ func comprobar() -> void:
 		if recurso.kind=="tree" and arbol_mision==null: arbol_mision = recurso
 		elif recurso.kind=="rock" and otro_recurso==null: otro_recurso = recurso
 	if arbol_mision==null or otro_recurso==null: fallar("Faltan recursos de misión reales."); return
-	var forma: ConcavePolygonShape3D = vegetacion.get("_forest_collision_shape")
-	if forma==null: fallar("No existe la colisión del bosque que se reconstruía por recepción."); return
-	var calibracion := [0]
-	var referencia := ConcavePolygonShape3D.new()
-	referencia.changed.connect(func(): calibracion[0]+=1)
-	referencia.set_faces(PackedVector3Array([Vector3.ZERO,Vector3.RIGHT,Vector3.UP]))
-	if calibracion[0]<=0: fallar("La API nativa no notifica cambios de colisión."); return
-	var caras_antes := forma.get_faces().size()
+	var colisiones: Node = vegetacion.get("_colisiones_bosque")
+	if colisiones==null: fallar("No existe el gestor físico de los troncos."); return
+	var caras_antes: int = colisiones.caras_activas().size()
+	var reconstrucciones_antes: int = colisiones.estadisticas().reconstrucciones
 	var caras_retiradas := 0
+	var celdas_afectadas := {}
+	var registros: PackedFloat32Array = vegetacion.get("_tree_collision_records")
+	var indice_registro := 0
 	for id in vegetacion.get("_tree_collision_resource_ids"):
-		if id in [id_arbol,id_scatter]: caras_retiradas += 36
-	forma.changed.connect(func(): cambios_colision[0]+=1)
+		if id in [id_arbol,id_scatter]:
+			caras_retiradas += 36
+			celdas_afectadas[Vector2i(floori(registros[indice_registro*5]/256.0),floori(registros[indice_registro*5+2]/256.0))] = true
+		indice_registro += 1
 	vegetacion.get("_harvest_tree_health")[intacto] = 2
 	vegetacion.call("_animate_harvest_tree_hit",intacto,false)
 	var golpe: Tween = vegetacion.get("_tree_hit_tweens")[intacto]
@@ -67,14 +67,14 @@ func comprobar() -> void:
 	for repeticion in 20: recibir()
 	if not vegetacion.get("_harvest_tree_health").has(intacto) or not golpe.is_valid(): fallar("Repetir un estado borra el daño parcial o cancela su animación."); return
 	if scatter.health!=2 or arbol_mision.health!=2 or arbol_mision.transform!=pose_mision: fallar("Una repetición restaura recursos sin cambios."); return
-	if cambios_colision[0]!=0: fallar("Un estado sin cambios vuelve a construir la colisión del bosque."); return
+	if int(colisiones.estadisticas().reconstrucciones)!=reconstrucciones_antes: fallar("Un estado sin cambios vuelve a construir la colisión del bosque."); return
 	# Se reutiliza y modifica la misma estructura: guardar referencias al paquete
 	# como si fueran una copia no debe ocultar los cambios siguientes.
 	estado.vegetation_resources.destroyed_resource_ids = [id_arbol,id_scatter]
 	estado.adventure_resources.destroyed_resource_ids = [otro_recurso.zone_id]
 	recibir()
 	if not vegetacion.get("_harvest_stumps").has(id_arbol) or not scatter.broken or not otro_recurso.broken: fallar("El cambio no alcanza los tres recursos destinatarios."); return
-	if cambios_colision[0]!=calibracion[0] or forma.get_faces().size()!=caras_antes-caras_retiradas: fallar("El lote no retira las caras de los troncos ni actualiza una sola vez la colisión."); return
+	if int(colisiones.estadisticas().reconstrucciones)!=reconstrucciones_antes+celdas_afectadas.size() or colisiones.caras_activas().size()!=caras_antes-caras_retiradas: fallar("El lote no retira las caras de los troncos ni actualiza una sola vez cada celda afectada."); return
 	if vegetacion.get("_harvest_tree_health").get(intacto)!=2 or arbol_mision.health!=2: fallar("Cambiar otros recursos borra el daño del que sigue intacto."); return
 	var pose_oculta := pose_arbol(arbol)
 	var scatter_oculto := pose_scatter(scatter)
@@ -82,13 +82,13 @@ func comprobar() -> void:
 	for repeticion in 20:
 		estado.vegetation_resources.destroyed_resource_ids = [id_scatter,id_arbol,id_arbol,"id_desconocido"]
 		recibir()
-	if cambios_colision[0]!=calibracion[0] or vegetacion.get("_harvest_stumps")[id_arbol]!=tocon: fallar("Duplicados, otro orden o un id desconocido repiten colisiones o tocones."); return
+	if int(colisiones.estadisticas().reconstrucciones)!=reconstrucciones_antes+celdas_afectadas.size() or vegetacion.get("_harvest_stumps")[id_arbol]!=tocon: fallar("Duplicados, otro orden o un id desconocido repiten colisiones o tocones."); return
 	if DisplayServer.get_name()!="headless" and (pose_arbol(arbol)!=pose_oculta or pose_scatter(scatter)!=scatter_oculto): fallar("Repetir un recurso hunde otra vez su malla o cambia su pose."); return
 	estado.vegetation_resources.destroyed_resource_ids = []
 	estado.adventure_resources.destroyed_resource_ids = []
 	recibir()
 	for fotograma in 2: await process_frame
-	if cambios_colision[0]!=2*calibracion[0] or forma.get_faces().size()!=caras_antes or vegetacion.get("_harvest_stumps").has(id_arbol) or scatter.broken or otro_recurso.broken: fallar("Restaurar no recupera recursos, tocón y colisión."); return
+	if int(colisiones.estadisticas().reconstrucciones)!=reconstrucciones_antes+2*celdas_afectadas.size() or colisiones.caras_activas().size()!=caras_antes or vegetacion.get("_harvest_stumps").has(id_arbol) or scatter.broken or otro_recurso.broken: fallar("Restaurar no recupera recursos, tocón y colisión."); return
 	if scatter.health!=3 or otro_recurso.health!=3: fallar("Un recurso restaurado conserva salud de una rotura anterior."); return
 	if DisplayServer.get_name()!="headless":
 		var original: Transform3D = vegetacion.get("_harvest_tree_full_originals")[arbol]
@@ -128,7 +128,14 @@ func comprobar() -> void:
 	estado.vegetation_resources.destroyed_resource_ids = [id_arbol]
 	recibir()
 	if vegetacion.get("_destroyed_resource_ids").has(id_arbol): fallar("Una recepción de red altera el mundo del anfitrión o la partida individual."); return
-	print("RESOURCE REPLICATION TEST OK: recepción real del mundo, golpes parciales, cambios por id, repetición, duplicados, matrices GPU, tocones, dos lotes de colisión, caída confirmada, corrección sin botín y carga completa.")
+	var troncos_antes: int = colisiones.estadisticas().troncos
+	vegetacion.call("_add_tree_collision",Vector3(7000,200,7000),AABB(Vector3.ZERO,Vector3(2,4,2)),1.0,"alta_tardia_prueba")
+	vegetacion.call("_refresh_tree_collision_mesh")
+	await physics_frame
+	await process_frame
+	var consulta := PhysicsRayQueryParameters3D.create(Vector3(7002,201,7000),Vector3(7000,201,7000),1)
+	if int(colisiones.estadisticas().troncos)!=troncos_antes+1 or mundo.get_world_3d().direct_space_state.intersect_ray(consulta).is_empty(): fallar("El alta tardía no invalida el registro ni llega a la física real del mundo."); return
+	print("RESOURCE REPLICATION TEST OK: recepción real del mundo, golpes parciales, cambios por id, repetición, duplicados, matrices GPU en modo gráfico, tocones, dos lotes de colisión local, caída confirmada, corrección sin botín y carga completa.")
 	quit()
 
 func recibir() -> void: sesion.world_state_received.emit(estado)

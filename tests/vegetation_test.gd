@@ -683,17 +683,27 @@ func _run_test() -> void:
 					return
 
 	var collision_body := scatter.get_node_or_null("DecorCollisions") as StaticBody3D
-	var expected_collisions := 1 + scatter.generated_rock_collision_count
-	if collision_body == null or collision_body.get_child_count() != expected_collisions:
-		_fail("La colisión forestal unificada y las colisiones de roca no coinciden.")
+	var expected_collisions := scatter.generated_rock_collision_count
+	var colisiones_rocas := collision_body.get_child_count() if collision_body!=null else 0
+	if colisiones_rocas != expected_collisions:
+		_fail("Las colisiones de roca no coinciden con los recursos originales.")
 		return
-	var forest_collision := collision_body.get_node_or_null("ForestTreeCollisionMesh") as CollisionShape3D
-	if (
-		forest_collision == null
-		or not forest_collision.shape is ConcavePolygonShape3D
-		or int(forest_collision.get_meta("source_tree_count", 0)) != scatter.generated_tree_collision_count
-	):
-		_fail("Los troncos seleccionados no están incluidos en la malla física forestal.")
+	var bosque := scatter.get_node_or_null("ForestTreeCollisions")
+	if bosque==null or int(bosque.estadisticas().troncos)!=scatter.generated_tree_collision_count:
+		_fail("Las celdas físicas no contienen todos los troncos seleccionados.")
+		return
+	var triangulos := 0
+	for cuerpo in bosque.get_children():
+		if not cuerpo is StaticBody3D or cuerpo.collision_layer!=1 or cuerpo.collision_mask!=0 or cuerpo.get_child_count()!=1:
+			_fail("Una celda no conserva un cuerpo estático sólido y su forma.")
+			return
+		var forma := cuerpo.get_child(0) as CollisionShape3D
+		if forma==null or not forma.shape is ConcavePolygonShape3D or not forma.shape.backface_collision:
+			_fail("Una celda pierde la geometría cóncava y sus dos caras.")
+			return
+		if not forma.disabled: triangulos += forma.shape.get_faces().size()/3
+	if triangulos<=0 or triangulos!=int(scatter.get_meta("tree_collision_face_count")) or triangulos!=int(bosque.estadisticas().triangulos):
+		_fail("La geometría física nativa no coincide con los triángulos registrados.")
 		return
 	if scatter.generated_tree_collision_count < 4000:
 		_fail("El corredor jugable no conserva suficiente colisión entre árboles.")

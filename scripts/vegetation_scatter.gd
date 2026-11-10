@@ -392,8 +392,8 @@ var _grass_cache_rng_state := 0
 var _forest_cache_counts: Dictionary = {}
 var _tree_collision_records := PackedFloat32Array()
 var _tree_collision_resource_ids := PackedStringArray()
-var _forest_collision_shape: ConcavePolygonShape3D
-var _forest_collision_node: CollisionShape3D
+var _colisiones_bosque: Node3D
+var _registro_colision_sucio := true
 var _streamed_tree_collision_root: StaticBody3D
 var _streamed_tree_collision_shapes: Array[CollisionShape3D] = []
 var _streamed_tree_collision_last_focus := Vector2(INF, INF)
@@ -2847,21 +2847,18 @@ func _add_tree_collision(
 	for value in [base.x, base.y, base.z, radius, height]:
 		_tree_collision_records.append(float(value))
 	_tree_collision_resource_ids.append(resource_id)
+	_registro_colision_sucio = true
 
 
 func _finalize_tree_collision_mesh() -> void:
 	if _tree_collision_records.is_empty():
 		return
 	var started := Time.get_ticks_msec()
-	_forest_collision_shape = ConcavePolygonShape3D.new()
-	_forest_collision_shape.backface_collision = true
-	_forest_collision_node = CollisionShape3D.new()
-	_forest_collision_node.name = "ForestTreeCollisionMesh"
-	_forest_collision_node.shape = _forest_collision_shape
-	_forest_collision_node.set_meta("source_tree_count", generated_tree_collision_count)
-	_get_collision_body().add_child(_forest_collision_node)
+	_colisiones_bosque = preload("res://scripts/colisiones_bosque.gd").new()
+	_colisiones_bosque.name = "ForestTreeCollisions"
+	add_child(_colisiones_bosque)
 	_refresh_tree_collision_mesh()
-	_startup_checkpoint("colisión forestal unificada", started)
+	_startup_checkpoint("colisión forestal por celdas", started)
 
 
 var _story_tree_exclusions: Dictionary = {}
@@ -2888,45 +2885,12 @@ func reserve_story_corridors(corridors: Array[Transform3D]) -> void:
 
 
 func _refresh_tree_collision_mesh() -> void:
-	if _forest_collision_shape == null:
-		return
-	var faces := PackedVector3Array()
-	# Prismas hexagonales: suficientes para troncos low-poly y mucho más baratos
-	# que miles de CollisionShape3D independientes. Jolt construye un único BVH.
-	const SIDE_COUNT := 6
-	for offset in range(0, _tree_collision_records.size(), 5):
-		var collision_index := offset / 5
-		var resource_id := (
-			_tree_collision_resource_ids[collision_index]
-			if collision_index < _tree_collision_resource_ids.size()
-			else ""
-		)
-		if not resource_id.is_empty() and _resource_unavailable(resource_id):
-			continue
-		var base := Vector3(
-			_tree_collision_records[offset],
-			_tree_collision_records[offset + 1],
-			_tree_collision_records[offset + 2]
-		)
-		var radius := _tree_collision_records[offset + 3]
-		var height := _tree_collision_records[offset + 4]
-		for side in SIDE_COUNT:
-			var angle_a := TAU * float(side) / float(SIDE_COUNT)
-			var angle_b := TAU * float(side + 1) / float(SIDE_COUNT)
-			var bottom_a := base + Vector3(cos(angle_a) * radius, 0.0, sin(angle_a) * radius)
-			var bottom_b := base + Vector3(cos(angle_b) * radius, 0.0, sin(angle_b) * radius)
-			var top_a := bottom_a + Vector3.UP * height
-			var top_b := bottom_b + Vector3.UP * height
-			faces.append(bottom_a)
-			faces.append(bottom_b)
-			faces.append(top_b)
-			faces.append(bottom_a)
-			faces.append(top_b)
-			faces.append(top_a)
-	_forest_collision_shape.set_faces(faces)
-	if _forest_collision_node != null:
-		_forest_collision_node.set_meta("active_tree_count", faces.size() / (SIDE_COUNT * 6))
-	set_meta("tree_collision_face_count", faces.size() / 3)
+	if _colisiones_bosque == null: return
+	if _registro_colision_sucio:
+		_colisiones_bosque.preparar(_tree_collision_records,_tree_collision_resource_ids)
+		_registro_colision_sucio = false
+	_colisiones_bosque.actualizar(_destroyed_resource_ids,_story_tree_exclusions)
+	set_meta("tree_collision_face_count",int(_colisiones_bosque.estadisticas().triangulos))
 
 
 func _add_rock_collision(base: Vector3, mesh_size: Vector3) -> void:
