@@ -1315,6 +1315,8 @@ func apply_save_state(state: Dictionary) -> void:
 	for node in get_tree().get_nodes_in_group("rpg_cave_gate"):
 		var gate := node as RPGCaveGate
 		gate.apply_save_state(by_id.get(gate.gate_id, {"id":gate.gate_id,"opened":false}))
+	var puertas_red := get_parent().get_node_or_null("PuertasCooperativas")
+	if puertas_red != null: puertas_red.partida_cargada()
 	player_health_changed.emit(player_health, player_max_health)
 
 

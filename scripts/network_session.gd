@@ -217,8 +217,8 @@ func request_world_resource_break(domain: String, resource_id: String) -> bool:
 
 
 func broadcast_world_state_now() -> void:
-	## Tras aceptar una rotura no esperamos al siguiente pulso de 5 Hz: el
-	## inventario de objetos destruidos se comunica inmediatamente a los invitados.
+	## Una rotura o apertura no espera al pulso de 5 Hz: los invitados reciben
+	## inmediatamente el estado nuevo del mundo.
 	if session_mode != SessionMode.HOST or not multiplayer.is_server():
 		return
 	var world := get_tree().current_scene
@@ -370,13 +370,17 @@ func _client_receive_state(peer_id: int, position: Vector3, yaw: float, velocity
 
 @rpc("any_peer", "call_remote", "reliable")
 func _server_receive_save_snapshot(snapshot: Dictionary) -> void:
+	registrar_instantanea(multiplayer.get_remote_sender_id(), snapshot)
+
+
+func registrar_instantanea(sender: int, snapshot: Dictionary) -> bool:
 	if not multiplayer.is_server() or session_mode != SessionMode.HOST:
-		return
-	var sender := multiplayer.get_remote_sender_id()
+		return false
 	if sender <= 1 or not players.has(sender) or not _is_valid_save_snapshot(snapshot):
-		return
+		return false
 	var identity := players[sender] as Dictionary
 	_party_save_states[String(identity.name)] = snapshot.duplicate(true)
+	return true
 
 
 @rpc("any_peer", "call_remote", "reliable")

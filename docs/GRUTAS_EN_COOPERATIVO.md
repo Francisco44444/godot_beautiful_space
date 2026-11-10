@@ -95,9 +95,11 @@ del cooperativo con un coste pequeño y mantiene la calidad existente.
   mantiene los parámetros existentes.
 
 La prueba de red usa dos procesos en el mismo equipo; no valida latencia WAN,
-pérdida de paquetes ni ocho máquinas. Tampoco añade autoridad compartida de
-llaves, voces, recuerdos o recompensas: su sincronización durante la sesión
-sigue pendiente. Esos datos se conservan en el guardado del mundo.
+pérdida de paquetes ni ocho máquinas. En 0.1.15 no se compartían las aperturas.
+Desde 0.1.17, [las cuatro puertas se sincronizan para la expedición](PUERTAS_EN_COOPERATIVO.md)
+cuando un participante usa su llave; los inventarios siguen siendo individuales.
+Las voces, recuerdos y recompensas mantienen su comportamiento actual y se
+conservan en el guardado; compartir todo el progreso narrativo sigue pendiente.
 
 Las sondas, sus fuentes retiradas y los datos completos quedan en la carpeta
 local ignorada `generated/reviews/2026-11-10/grutas-cooperativas/`; no se exportan

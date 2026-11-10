@@ -68,6 +68,7 @@ var lod_distance_metres := 340.0
 var mesh_lod_threshold := 1.0
 var systematic_lod_enabled := true
 var network_players: Node3D
+var puertas_cooperativas: Node
 var _last_exploration_time_of_day := ""
 
 
@@ -92,6 +93,10 @@ func _ready() -> void:
 	combate.name = "CombateCooperativo"
 	combate.configurar(self,player,network_players,get_node("RPGStoryRuntime"))
 	add_child(combate)
+	puertas_cooperativas = preload("res://scripts/puertas_cooperativas.gd").new()
+	puertas_cooperativas.name = "PuertasCooperativas"
+	puertas_cooperativas.configurar(self, player, network_players)
+	add_child(puertas_cooperativas)
 	NetworkSession.world_state_received.connect(_on_network_world_state_received)
 	NetworkSession.world_resource_break_requested.connect(
 		_on_network_world_resource_break_requested
@@ -446,6 +451,7 @@ func get_network_world_state() -> Dictionary:
 		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
 		"wildlife": wildlife.call("get_network_state") if wildlife != null else [],
 		"enemies": story.call("get_network_enemy_state") if story != null else [],
+		"cave_gates": puertas_cooperativas.get_state() if puertas_cooperativas != null else {},
 		"vegetation_resources": vegetation.call("get_save_state") if vegetation != null else {},
 		"adventure_resources": adventure.call("get_save_state") if adventure != null else {},
 	}
@@ -464,6 +470,8 @@ func _on_network_world_state_received(state: Dictionary) -> void:
 	var story := get_node_or_null("RPGStoryRuntime")
 	if story != null:
 		story.call("apply_network_enemy_state", state.get("enemies", []))
+	if puertas_cooperativas != null:
+		puertas_cooperativas.aplicar_estado_red(state.get("cave_gates", {}))
 	var vegetation := get_node_or_null("VegetationScatter")
 	if vegetation != null:
 		vegetation.call("apply_network_resource_state", state.get("vegetation_resources", {}))

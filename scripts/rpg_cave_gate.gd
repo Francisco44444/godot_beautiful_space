@@ -14,6 +14,7 @@ var story_runtime: Node
 var opened := false
 var _door_visual: MeshInstance3D
 var _collision: CollisionShape3D
+var _apertura: Tween
 
 
 func _ready() -> void:
@@ -38,6 +39,11 @@ func interact(player: Node) -> bool:
 		_feedback(player, "La entrada está sellada. Necesitas %s." % _key_display_name())
 		_locked_feedback()
 		return true
+	var sesion := get_node_or_null("/root/NetworkSession")
+	if sesion != null and not sesion.is_world_authority():
+		for gestor in get_tree().get_nodes_in_group("puertas_cooperativas"):
+			if gestor.mundo.is_ancestor_of(self): return gestor.solicitar(self, player)
+		return false
 	open_gate(player)
 	return true
 
@@ -55,9 +61,11 @@ func open_gate(player: Node = null, animated: bool = true) -> void:
 	if _door_visual == null:
 		return
 	if animated:
-		var tween := create_tween().set_parallel(true)
-		tween.tween_property(_door_visual, "position:y", 4.8, 1.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-		tween.tween_property(_door_visual, "rotation:y", deg_to_rad(12.0), 1.15)
+		_apertura = create_tween().set_parallel(true)
+		_apertura.tween_property(_door_visual, "position:y", 4.8, 1.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+		_apertura.tween_property(_door_visual, "rotation:y", deg_to_rad(12.0), 1.15)
+		for gestor in get_tree().get_nodes_in_group("puertas_cooperativas"):
+			if gestor.mundo.is_ancestor_of(self): gestor.puerta_abierta(self)
 	else:
 		_door_visual.position.y = 4.8
 
@@ -68,12 +76,26 @@ func get_save_state() -> Dictionary:
 
 func apply_save_state(state: Dictionary) -> void:
 	if String(state.get("id", gate_id)) != gate_id: return
+	if _apertura != null and _apertura.is_valid(): _apertura.kill()
+	_apertura = null
 	if bool(state.get("opened", false)):
 		open_gate(null, false)
+		if _door_visual != null:
+			_door_visual.position.y = 4.8
+			_door_visual.rotation.y = deg_to_rad(12.0)
 	else:
 		opened = false
 		if _collision != null: _collision.set_deferred("disabled",false)
-		if _door_visual != null: _door_visual.position.y = 2.0
+		if _door_visual != null:
+			_door_visual.position.y = 2.0
+			_door_visual.rotation.y = 0.0
+
+
+func apply_network_state(state: Dictionary) -> void:
+	if String(state.get("id", "")) != gate_id or typeof(state.get("opened")) != TYPE_BOOL: return
+	if bool(state.opened) == opened: return
+	if bool(state.opened): open_gate(null, true)
+	else: apply_save_state(state)
 
 
 func _build_arch() -> void:
