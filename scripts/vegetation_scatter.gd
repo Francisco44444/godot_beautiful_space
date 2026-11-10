@@ -104,9 +104,11 @@ void vertex() {
 
 void fragment() {
 	vec4 tex = texture(albedo_texture, UV);
+#ifndef ALBEDO_TOTALMENTE_OPACO
 	if (tex.a < 0.32) {
 		discard;
 	}
+#endif
 	vec3 color = tex.rgb;
 	if (tint_mode > 1.5) {
 		float leaf = smoothstep(0.015, 0.16, tex.g - max(tex.r, tex.b));
@@ -1782,6 +1784,9 @@ func biome_at(world_position: Vector3) -> String:
 func _apply_tree_wind_materials() -> void:
 	var shader := Shader.new()
 	shader.code = TREE_WIND_SHADER
+	var shader_opaco := Shader.new()
+	shader_opaco.code = "#define ALBEDO_TOTALMENTE_OPACO\n" + TREE_WIND_SHADER
+	var opacidad_por_textura := {}
 	_tree_wind_material_count = 0
 	_tree_wind_materials.clear()
 	for mesh_index in _tree_meshes.size():
@@ -1813,7 +1818,7 @@ func _apply_tree_wind_materials() -> void:
 				is_leaf = surface_index > 0
 			var wind_material := ShaderMaterial.new()
 			wind_material.resource_name = source_material.resource_name
-			wind_material.shader = shader
+			wind_material.shader = shader_opaco if _textura_totalmente_opaca(albedo_texture, opacidad_por_textura) else shader
 			wind_material.set_shader_parameter("albedo_texture", albedo_texture)
 			wind_material.set_shader_parameter("tint_mode", tint_mode)
 			wind_material.set_shader_parameter("leaf_factor", 1.0 if is_leaf else 0.0)
@@ -1822,6 +1827,23 @@ func _apply_tree_wind_materials() -> void:
 			_tree_wind_materials.append(wind_material)
 	set_meta("tree_wind_materials", _tree_wind_material_count)
 	set_meta("tree_wind_gust_levels", PackedStringArray(["breeze", "soft", "strong"]))
+
+
+func _textura_totalmente_opaca(textura: Texture2D, cache: Dictionary) -> bool:
+	if textura == null: return false
+	if cache.has(textura): return bool(cache[textura])
+	var imagen := textura.get_image()
+	var opaca := false
+	if imagen != null and not imagen.is_empty():
+		# CompressedTexture2D puede devolver su imagen compartida. Descomprimir
+		# una copia conserva el formato y los datos del recurso importado.
+		if imagen.is_compressed(): imagen = imagen.duplicate() as Image
+		if not imagen.is_compressed() or imagen.decompress() == OK:
+			opaca = imagen.detect_alpha() == Image.ALPHA_NONE
+	# La corteza opaca no necesita descartar fragmentos ni leer alfa al producir
+	# sombras. Las hojas y cualquier textura desconocida conservan el recorte.
+	cache[textura] = opaca
+	return opaca
 
 
 func _apply_grass_wind_materials() -> void:
