@@ -42,6 +42,7 @@ def main() -> int:
             guest = (carpeta/'guest.txt').read_text()
             if anfitrion.returncode or 'COOP COMBAT HOST PASS' not in host or 'COOP COMBAT CLIENT PASS' not in guest or 'SCRIPT ERROR' in host+guest: raise RuntimeError('Combate incompleto o errores de script.')
             if 'COOP RESOURCE HOST PASS' not in host or 'COOP RESOURCE CLIENT PASS' not in guest: raise RuntimeError('La tala con instantáneas periódicas y restauración no se verificó entre ambos procesos.')
+            if 'COOP CAVE HOST PASS' not in host or 'COOP CAVE CLIENT PASS' not in guest: raise RuntimeError('No se verificaron los cuatro interiores con disparos cooperativos y desactivación al salir.')
             if 'above the MTU' in host+guest: raise RuntimeError('Un estado cooperativo vuelve a provocar fragmentación ENet.')
             print('COOPERATIVE COMBAT PASS: combate autoritativo y respuesta del invitado por ENet real.')
             print('Registros:',carpeta)

@@ -4,6 +4,10 @@ La revisión del 8 de noviembre une la portada con una bóveda de piedra,
 cierra las costuras del terreno y corrige el seguimiento de cámara de
 Terrain3D. Véanse [las entradas y la hierba](ENTRADAS_Y_HIERBA.md).
 
+La revisión del 10 de noviembre separa la física de los jugadores y las luces
+de la vista local, y corrige los disparos remotos bajo una bóveda. Véanse las
+[mediciones y pruebas de grutas en cooperativo](GRUTAS_EN_COOPERATIVO.md).
+
 ## Qué puede jugarse
 
 Las cuatro puertas anteriores ya llevan a interiores: vestíbulo descendente,
@@ -64,8 +68,9 @@ no cambia la distribución de árboles.
   alrededor de 2,1 MiB con normales por cara. El circuito de referencia mide
   **272,77 m**, más el desvío del secreto. Se comparten también las formas de
   colisión; no se evalúa ningún SDF al jugar.
-- La colisión de una gruta y sus cuatro luces sin sombras se activan por
-  proximidad, a menos de 240 m de su centro. El decorado numeroso usa MultiMesh.
+- La colisión se activa por cualquier jugador preparado a menos de 240 m de
+  su centro. Las seis luces sin sombras (dos antorchas y cuatro interiores)
+  atienden al héroe y la cámara local. El decorado numeroso usa MultiMesh.
 - Luciérnagas: **112** en los bosques del valle por la noche, **48** junto al
   guía y **256** en el claro descubierto. Son quads instanciados; deriva,
   parpadeo y ascenso se calculan en GPU. La CPU comprueba el ambiente cada

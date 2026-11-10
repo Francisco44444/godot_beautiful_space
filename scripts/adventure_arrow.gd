@@ -96,7 +96,7 @@ func _physics_process(delta: float) -> void:
 			var punta_inicial := start+travel*absf(TIP_OFFSET)
 			var punta_final := finish+travel*absf(TIP_OFFSET)
 			var suelo: float = _terreno_red.data.get_height(punta_final)
-			if not is_nan(suelo) and not _terreno_red.data.get_control_hole(punta_final) and punta_final.y<suelo:
+			if not is_nan(suelo) and not _terreno_red.data.get_control_hole(punta_final) and punta_final.y<suelo and not _bajo_boveda_de_gruta(punta_inicial, suelo):
 				var lo := 0.0
 				var hi := 1.0
 				for paso in 12:
@@ -122,6 +122,16 @@ func _physics_process(delta: float) -> void:
 	if velocity.length_squared() > 0.01:
 		_aim_along(velocity)
 	_record_trail_point()
+
+
+func _bajo_boveda_de_gruta(punto: Vector3, altura_terreno: float) -> bool:
+	if punto.y >= altura_terreno: return false
+	# El heightmap no distingue la roca del aire bajo una bóveda. Consultar su
+	# colisión real evita detener el disparo dentro; sobre el techo sigue siendo suelo.
+	var consulta := PhysicsRayQueryParameters3D.create(punto, Vector3(punto.x, altura_terreno + 0.25, punto.z), 1)
+	var techo := get_world_3d().direct_space_state.intersect_ray(consulta)
+	var cuerpo := techo.get("collider") as Node
+	return cuerpo != null and cuerpo.is_in_group("explorable_cave")
 
 
 func _process(delta: float) -> void:

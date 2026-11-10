@@ -14,6 +14,7 @@ var gate: RPGCaveGate
 var lights: Array[OmniLight3D] = []
 var _tick := 0.0
 var _active := true
+var _luces_activas := true
 static var _shape: ConcavePolygonShape3D
 
 func _ready() -> void:
@@ -469,8 +470,22 @@ func _process(delta: float) -> void:
 	if _tick > 0: return
 	_tick = 0.35
 	var player: Node3D = director.player
-	var near := player.global_position.distance_squared_to(to_global(Vector3(0,-15,-85))) < 240.0*240.0
-	if near == _active: return
-	_active = near
-	collision_layer = 1 if near else 0
-	for light in lights: light.visible = near
+	var centro := to_global(Vector3(0, -15, -85))
+	var cerca := is_instance_valid(player) and player.global_position.distance_squared_to(centro) < 240.0 * 240.0
+	var camara := get_viewport().get_camera_3d()
+	var iluminar := cerca or (camara != null and camara.global_position.distance_squared_to(centro) < 240.0 * 240.0)
+	if iluminar != _luces_activas:
+		_luces_activas = iluminar
+		for light in lights: light.visible = iluminar
+	# El combate remoto usa la última muestra, mientras el avatar se interpola.
+	# Ambos deben conservar la roca; sus luces sólo hacen falta en la vista local.
+	if not cerca:
+		for nodo in get_tree().get_nodes_in_group("network_player"):
+			var invitado := nodo as Player
+			if invitado == null or not bool(invitado.get("_network_state_ready")): continue
+			if invitado.get_network_authoritative_position().distance_squared_to(centro) < 240.0 * 240.0 or invitado.global_position.distance_squared_to(centro) < 240.0 * 240.0:
+				cerca = true
+				break
+	if cerca != _active:
+		_active = cerca
+		collision_layer = 1 if cerca else 0

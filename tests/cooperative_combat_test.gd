@@ -214,6 +214,7 @@ func _run_test() -> void:
 		await create_timer(0.5).timeout
 		if root.get_node("InventoryManager").get_count("Coin_Skull")!=monedas_antes+1 or not is_equal_approx(Engine.time_scale,1.0): _fallar("Se duplica botín o la cámara ralentiza la sesión."); return
 		if not await _probar_recursos(): return
+		if not await _probar_grutas(): return
 		if not await _etapa("fin"): return
 		print("COOP COMBAT CLIENT PASS: tajo, giro, coraza, pared, flecha, daño dirigido, guardia, esquiva, arma propia y recompensa.")
 	sesion.leave_session()
@@ -244,7 +245,31 @@ func _crear_pared() -> void:
 func _evaluar(nombre: String) -> Dictionary:
 	var replica := mundo.get_node("NetworkPlayers").get_children()[0] as Player
 	var correcto := true
+	if nombre.begins_with("gruta_impacto/"):
+		var id := nombre.trim_prefix("gruta_impacto/")
+		for gruta in get_nodes_in_group("explorable_cave"):
+			if String(gruta.spec.id) != id: continue
+			var destino: Vector3 = gruta.to_global(Vector3(0, -17, -95))
+			correcto = heroe.global_position.distance_to(destino) > 240 and replica.get_network_authoritative_position().distance_to(destino) < 0.2
+			correcto = correcto and _suelo_de_gruta(gruta) and enemigos["gruta_" + id].health == 27
+			for luz in gruta.lights: correcto = correcto and not luz.visible
+			print("COOP CAVE SHOT ", id, " ", correcto, ": impacto de arco remoto, suelo presente y luces del anfitrión apagadas.")
+			return {"ok": correcto}
+		return {"ok": false}
 	match nombre:
+		"grutas_preparar":
+			var destinos := []
+			for gruta in get_nodes_in_group("explorable_cave"):
+				var id := String(gruta.spec.id)
+				var objetivo: Vector3 = gruta.to_global(Vector3(6, -18, -95))
+				crear_enemigo("gruta_" + id, objetivo)
+				destinos.append({"id": id, "jugador": gruta.to_global(Vector3(0, -17, -95)), "objetivo": objetivo, "camara": gruta.to_global(Vector3(0, -14.5, -89))})
+			return {"ok": destinos.size() == 4, "destinos": destinos}
+		"grutas_vacias":
+			for gruta in get_nodes_in_group("explorable_cave"):
+				correcto = correcto and not _suelo_de_gruta(gruta)
+				for luz in gruta.lights: correcto = correcto and not luz.visible
+			if correcto: print("COOP CAVE HOST PASS: cuatro disparos de invitado en grutas lejanas y desactivación al salir.")
 		"recurso_elegir":
 			var vegetacion := mundo.get_node("VegetationScatter")
 			for indice in vegetacion.get("_harvest_tree_ids").size():
@@ -349,6 +374,42 @@ func _capturar_recurso(etapa: String) -> void:
 	var carpeta := "res://generated/reviews/2026-11-09/recursos-red/imagenes"
 	DirAccess.make_dir_recursive_absolute(carpeta)
 	root.get_texture().get_image().save_png(carpeta.path_join(etapa+".png"))
+
+func _probar_grutas() -> bool:
+	if not await _etapa("grutas_preparar"): return false
+	var destinos: Array = respuestas.grutas_preparar.destinos
+	for destino in destinos: crear_enemigo("gruta_" + String(destino.id), destino.objetivo)
+	var camara := Camera3D.new()
+	mundo.add_child(camara)
+	camara.current = true
+	heroe.equip_item(3)
+	for destino in destinos:
+		heroe.global_position = destino.jugador
+		heroe.velocity = Vector3.ZERO
+		camara.global_position = destino.camara
+		camara.look_at((destino.objetivo as Vector3) + Vector3.UP * 0.9)
+		mundo.sincronizar_camara_terreno()
+		await create_timer(0.65).timeout
+		if not heroe._begin_bow_draw(): _fallar("No se puede tensar dentro de la gruta."); return false
+		await create_timer(0.2).timeout
+		heroe.set("_bow_draw_strength", 1.0)
+		if not heroe._release_bow_arrow(): _fallar("No se puede disparar dentro de la gruta."); return false
+		var enemigo: Node = enemigos["gruta_" + String(destino.id)]
+		if not await _esperar(func(): return enemigo.health == 27): _fallar("La flecha cooperativa no alcanza el objetivo dentro de " + String(destino.id)); return false
+		if not await _etapa("gruta_impacto/" + String(destino.id)): return false
+	for gruta in get_nodes_in_group("explorable_cave"):
+		if _suelo_de_gruta(gruta) and heroe.global_position.distance_to(gruta.to_global(Vector3(0, -17, -95))) > 240:
+			_fallar("Se mantiene encendida la física de una gruta desocupada."); return false
+	heroe.global_position = Vector3(0, 800, 0)
+	camara.global_position = Vector3(0, 805, 5)
+	await create_timer(0.65).timeout
+	if not await _etapa("grutas_vacias"): return false
+	print("COOP CAVE CLIENT PASS: arco real por ENet, cuatro interiores y salida sin mantener grutas lejanas activas.")
+	return true
+
+func _suelo_de_gruta(gruta: StaticBody3D) -> bool:
+	var rayo := PhysicsRayQueryParameters3D.create(gruta.to_global(Vector3(0, -13, -95)), gruta.to_global(Vector3(0, -24, -95)), 1)
+	return mundo.get_world_3d().direct_space_state.intersect_ray(rayo).get("collider") == gruta
 
 func _paquete() -> Dictionary:
 	return {"tipo":"tajo","secuencia":1,"posicion":heroe.global_position,"velocidad":Vector3.ZERO,
