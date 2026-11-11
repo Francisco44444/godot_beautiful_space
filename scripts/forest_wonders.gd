@@ -4,6 +4,8 @@ const CAVE = preload("res://scripts/hollow_cave.gd")
 const MEMORY = preload("res://scripts/cave_memory.gd")
 const START := Vector2(75,60)
 const CLEARING := Vector2(-110,-60)
+const LUCES_VALLE := Color(0.78,1.0,0.36)
+const LUCES_TENEBROSAS := Color(1.0,0.68,0.28)
 const COLORS := [Color(0.30,0.86,0.65),Color(0.36,0.65,1.0),Color(1.0,0.58,0.17),Color(0.74,0.36,1.0)]
 const FRAGMENTS := [
 	["El roble no guardaba oro: guardaba la voz de quienes descansaron bajo él.","La fundidora se llamaba Elia. Nadie escribió su apellido; todos conocían su risa.","Cuando rasparon el bronce, las raíces aprendieron el nombre para no olvidarlo."],
@@ -33,6 +35,7 @@ var trace_waypoints := 0
 var trace_rewards := 0
 var _was_night := false
 var _running_warning := false
+var _tono_luciernagas := LUCES_VALLE
 
 func _ready() -> void:
 	world = get_parent().get_parent()
@@ -44,8 +47,9 @@ func _ready() -> void:
 		var cell := Vector2i(floori(p.x/32),floori(p.y/32))
 		if not _tree_cells.has(cell): _tree_cells[cell] = []
 		_tree_cells[cell].append(p)
-	_fireflies = _make_swarm(112,32.0,0.30,Color(0.78,1.0,0.36))
+	_fireflies = _make_swarm(112,32.0,0.30,LUCES_VALLE)
 	_fireflies.name = "NightFireflies"
+	_fireflies.visible = false
 	_swarm = _make_swarm(48,3.5,0.22,Color(1.0,0.79,0.32))
 	_swarm.name = "GuidingLights"
 	_swarm.visible = false
@@ -297,21 +301,47 @@ func _process(delta: float) -> void:
 
 func _update_ambient() -> void:
 	var night: bool = world.daylight_factor < 0.25
-	var p := player.global_position
-	var biome: String = world.get_node("VegetationScatter").biome_at(p)
-	var forest := _near_tree(Vector2(p.x,p.z))
-	_fireflies.visible = night and forest and biome == "valley" and absf(p.y-grounded(Vector2(p.x,p.z)).y)<8.0 and not "--without-fireflies" in OS.get_cmdline_user_args()
-	if _fireflies.visible and (not is_finite(_last_center.x) or p.distance_to(_last_center)>12):
-		_last_center = p
-		_fireflies.global_position = Vector3(p.x,grounded(Vector2(p.x,p.z)).y,p.z)
-		trace_replants += 1
-	var celebration := night and guide_stage >= 2 and p.distance_to(grounded(CLEARING))<55
-	_clearing_swarm.visible = celebration and not "--without-fireflies" in OS.get_cmdline_user_args()
-	if celebration:
-		_fireflies.visible = not "--without-fireflies" in OS.get_cmdline_user_args()
-		_fireflies.global_position = grounded(CLEARING)
 	if night != _was_night: get_parent()._refresh_hud_bar()
 	_was_night = night
+	# El relevo se extiende por el crepúsculo. Los extremos conservan el brillo
+	# nocturno original y retiran los dos enjambres del render durante el día.
+	var nivel: float = 1.0-smoothstep(0.06,0.32,float(world.daylight_factor))
+	if nivel < 0.00001: nivel = 0.0
+	if nivel == 0.0 or "--without-fireflies" in OS.get_cmdline_user_args():
+		_nivel_enjambre(_fireflies,0.0)
+		_nivel_enjambre(_clearing_swarm,0.0)
+		return
+	var p := player.global_position
+	var plano := Vector2(p.x,p.z)
+	var suelo := grounded(plano)
+	var biome: String = world.get_node("VegetationScatter").biome_at(p)
+	var forest := biome in ["valley","dark_forest"] and absf(p.y-suelo.y)<8.0 and _near_tree(plano)
+	var claro := _clearing_swarm.global_position
+	var celebration := guide_stage >= 2 and p.distance_to(claro)<55
+	_nivel_enjambre(_clearing_swarm,nivel if celebration else 0.0)
+	_nivel_enjambre(_fireflies,nivel if forest or celebration else 0.0)
+	if _fireflies.visible:
+		var objetivo := LUCES_TENEBROSAS if biome == "dark_forest" else LUCES_VALLE
+		var tono := _tono_luciernagas.lerp(objetivo,0.45)
+		if tono.is_equal_approx(objetivo): tono = objetivo
+		if tono != _tono_luciernagas:
+			_tono_luciernagas = tono
+			_fireflies.material_override.set_shader_parameter("color",tono)
+	if celebration:
+		_centrar_luciernagas(claro)
+	elif forest and (not is_finite(_last_center.x) or p.distance_to(_last_center)>12):
+		_centrar_luciernagas(suelo)
+
+func _nivel_enjambre(enjambre: MultiMeshInstance3D, nivel: float) -> void:
+	if enjambre.material_override.get_shader_parameter("aparicion") != nivel:
+		enjambre.material_override.set_shader_parameter("aparicion",nivel)
+	enjambre.visible = nivel > 0.0
+
+func _centrar_luciernagas(centro: Vector3) -> void:
+	if _last_center == centro: return
+	_last_center = centro
+	_fireflies.global_position = centro
+	trace_replants += 1
 
 func _near_tree(point: Vector2) -> bool:
 	var cell := Vector2i(floori(point.x/32),floori(point.y/32))

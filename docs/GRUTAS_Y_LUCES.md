@@ -8,6 +8,9 @@ La revisión del 10 de noviembre separa la física de los jugadores y las luces
 de la vista local, y corrige los disparos remotos bajo una bóveda. Véanse las
 [mediciones y pruebas de grutas en cooperativo](GRUTAS_EN_COOPERATIVO.md).
 
+La revisión del 11 de noviembre añade el fundido crepuscular de las
+[luciérnagas y la paleta ámbar del Tenebroso](LUCIERNAGAS_Y_CREPUSCULO.md).
+
 ## Qué puede jugarse
 
 Las cuatro puertas anteriores ya llevan a interiores: vestíbulo descendente,

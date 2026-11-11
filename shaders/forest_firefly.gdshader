@@ -12,6 +12,7 @@ render_mode blend_add, unshaded, depth_draw_never, cull_disabled, shadows_disabl
 uniform vec3 color : source_color = vec3(0.78, 1.0, 0.36);
 uniform float brillo = 3.0;
 uniform float rise = 0.0;
+uniform float aparicion = 1.0;
 
 varying float v_pulso;
 
@@ -26,6 +27,7 @@ void vertex() {
 	// de una luciérnaga, no un intermitente.
 	float t = fract(TIME / INSTANCE_CUSTOM.y + fase * 0.159);
 	v_pulso = smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.18, 0.42, t));
+	v_pulso *= aparicion;
 	float lado = INSTANCE_CUSTOM.w;
 	centro.y += fract(TIME*0.08+fase*0.159)*rise;
 	vec3 vista = (VIEW_MATRIX * vec4(centro, 1.0)).xyz;
