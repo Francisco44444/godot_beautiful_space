@@ -124,6 +124,8 @@ jobs:
             --headless --path . --script res://tests/gate_state_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/firefly_transition_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/modal_pause_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/multiplayer_test.gd
           python3 tests/test_network_handshake.py \
@@ -131,6 +133,8 @@ jobs:
           python3 tests/test_cooperative_combat.py \
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
           python3 tests/test_cooperative_gate.py \
+            --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          python3 tests/test_cooperative_ui.py \
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/celestial_transition_test.gd

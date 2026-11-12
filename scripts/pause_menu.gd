@@ -6,6 +6,7 @@ extends ColorRect
 
 signal closed()
 signal multiplayer_requested()
+signal apertura_cambiada()
 
 var _main: VBoxContainer
 var _page: VBoxContainer
@@ -14,6 +15,7 @@ var _page_content: VBoxContainer
 var _save_list: ItemList
 var _status: Label
 var _credits_bbcode := ""
+var _subtitulo: Label
 
 
 func _ready() -> void:
@@ -32,12 +34,9 @@ func set_open(open: bool) -> void:
 	visible = open
 	if open:
 		_show_main()
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		get_tree().paused = true
 	else:
-		get_tree().paused = false
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		closed.emit()
+	apertura_cambiada.emit()
 
 
 func close_one_level() -> bool:
@@ -72,12 +71,12 @@ func _build_interface() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	UiTheme.style_title(title, 30)
 	root_content.add_child(title)
-	var subtitle := Label.new()
-	subtitle.text = "MENÚ DE PAUSA"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 16)
-	subtitle.add_theme_color_override("font_color", Color(0.74, 0.77, 0.66))
-	root_content.add_child(subtitle)
+	_subtitulo = Label.new()
+	_subtitulo.text = "MENÚ DE PAUSA"
+	_subtitulo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_subtitulo.add_theme_font_size_override("font_size", 16)
+	_subtitulo.add_theme_color_override("font_color", Color(0.74, 0.77, 0.66))
+	root_content.add_child(_subtitulo)
 	_main = VBoxContainer.new()
 	_main.name = "MainButtons"
 	_main.add_theme_constant_override("separation", 9)
@@ -145,7 +144,14 @@ func _clear_page(title_value: String) -> void:
 func _show_main() -> void:
 	_main.visible = true
 	_page.visible = false
-	_status.text = "Esc · continuar"
+	actualizar_estado_sesion()
+
+
+func actualizar_estado_sesion() -> void:
+	var compartida := NetworkSession.is_networked()
+	_subtitulo.text = "MENÚ DE EXPEDICIÓN" if compartida else "MENÚ DE PAUSA"
+	if not _page.visible:
+		_status.text = "La expedición continúa · Esc para volver" if compartida else "Esc · continuar"
 
 
 func _show_controls() -> void:

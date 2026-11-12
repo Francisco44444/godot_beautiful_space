@@ -69,6 +69,8 @@ func is_aiming() -> bool:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	var player := target as Player
+	if player != null and player.entrada_interfaz_bloqueada: return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * mouse_sensitivity
 		pitch -= event.relative.y * mouse_sensitivity

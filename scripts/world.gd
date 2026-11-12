@@ -182,6 +182,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if player != null and player.entrada_interfaz_bloqueada: return
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	var key_event := event as InputEventKey

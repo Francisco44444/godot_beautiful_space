@@ -430,6 +430,8 @@ var realistic_animation: AnimationPlayer
 var spawn_position: Vector3
 var control_state := ControlState.ON_FOOT
 var current_mount: Horse
+var entrada_interfaz_bloqueada := false
+var _descartar_input_interfaz := false
 var is_attacking := false
 var attacks_performed := 0
 var attack_phase := AttackPhase.NONE
@@ -585,7 +587,7 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if network_remote:
+	if network_remote or entrada_interfaz_bloqueada or _descartar_input_interfaz:
 		return
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
@@ -621,6 +623,25 @@ func _physics_process(delta: float) -> void:
 	_attack_cooldown = maxf(_attack_cooldown - delta, 0.0)
 	_slash_chain_window = maxf(_slash_chain_window - delta, 0.0)
 	_recover_stamina(delta)
+	if entrada_interfaz_bloqueada or _descartar_input_interfaz:
+		_descartar_input_interfaz = false
+		# La gravedad, los impactos y los gestos ya iniciados siguen vivos.
+		# Sólo se dejan de leer las teclas y botones del propietario de la ventana.
+		if is_mounted():
+			_sync_with_mount()
+			return
+		if is_rolling:
+			_update_dodge(delta)
+			_apply_roll_motion(delta)
+		else:
+			velocity.x = move_toward(velocity.x,0.0,acceleration*delta)
+			velocity.z = move_toward(velocity.z,0.0,acceleration*delta)
+		_update_attack(delta)
+		_apply_gravity(delta)
+		move_and_slide()
+		_update_locomotion_animation()
+		if global_position.y < respawn_height: _respawn()
+		return
 	if control_state == ControlState.MOUNTED:
 		_cancel_bow_draw()
 		_cancel_melee_charge()
@@ -662,6 +683,24 @@ func _physics_process(delta: float) -> void:
 
 	if global_position.y < respawn_height:
 		_respawn()
+
+
+func bloquear_entrada_interfaz(bloqueada: bool) -> void:
+	if network_remote or entrada_interfaz_bloqueada == bloqueada: return
+	entrada_interfaz_bloqueada = bloqueada
+	if not bloqueada:
+		# El clic o Espacio que cierra la ventana pertenece todavía a la interfaz.
+		_descartar_input_interfaz = true
+		return
+	_pending_draw_attack = false
+	_cancel_bow_draw()
+	var cargando := attack_phase == AttackPhase.CHARGING
+	_cancel_melee_charge()
+	if cargando: _notificar_combate("reposo")
+	if is_guarding: _lower_shield()
+	if not is_rolling:
+		velocity.x = 0.0
+		velocity.z = 0.0
 
 
 func _confirm_nearby_exploration() -> bool:
@@ -708,7 +747,7 @@ func get_nearby_adventure_prompt() -> String:
 func is_strafing() -> bool:
 	## Mantener la tecla de esquiva desacopla el cuerpo del movimiento: el héroe
 	## se mueve de lado mirando adonde mira la cámara, como en un combate real.
-	return Input.is_action_pressed("dodge") and not is_mounted() and not is_rolling
+	return not entrada_interfaz_bloqueada and Input.is_action_pressed("dodge") and not is_mounted() and not is_rolling
 
 
 func start_dodge_roll(lateral: float) -> bool:
@@ -889,6 +928,7 @@ func is_charging_attack() -> bool:
 
 
 func _can_begin_melee() -> bool:
+	if entrada_interfaz_bloqueada or _descartar_input_interfaz: return false
 	# Con las manos libres se puede golpear igual: es el gancho de la biblioteca.
 	if equipped_slot != 0 and _equipped_mesh == null:
 		return false
@@ -2340,6 +2380,7 @@ func _update_shield_carry(delta: float) -> void:
 		var has_shield := _shield_mesh != null and is_instance_valid(_shield_mesh)
 		var wants_guard := (
 			Input.is_action_pressed("block")
+			and not entrada_interfaz_bloqueada
 			and (has_shield or equipped_category == "sword")
 			and not is_mounted()
 			and not is_rolling
@@ -2685,7 +2726,7 @@ func _update_bow_input(delta: float) -> void:
 
 
 func _begin_bow_draw() -> bool:
-	if is_mounted() or is_attacking or equipped_category != "bow":
+	if entrada_interfaz_bloqueada or is_mounted() or is_attacking or equipped_category != "bow":
 		return false
 	if get_arrow_count() <= 0:
 		action_feedback.emit("No tienes flechas: busca cofres o recógelas")

@@ -49,6 +49,7 @@ Aventura medieval en tercera persona construida con Godot 4.7, GDScript y Terrai
 - Colisiones de troncos por celdas para reducir los bloqueos al talar y restaurar, conservando sus triángulos originales. [Tiempos de actualización y fotogramas](docs/COLISIONES_LOCALES_DEL_BOSQUE.md).
 - Grutas con física activa para invitados lejanos y flechas que distinguen la bóveda del terreno. [Pruebas entre procesos, coste y límites](docs/GRUTAS_EN_COOPERATIVO.md).
 - Puertas de las cuatro grutas compartidas: un compañero con su propia llave abre el acceso para la expedición y los invitados que se incorporan después. Confirmación fiable, restauración y rechazo de estados antiguos. [Pruebas ENet, coste y límites del progreso compartido](docs/PUERTAS_EN_COOPERATIVO.md).
+- Diálogos e inventario sin detener la expedición cooperativa, con controles locales protegidos y pausa en solitario. [Recorrido con dos procesos, mediciones y comprobaciones](docs/PAUSA_EN_COOPERATIVO.md).
 - Luciérnagas con aparición gradual al anochecer y apagado durante el amanecer; verdes en el valle y ámbar en el Tenebroso. [Pruebas gráficas, coste y comportamiento del claro](docs/LUCIERNAGAS_Y_CREPUSCULO.md).
 - Cortezas opacas sin recorte de hojas, conservando vegetación, sombras y viento. [FPS y comparaciones visuales](docs/OPACIDAD_DE_LA_CORTEZA.md).
 - Portadas unidas a la gruta mediante piedra continua, remate contra el terreno y antorchas; hierba lejana fina y relevo cercano a 16–28 m. [Causas de los huecos azules, pruebas y coste medido](docs/ENTRADAS_Y_HIERBA.md).

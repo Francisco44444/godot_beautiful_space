@@ -46,6 +46,7 @@ var gait := 0.0
 var animation_player: AnimationPlayer
 var spawn_position: Vector3
 var mounted := false
+var entrada_interfaz_bloqueada := false
 var _stride_time := 0.0
 var _rider_base_height := 0.0
 var _hoof_timer := 0.0
@@ -238,6 +239,10 @@ func _apply_gravity(delta: float) -> void:
 
 
 func _apply_riding_input(delta: float) -> void:
+	if entrada_interfaz_bloqueada:
+		sprint_requested = false
+		_slow_to_stop(delta)
+		return
 	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var input_strength := clampf(input_vector.length(), 0.0, 1.0)
 	var direction := _camera_relative_direction(input_vector)

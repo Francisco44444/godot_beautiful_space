@@ -113,6 +113,7 @@ func _ready() -> void:
 	_build_story_hud()
 	pause_menu = PauseMenu.new()
 	add_child(pause_menu)
+	pause_menu.apertura_cambiada.connect(_sincronizar_pausa)
 	var credits_text := credits_overlay.get_node_or_null("CreditsPanel/Padding/Content/CreditsText") as RichTextLabel
 	if credits_text != null:
 		pause_menu.set_credits_content(credits_text.text.replace("0 · cerrar", "Esc · volver"))
@@ -129,6 +130,7 @@ func _ready() -> void:
 	GameSettings.vsync_changed.connect(_sync_vsync_toggle)
 	GameSettings.identity_changed.connect(_sync_identity_controls)
 	NetworkSession.session_started.connect(_on_network_session_started)
+	NetworkSession.session_ended.connect(_sincronizar_pausa)
 	NetworkSession.session_status_changed.connect(_on_network_status_changed)
 	NetworkSession.roster_changed.connect(_on_network_roster_changed)
 	LobbyDirectory.rooms_changed.connect(_on_directory_rooms_changed)
@@ -214,6 +216,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if journal_key.pressed and not journal_key.echo and journal_code == KEY_L:
 			_set_exploration_journal_open(not exploration_journal_open)
 			get_viewport().set_input_as_handled()
+			return
+		if exploration_journal_open or inventory_open:
 			return
 		if journal_key.pressed and not journal_key.echo and journal_code == KEY_C:
 			_call_companions()
@@ -340,21 +344,36 @@ func _set_settings_open(open: bool) -> void:
 		_sync_identity_controls(GameSettings.player_name, GameSettings.character_index)
 		_update_network_status_label()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		get_tree().paused = true
 	else:
-		get_tree().paused = false
 		mini_map.visible = mini_map_open
 		controls_panel.visible = controls_open
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_sincronizar_pausa()
 
 
 func is_settings_open() -> bool:
 	return settings_open
 
 
+func _sincronizar_pausa() -> void:
+	# Leer una voz o cambiar equipo no debe detener la IA ni los compañeros.
+	# Las ventanas comparten una decisión para que cerrar una no desbloquee otra.
+	var abierta := settings_open or lobby_open or exploration_journal_open or inventory_open or story_dialogue_open or (pause_menu != null and pause_menu.visible)
+	get_tree().paused = abierta and not NetworkSession.is_networked()
+	player.bloquear_entrada_interfaz(abierta)
+	var caballo := get_parent().get_node_or_null("Horse") as Horse
+	if caballo != null: caballo.entrada_interfaz_bloqueada = abierta
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if abierta or map_open or credits_open else Input.MOUSE_MODE_CAPTURED
+	mini_map.visible = mini_map_open and not map_open and not abierta and not credits_open
+	if pause_menu != null: pause_menu.actualizar_estado_sesion()
+
+
 func _exit_tree() -> void:
 	if (settings_open or lobby_open or exploration_journal_open or inventory_open or story_dialogue_open or (pause_menu != null and pause_menu.visible)) and get_tree() != null:
 		get_tree().paused = false
+	if is_instance_valid(player): player.bloquear_entrada_interfaz(false)
+	var caballo := get_parent().get_node_or_null("Horse") as Horse
+	if caballo != null: caballo.entrada_interfaz_bloqueada = false
 
 
 func is_credits_open() -> bool:
@@ -732,11 +751,10 @@ func _set_story_dialogue_open(open: bool) -> void:
 	if open:
 		mini_map.visible = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		get_tree().paused = true
 	else:
-		get_tree().paused = false
 		mini_map.visible = mini_map_open and not map_open
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_sincronizar_pausa()
 
 
 func _build_quest_tracker() -> void:
@@ -1571,12 +1589,11 @@ func _set_lobby_open(open: bool) -> void:
 		_sync_identity_controls(GameSettings.player_name, GameSettings.character_index)
 		LobbyDirectory.refresh_rooms()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		get_tree().paused = true
 	else:
-		get_tree().paused = false
 		mini_map.visible = mini_map_open
 		controls_panel.visible = controls_open
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_sincronizar_pausa()
 
 
 func is_lobby_open() -> bool:
@@ -1587,6 +1604,7 @@ func _on_network_session_started(_mode_name: String) -> void:
 	if lobby_open:
 		_set_lobby_open(false)
 	_update_network_status_label()
+	_sincronizar_pausa()
 
 
 func _on_network_status_changed(message: String) -> void:
@@ -1795,12 +1813,11 @@ func _set_exploration_journal_open(open: bool) -> void:
 		mini_map.visible = false
 		_apply_journal_page()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		get_tree().paused = true
 	else:
-		get_tree().paused = false
 		mini_map.visible = mini_map_open and not map_open
 		controls_panel.visible = controls_open
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if map_open else Input.MOUSE_MODE_CAPTURED
+	_sincronizar_pausa()
 
 
 func is_exploration_journal_open() -> bool:
@@ -2111,11 +2128,10 @@ func _set_inventory_open(open: bool) -> void:
 		mini_map.visible = false
 		_rebuild_inventory()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		get_tree().paused = true
 	else:
-		get_tree().paused = false
 		mini_map.visible = mini_map_open and not map_open
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if map_open else Input.MOUSE_MODE_CAPTURED
+	_sincronizar_pausa()
 
 
 func is_inventory_open() -> bool:
