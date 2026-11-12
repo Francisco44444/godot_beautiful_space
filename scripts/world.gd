@@ -111,6 +111,10 @@ func _ready() -> void:
 	_build_desert_breeze()
 	set_meta("systematic_mesh_lod", true)
 	set_meta("lod_sources", "imported glTF/OBJ + explicit vegetation HLOD")
+	var normales_constantes = preload("res://scripts/normales_constantes_terreno.gd").new()
+	normales_constantes.name = "NormalesConstantesTerreno"
+	add_child(normales_constantes)
+	normales_constantes.iniciar(terrain)
 	if DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="forward_plus":
 		# Las grutas esculpen el suelo de forma diferida. Validar el cache antes
 		# de ese momento usaría las alturas y los agujeros de la isla sin accesos.

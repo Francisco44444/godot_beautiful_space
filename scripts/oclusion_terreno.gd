@@ -2,6 +2,7 @@ extends OccluderInstance3D
 
 ## Las laderas ocultan geometría con un recurso horneado, sin simular el suelo
 ## cada fotograma. Una edición del terreno retira inmediatamente el oclusor.
+const NORMALES_CONSTANTES = preload("res://scripts/normales_constantes_terreno.gd")
 const RUTA_CACHE := "res://generated/oclusion/terreno.res"
 const ESQUEMA := 2
 const LOD := 4
@@ -60,7 +61,12 @@ func estadisticas() -> Dictionary:
 static func compatible(terreno: Terrain3D) -> bool:
 	if terreno==null or terreno.data==null or terreno.material==null or not terreno.is_visible_in_tree() or terreno.global_transform!=Transform3D.IDENTITY: return false
 	if terreno.has_method("get_tessellation_level") and int(terreno.call("get_tessellation_level"))!=0: return false
-	return not terreno.material.shader_override_enabled
+	if not terreno.material.shader_override_enabled: return true
+	# La especialización verificada no altera la geometría. Los demás shaders
+	# siguen rechazados porque podrían desplazar el suelo sobre este oclusor.
+	var padre := terreno.get_parent()
+	var normales := padre.get_node_or_null("NormalesConstantesTerreno") if padre != null else null
+	return normales != null and normales.get_script() == NORMALES_CONSTANTES and normales.conserva_geometria(terreno)
 
 
 static func firma(terreno: Terrain3D) -> String:

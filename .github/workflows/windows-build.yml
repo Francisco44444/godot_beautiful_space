@@ -116,6 +116,8 @@ jobs:
             --headless --path . --script res://tests/building_occlusion_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/terrain_occlusion_test.gd
+          timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/terrain_normals_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/cave_entrance_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
