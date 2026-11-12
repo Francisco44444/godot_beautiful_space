@@ -58,7 +58,7 @@ func _run_test() -> void:
 		_fail("Un clic corto debe resolverse como tajo normal.")
 		return
 	# El tajo usa las animaciones de espada de la Universal Animation Library 2,
-	# retargeteadas al rig de Quaternius, y alterna dos golpes distintos.
+	# retargeteadas al rig de Quaternius, y encadena tres golpes distintos.
 	if not player.has_library_animation("Sword_Regular_A"):
 		_fail("No se cargó el tajo de espada de la biblioteca de animaciones.")
 		return
@@ -449,8 +449,9 @@ func _run_test() -> void:
 	for _frame in 30:
 		await physics_frame
 	Input.action_press("attack")
-	await physics_frame
-	await physics_frame
+	if not await _esperar_carga(player):
+		_fail("Mantener el botón no carga tras el tajo inicial.")
+		return
 	var thigh_travel_min := 1000.0
 	var thigh_travel_max := -1000.0
 	var raised := 0.0
@@ -715,6 +716,9 @@ func _run_test() -> void:
 	for _frame in 25:
 		await physics_frame
 	Input.action_press("attack")
+	if not await _esperar_carga(player):
+		_fail("No comienza la carga para comprobar los rayos.")
+		return
 	var struck := 0
 	var seen: Dictionary = {}
 	for _frame in 110:
@@ -962,3 +966,11 @@ func _find_arrow(node: Node, ignore: AdventureArrow = null) -> AdventureArrow:
 func _fail(message: String) -> void:
 	push_error(message)
 	quit(1)
+
+
+func _esperar_carga(player: Player) -> bool:
+	var limite := Time.get_ticks_msec() + 4000
+	while Time.get_ticks_msec() < limite:
+		if player.is_charging_attack(): return true
+		await physics_frame
+	return false

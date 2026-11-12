@@ -38,7 +38,7 @@ def main():
                     time.sleep(.1)
                 else:
                     raise RuntimeError('Tiempo agotado arrancando el anfitrión.')
-        procesos[1].wait(timeout=100)
+        procesos[1].wait(timeout=140)
         if procesos[1].returncode != 0:
             raise RuntimeError('El invitado terminó con un fallo.')
         procesos[0].wait(timeout=8)
@@ -49,6 +49,7 @@ def main():
         cliente = (carpeta/'client.txt').read_text()
         assert cliente.count('COOPERATIVE UI WINDOW PASS') == 6
         assert cliente.count('COOPERATIVE UI CANCEL PASS') == 3
+        assert 'COOPERATIVE COMBO PASS' in cliente
         print('COOPERATIVE UI PASS: seis ventanas, simulación y movimiento real con menús en ambos jugadores.')
         return 0
     except (RuntimeError, AssertionError, subprocess.TimeoutExpired) as error:

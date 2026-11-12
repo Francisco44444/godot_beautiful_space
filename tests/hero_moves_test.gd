@@ -199,8 +199,7 @@ func _run_test() -> void:
 	for _frame in 20:
 		await physics_frame
 
-	# El tercer tajo de la biblioteca queda fuera de la cadena: al retargetearlo
-	# el héroe giraba sobre sí mismo como si no tuviera tronco.
+	# Tres clics encadenan los tres tajos y el siguiente vuelve al primero.
 	player.equip_item(1)
 	for _frame in 30:
 		await physics_frame
@@ -212,13 +211,9 @@ func _run_test() -> void:
 			await physics_frame
 		for _frame in 16:
 			await physics_frame
-	if chain_names.is_empty():
-		_fail("La cadena de tajos no llegó a lanzar ninguno.")
+	if chain_names != ["Sword_Regular_A", "Sword_Regular_B", "Sword_Regular_C", "Sword_Regular_A"]:
+		_fail("La cadena no completa los tres tajos: %s." % str(chain_names))
 		return
-	for name in chain_names:
-		if name.begins_with("Sword_Regular_C"):
-			_fail("El tercer tajo sigue en la cadena de golpes.")
-			return
 	# La antorcha se lleva a plomo, quieto o andando. El gesto de la biblioteca no
 	# puede apagar la corrección de muñeca —queda de canto y solo se ve su
 	# sombra— y esa corrección tiene que ser completa: al 62%, como el resto de

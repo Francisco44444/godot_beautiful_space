@@ -30,6 +30,14 @@ const MESH_SCALE_FIX := {
 	"Dagger_2": 0.45, "Spear": 0.36, "Scythe": 0.36,
 	"Axe": 0.42, "Axe_Small": 0.45, "Hammer_Small": 0.45,
 }
+## Empuñaduras medidas en los OBJ: el origen de exportación no es la mano.
+## Las piezas medievales necesitan también su propio punto, además de escala.
+const GRIP_POINT_FIX := {
+	"Claymore": Vector3(0, 0.85, 0), "Sword_Big": Vector3(0, 0.50, 0),
+	"Sword_2": Vector3(0, -0.03, 0), "Sword_big": Vector3(0, 0.22, 0),
+	"Sword_big_Golden": Vector3(0, 0.22, 0),
+	"Axe": Vector3(0.05, -1.20, 0), "Axe_Small": Vector3(0.05, -0.86, 0),
+}
 const SHIELD_FILES: PackedStringArray = [
 	"Shield_Celtic_Golden", "Shield_Heater", "Shield_Heater_2",
 	"Shield_Round", "Shield_Round_2",
@@ -385,6 +393,7 @@ func _add_catalog_item(item_id: String, obj_path: String, icon_path: String, sou
 		"icon_path": icon_path,
 		"source": source,
 		"mesh_scale": float(MESH_SCALE_FIX.get(item_id, 1.0)),
+		"grip_point": GRIP_POINT_FIX.get(item_id, null),
 		"stackable": _category_for(item_id) not in ["sword", "axe", "bow", "shield", "armor"],
 		"rewardable": not item_id.begins_with("Chest_") and not item_id.ends_with("_Empty"),
 	}

@@ -27,6 +27,8 @@ var respuesta: Dictionary = {}
 var anfitrion := false
 var terminado := false
 var capturas := false
+var tajos_locales: Array[String] = []
+var tajos_replicados := {}
 
 func _init() -> void: call_deferred("_probar")
 
@@ -46,6 +48,8 @@ func _probar() -> void:
 	for i in 12: await process_frame
 	paused = false
 	jugador = mundo.get_node("Player")
+	jugador.attack_started.connect(func(_numero: int): tajos_locales.append(jugador.get_library_animation()))
+	mundo.get_node("NetworkPlayers").child_entered_tree.connect(_registrar_replica)
 	hud = mundo.get_node("HUD")
 	mundo.get_node("RPGStoryRuntime").set("_damage_cooldown",1000000000.0)
 	mundo.sun_cycle_radians = 1.08
@@ -70,7 +74,7 @@ func _probar() -> void:
 	if anfitrion:
 		print("UI HOST READY")
 		var inicio := Time.get_ticks_msec()
-		while not terminado and Time.get_ticks_msec()-inicio<120000: await process_frame
+		while not terminado and Time.get_ticks_msec()-inicio<180000: await process_frame
 		if not terminado: _fallar("El invitado no terminó la prueba de menús."); return
 		await create_timer(0.5).timeout
 		print("UI HOST PASS")
@@ -118,6 +122,7 @@ func _orden(orden: String) -> Dictionary:
 		# tecla mientras el héroe todavía recorre medio metro por su inercia.
 		await create_timer(0.4).timeout
 	elif orden.begins_with("gesto:"): await _preparar_gesto(orden.trim_prefix("gesto:"))
+	elif orden=="combo": await _completar_combo()
 	elif orden=="fin": terminado = true
 	var replicados := {}
 	var gestos := {}
@@ -125,7 +130,29 @@ func _orden(orden: String) -> Dictionary:
 		if nodo is Player:
 			replicados[String(nodo.name)] = [nodo.global_position.x,nodo.global_position.y,nodo.global_position.z]
 			gestos[String(nodo.name)] = _gestos(nodo)
-	return {"pausa":paused,"pasos":pulso.pasos,"sol":mundo.sun_cycle_radians,"bloqueado":jugador.entrada_interfaz_bloqueada,"replicas":replicados,"gestos_replicas":gestos,"gestos":_gestos(jugador),"posicion":[jugador.global_position.x,jugador.global_position.y,jugador.global_position.z]}
+	return {"pausa":paused,"pasos":pulso.pasos,"sol":mundo.sun_cycle_radians,"bloqueado":jugador.entrada_interfaz_bloqueada,"replicas":replicados,"gestos_replicas":gestos,"gestos":_gestos(jugador),"posicion":[jugador.global_position.x,jugador.global_position.y,jugador.global_position.z],"tajos":tajos_locales,"tajos_replicados":tajos_replicados}
+
+func _registrar_replica(nodo: Node) -> void:
+	if not nodo is Player: return
+	var actor := nodo as Player
+	var nombre := String(actor.name)
+	tajos_replicados[nombre] = []
+	actor.attack_started.connect(func(_numero: int): tajos_replicados[nombre].append(actor.get_library_animation()))
+
+func _completar_combo() -> void:
+	Input.action_release("attack")
+	jugador.equip_item(1)
+	jugador.draw_weapon()
+	await create_timer(0.9).timeout
+	tajos_locales.clear()
+	for i in 3:
+		Input.action_press("attack")
+		for paso in 2: await physics_frame
+		Input.action_release("attack")
+		for paso in 2: await physics_frame
+	if not await _esperar(func(): return tajos_locales.size()>=3 and not jugador.is_attacking):
+		_fallar("Los clics reales no completan el combo cooperativo.")
+	await create_timer(0.5).timeout
 
 func _gestos(actor: Player) -> Dictionary:
 	return {"arco":actor.is_drawing_bow,"carga":actor.is_charging_attack(),"guardia":actor.is_guarding}
@@ -137,6 +164,10 @@ func _preparar_gesto(tipo: String) -> void:
 	if tipo!="arco": jugador.draw_weapon()
 	await create_timer(0.9).timeout
 	Input.action_press("block" if tipo=="guardia" else "attack")
+	if tipo=="carga":
+		if not await _esperar(func(): return jugador.is_charging_attack()):
+			_fallar("Mantener el botón tras el tajo no prepara la carga.")
+			return
 	await create_timer(0.15).timeout
 
 func _consultar(orden: String) -> bool:
@@ -146,6 +177,16 @@ func _consultar(orden: String) -> bool:
 	return true
 
 func _recorrer() -> bool:
+	var cadena := ["Sword_Regular_A", "Sword_Regular_B", "Sword_Regular_C"]
+	await _completar_combo()
+	if not await _consultar("estado"): return false
+	var id_local := "Peer_%d" % sesion.multiplayer.get_unique_id()
+	if tajos_locales!=cadena or respuesta.tajos_replicados.get(id_local,[])!=cadena:
+		_fallar("El anfitrión no representa los tres tajos reales del invitado."); return false
+	if not await _consultar("combo"): return false
+	if respuesta.tajos!=cadena or tajos_replicados.get("Peer_1",[])!=cadena:
+		_fallar("El invitado no representa los tres tajos reales del anfitrión."); return false
+	print("COOPERATIVE COMBO PASS: clics reales A/B/C en ambos sentidos.")
 	for ventana in ["dialogo","inventario","diario","ajustes","vestibulo","pausa"]:
 		if not await _consultar("abrir:"+ventana): return false
 		if bool(respuesta.pausa) or not bool(respuesta.bloqueado): _fallar("El menú del anfitrión detiene la expedición: "+ventana); return false
@@ -216,7 +257,7 @@ func _capturar(nombre: String) -> void:
 	if not capturas: return
 	for i in 8: await process_frame
 	RenderingServer.force_draw(false,0.0)
-	var carpeta := "res://generated/reviews/2026-11-12/menus-cooperativos/imagenes"
+	var carpeta := "res://generated/reviews/2026-11-12/armas/enet/imagenes"
 	DirAccess.make_dir_recursive_absolute(carpeta)
 	assert(root.get_texture().get_image().save_png(carpeta.path_join(nombre+".png"))==OK)
 

@@ -103,6 +103,12 @@ func _representar(peer: int, accion: Dictionary) -> void:
 		actor = replicas.get_node_or_null("Peer_%d"%peer) as Player
 	if actor!=null:
 		actor.apply_network_state(accion.posicion,accion.yaw,accion.velocidad,actor.equipped_slot,accion.hora,accion.suelo)
+		# El anfitrión ya validó la cadencia. Su siguiente gesto puede llegar
+		# antes de que la réplica termine el tajo por una diferencia de un paso.
+		# Esa recuperación visual no debe rechazar una carga confirmada.
+		if String(accion.tipo) in ["tajo", "carga", "giro", "flecha", "tensar"]:
+			if actor.is_attacking: actor._finish_attack()
+			actor.set("_attack_cooldown", 0.0)
 		_aplicar(actor,accion)
 
 func _aplicar(actor: Player, accion: Dictionary) -> bool:

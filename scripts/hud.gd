@@ -416,7 +416,7 @@ func _process(delta: float) -> void:
 		mount_hint.text = "E · Desmontar de %s" % player.current_mount.horse_name
 		mount_hint.visible = true
 	else:
-		controls.text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   Clic · tajo · mantener · giro   H · caballo   C · aliados\nE · interactuar   I · inventario   M · mapa   Esc · menú" % equipped
+		controls.text = "WASD / flechas · caminar   Espacio · saltar   Mayús · correr\n1 Espada · 2 Hacha · 3 Arco · 4 Antorcha\nEn mano: %s   Clic · combo · mantener · giro   H · caballo   C · aliados\nE · interactuar   I · inventario   M · mapa   Esc · menú" % equipped
 		var nearby_horse := player.get_nearby_mount()
 		mount_hint.visible = nearby_horse != null
 		if nearby_horse != null:
@@ -2357,7 +2357,7 @@ func _controls_summary() -> String:
 		+ "[b]EQUIPO Y NAVEGACIÓN[/b]\n"
 		+ "1 Espada · 2 Hacha · 3 Arco · 4 Antorcha · I Inventario\n"
 		+ "Con el arco: mantén clic para tensar y apuntar; suelta para disparar\n"
-		+ "Con espada o hacha: un clic da un tajo; mantén hasta cargar la fuerza\n"
+		+ "Con espada o hacha: clics para el combo; mantén para cargar la fuerza\n"
 		+ "especial y suelta para el ataque giratorio de 360°, que además tumba\n"
 		+ "la hierba de alrededor. Puedes seguir andando mientras cargas\n"
 		+ "Escudo: mantén el clic derecho para cubrirte; el resto del tiempo va\n"

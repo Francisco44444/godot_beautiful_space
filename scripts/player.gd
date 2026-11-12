@@ -47,6 +47,8 @@ const NETWORK_MOTION_SCRIPT: Script = preload("res://scripts/network_motion.gd")
 const LIB_GUARD := "Idle_Shield_Loop"
 const LIB_SLASH_A := "Sword_Regular_A"
 const LIB_SLASH_B := "Sword_Regular_B"
+const LIB_SLASH_C := "Sword_Regular_C"
+const UMBRAL_ATAQUE_MANTENIDO := 0.35
 ## Gesto del que sale la postura de recarga por defecto. El fotograma concreto
 ## y el gesto son ajustables (`charge_pose_animation` / `charge_pose_time`):
 ## dar con una pose que se lea bien es cuestión de probarlas.
@@ -177,6 +179,7 @@ const EQUIPMENT_SPECS: Dictionary = {
 		"scale": 0.92, "hand": "right",
 		"grip_point": Vector3(0.0, 0.05, 0.0),
 		"grip_euler_degrees": Vector3(118.0, 0.0, 0.0),
+		"grip_roll_degrees": 90.0,
 		"carry_direction": Vector3(0.12, 0.99, 0.02),
 		"reach": 2.45,
 	},
@@ -185,6 +188,7 @@ const EQUIPMENT_SPECS: Dictionary = {
 		"scale": 0.62, "hand": "right",
 		"grip_point": Vector3(0.05, -0.46, 0.0),
 		"grip_euler_degrees": Vector3(150.0, 0.0, 0.0),
+		"grip_roll_degrees": 90.0,
 		"carry_direction": Vector3(0.62, 0.78, 0.08),
 		"reach": 2.25,
 	},
@@ -464,6 +468,10 @@ var _library_target := 0.0
 ## deja de encadenar.
 var _slash_chain := 0
 var _slash_chain_window := 0.0
+## Dos clics anticipados completan la cadena sin perderse durante un tajo.
+var _tajos_pendientes := 0
+var _ataque_mantenido := false
+var _tiempo_pulsacion_ataque := 0.0
 ## Gesto puntual en curso (`play_gesture`): cofres, siega, brindis, saludos...
 var _gesture_name := ""
 var _gesture_time := 0.0
@@ -912,6 +920,24 @@ func _item_mesh_scale(item_id: String) -> float:
 	return float(definition.get("mesh_scale", 1.0))
 
 
+func _punto_agarre(slot: int, item_id: String) -> Vector3:
+	var definicion: Dictionary = _inventory_manager().get_item_definition(item_id)
+	var punto: Variant = definicion.get("grip_point")
+	return punto if punto is Vector3 else EQUIPMENT_SPECS[slot].get("grip_point", Vector3.ZERO)
+
+
+func _pose_arma_en_mano(slot: int, item_id: String) -> Transform3D:
+	var escala := float(EQUIPMENT_SPECS[slot].scale) * _item_mesh_scale(item_id)
+	return Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * escala), -_punto_agarre(slot, item_id) * escala)
+
+
+func _pose_arma_en_espalda(slot: int, item_id: String) -> Transform3D:
+	var escala := float(EQUIPMENT_SPECS[slot].scale) * _item_mesh_scale(item_id)
+	var pose := _pose_of(BACK_WEAPON_POSITION, BACK_WEAPON_EULER_DEGREES, escala)
+	pose.origin -= pose.basis * _punto_agarre(slot, item_id)
+	return pose
+
+
 func is_spin_attacking() -> bool:
 	## Lo consultan los jefes cuya coraza sólo cede al giro de 360°: el golpe
 	## llega por la misma vía que un tajo normal, así que hace falta preguntar de
@@ -940,17 +966,30 @@ func _can_begin_melee() -> bool:
 
 
 func _update_melee_input(delta: float) -> void:
+	if equipped_category == "torch" or is_guarding or is_rolling or is_mounted():
+		_limpiar_entrada_ataque()
+		return
 	if Input.is_action_just_pressed("attack"):
-		# Con el arma a la espalda el clic la desenvaina y el golpe sale en
-		# cuanto llega a la mano, como en cualquier juego medieval.
-		if _weapon_on_back:
-			_pending_draw_attack = draw_weapon()
-		elif equipped_slot == 0:
-			# A mano desnuda no hay fuerza especial que acumular: sale el gancho
-			# directo, sin postura de recarga.
-			_start_slash()
+		_ataque_mantenido = true
+		_tiempo_pulsacion_ataque = 0.0
+		_tajos_pendientes = mini(_tajos_pendientes + 1, 2)
+	# Un clic durante el envainado espera a que termine el viaje y desenvaina.
+	# Comprobarlo sólo al pulsar dejaba el golpe perdido con el arma a la espalda.
+	if _tajos_pendientes > 0 and _weapon_on_back and not is_drawing_equipment():
+		_pending_draw_attack = draw_weapon()
+	if _ataque_mantenido:
+		if Input.is_action_pressed("attack"):
+			_tiempo_pulsacion_ataque += delta
 		else:
-			start_charge()
+			_ataque_mantenido = false
+	if (_tajos_pendientes > 0 or _ataque_mantenido) and attack_phase != AttackPhase.CHARGING and _can_begin_melee():
+		if _tajos_pendientes > 0:
+			_tajos_pendientes -= 1
+			_start_slash()
+		elif equipped_slot > 0 and _ataque_mantenido and _tiempo_pulsacion_ataque >= UMBRAL_ATAQUE_MANTENIDO:
+			# La carga sólo comienza tras el tajo y su recuperación, con el botón
+			# todavía sostenido. Un clic siempre responde al pulsar, no al soltar.
+			if start_charge(): _ataque_mantenido = false
 	if attack_phase != AttackPhase.CHARGING:
 		return
 	_charge_time += delta
@@ -965,13 +1004,18 @@ func _update_melee_input(delta: float) -> void:
 	if _charge_effect != null:
 		_charge_effect.set_charge(_charge_strength)
 	charge_changed.emit(_charge_strength, is_spin_ready())
-	# Un clic corto sale como tajo normal; mantener hasta llenar la carga suelta
-	# el ataque giratorio. El mismo botón cubre los dos gestos.
 	if not Input.is_action_pressed("attack"):
 		if is_spin_ready():
 			start_spin_attack()
 		else:
 			_start_slash()
+
+
+func _limpiar_entrada_ataque() -> void:
+	_tajos_pendientes = 0
+	_ataque_mantenido = false
+	_tiempo_pulsacion_ataque = 0.0
+	_pending_draw_attack = false
 
 
 func _start_slash() -> void:
@@ -984,11 +1028,7 @@ func _start_slash() -> void:
 	if _charge_effect != null:
 		_charge_effect.set_charge(0.0)
 	charge_changed.emit(0.0, false)
-	# Los tajos alternan A y B mientras el jugador siga golpeando. El tercero de
-	# la biblioteca (`Sword_Regular_C`) queda fuera a propósito: al retargetearlo
-	# el héroe gira sobre sí mismo como si no tuviera tronco. Sigue disponible en
-	# el catálogo por si alguna vez se usa con otra mecánica.
-	var chain := [LIB_SLASH_A, LIB_SLASH_B]
+	var chain := [LIB_SLASH_A, LIB_SLASH_B, LIB_SLASH_C]
 	if _slash_chain_window <= 0.0:
 		_slash_chain = 0
 	var library_slash: String = chain[_slash_chain % chain.size()]
@@ -1205,6 +1245,7 @@ func _finish_attack() -> void:
 
 
 func _cancel_melee_charge() -> void:
+	_limpiar_entrada_ataque()
 	if attack_phase != AttackPhase.CHARGING:
 		return
 	attack_phase = AttackPhase.NONE
@@ -2492,7 +2533,7 @@ func stow_weapon() -> bool:
 	_sheath_reverse = false
 	_start_mesh_move(
 		_equipped_mesh, _back_weapon_grip,
-		_pose_of(BACK_WEAPON_POSITION, BACK_WEAPON_EULER_DEGREES, float(EQUIPMENT_SPECS[equipped_slot].scale)),
+		_pose_arma_en_espalda(equipped_slot, equipped_item_id),
 		stow_transition, Callable()
 	)
 	weapon_stowed.emit(true)
@@ -2506,13 +2547,9 @@ func draw_weapon() -> bool:
 	_idle_combat_time = 0.0
 	_sheath_time = stow_transition
 	_sheath_reverse = true
-	var spec: Dictionary = EQUIPMENT_SPECS[equipped_slot]
 	_start_mesh_move(
 		_equipped_mesh, _weapon_grip,
-		Transform3D(
-			Basis.IDENTITY.scaled(Vector3.ONE * float(spec.scale)),
-			-(spec.get("grip_point", Vector3.ZERO) as Vector3) * float(spec.scale)
-		),
+		_pose_arma_en_mano(equipped_slot, equipped_item_id),
 		stow_transition, Callable()
 	)
 	weapon_stowed.emit(false)
@@ -2523,7 +2560,6 @@ func _update_weapon_carry(delta: float) -> void:
 	_update_mesh_move(delta)
 	if _pending_draw_attack and not _weapon_on_back and not is_drawing_equipment():
 		_pending_draw_attack = false
-		start_charge()
 	if not _is_stowable(equipped_slot) or is_mounted():
 		_idle_combat_time = 0.0
 		return
@@ -2579,10 +2615,7 @@ func equip_item(slot: int, objeto_remoto: String = "") -> bool:
 		_stowed_slot = equipped_slot
 		_start_mesh_move(
 			_stowed_mesh, _back_weapon_grip,
-			_pose_of(
-				BACK_WEAPON_POSITION, BACK_WEAPON_EULER_DEGREES,
-				float(EQUIPMENT_SPECS[equipped_slot].scale)
-			),
+			_pose_arma_en_espalda(equipped_slot, equipped_item_id),
 			stow_transition, Callable()
 		)
 		_equipped_mesh = null
@@ -2628,12 +2661,15 @@ func equip_item(slot: int, objeto_remoto: String = "") -> bool:
 		return false
 	if _weapon_grip.get_parent() != target_socket:
 		_weapon_grip.reparent(target_socket, false)
-	var grip_point: Vector3 = spec.get("grip_point", Vector3.ZERO)
+	var grip_point := _punto_agarre(slot, item_id)
 	var grip_euler := Vector3(
 		deg_to_rad(float(spec.get("grip_euler_degrees", Vector3.ZERO).x)),
 		deg_to_rad(float(spec.get("grip_euler_degrees", Vector3.ZERO).y)),
 		deg_to_rad(float(spec.get("grip_euler_degrees", Vector3.ZERO).z))
 	)
+	# El cuarto de vuelta deja el filo hacia fuera sin cambiar la dirección
+	# longitudinal del arma ni añadir correcciones por fotograma.
+	grip_euler = (Basis.from_euler(grip_euler) * Basis(Vector3.UP, deg_to_rad(float(spec.get("grip_roll_degrees", 0.0))))).get_euler()
 	_equipped_mesh.set_meta("held_in_right_hand", target_hand == "right")
 	_equipped_mesh.set_meta("held_in_hand", target_hand)
 	_equipped_mesh.set_meta("grip_position", HAND_GRIP_OFFSET)
@@ -2644,18 +2680,13 @@ func equip_item(slot: int, objeto_remoto: String = "") -> bool:
 	# que en el hacha está a media caña y en la espada bajo el pomo.
 	_weapon_grip.position = HAND_GRIP_OFFSET
 	_weapon_grip.rotation = grip_euler
-	_equipped_mesh.position = -grip_point * float(spec.scale) * _item_mesh_scale(equipped_item_id)
+	_equipped_mesh.position = -grip_point * float(spec.scale) * _item_mesh_scale(item_id)
 	if draw_from_back:
 		_back_weapon_grip.add_child(_equipped_mesh)
-		_equipped_mesh.transform = _pose_of(
-			BACK_WEAPON_POSITION, BACK_WEAPON_EULER_DEGREES, float(spec.scale)
-		)
+		_equipped_mesh.transform = _pose_arma_en_espalda(slot, item_id)
 		_start_mesh_move(
 			_equipped_mesh, _weapon_grip,
-			Transform3D(
-				Basis.IDENTITY.scaled(Vector3.ONE * float(spec.scale)),
-				-grip_point * float(spec.scale)
-			),
+			_pose_arma_en_mano(slot, item_id),
 			stow_transition, Callable()
 		)
 	else:

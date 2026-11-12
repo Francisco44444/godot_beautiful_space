@@ -43,6 +43,7 @@ const BONE_MAP := {
 ## el héroe puede blandir la espada de la biblioteca mientras sus piernas siguen
 ## caminando con la animación propia.
 const LOWER_BODY: Array[String] = ["Hips", "UpperLeg.L", "LowerLeg.L", "UpperLeg.R", "LowerLeg.R"]
+const TAJOS_SUPERIORES: Array[String] = ["Sword_Regular_A", "Sword_Regular_B", "Sword_Regular_C"]
 
 ## Solo se aplica el tren superior. Es lo que permite atacar en movimiento. Los
 ## gestos que se apoderan del cuerpo entero —talar, abrir un cofre, aterrizar—
@@ -79,6 +80,8 @@ var _ready_to_play := false
 var _source_ref: Dictionary = {}
 var _target_ref: Dictionary = {}
 var _calibrated := false
+var _pelvis_origen := -1
+var _inversa_pelvis_referencia := Basis.IDENTITY
 ## Reproductor del héroe, necesario para poder situarlo en su pose de referencia
 ## mientras se calibran las bases.
 var target_animator: AnimationPlayer
@@ -191,6 +194,12 @@ func _process_modification() -> void:
 		return
 	if _links.is_empty():
 		_build_links(skeleton)
+	# Los tajos giran la pelvis de la animación original. Las piernas del héroe
+	# siguen caminando: quitar ese giro heredado evita retorcerle el tronco.
+	var compensacion := Basis.IDENTITY
+	var compensar := upper_body_only and _current in TAJOS_SUPERIORES and _pelvis_origen >= 0
+	if compensar:
+		compensacion = (_source_skeleton.get_bone_global_pose(_pelvis_origen).basis.orthonormalized() * _inversa_pelvis_referencia).inverse()
 	var weight := clampf(influence, 0.0, 1.0)
 	for link in _links:
 		var target_bone := int(link["target"])
@@ -198,6 +207,8 @@ func _process_modification() -> void:
 		# Giro acumulado del hueso de la biblioteca desde su pose de referencia.
 		var moved := _source_skeleton.get_bone_global_pose(source_bone).basis.orthonormalized()
 		var delta := moved * (link["delta_base"] as Basis)
+		if compensar:
+			delta = compensacion * delta
 		var wanted := (delta * (link["target_ref"] as Basis)).orthonormalized()
 		var current := skeleton.get_bone_global_pose(target_bone)
 		var blended := current.basis.orthonormalized().slerp(wanted, weight)
@@ -286,6 +297,8 @@ func _calibrate(skeleton: Skeleton3D) -> void:
 		target_animator.play(target_previous, 0.0)
 		target_animator.seek(target_previous_time, true)
 	_calibrated = not _source_ref.is_empty()
+	_pelvis_origen = _source_skeleton.find_bone("pelvis")
+	_inversa_pelvis_referencia = (_source_ref.get("Hips", Basis.IDENTITY) as Basis).inverse()
 
 
 func _build_links(skeleton: Skeleton3D) -> void:
