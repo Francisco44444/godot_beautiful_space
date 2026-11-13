@@ -184,6 +184,8 @@ script = ExtResource("4_world")
 environment = SubResource("Environment_world")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
+; El disco solar es una malla; el cielo procedural tiene ángulo solar cero.
+sky_mode = 1
 rotation_degrees = Vector3(-81, -88, 0)
 light_color = Color(1, 0.91, 0.76, 1)
 light_energy = 1.24

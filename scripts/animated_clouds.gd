@@ -120,7 +120,9 @@ void fragment() {
 
 const PROCEDURAL_VEIL_SHADER := """
 shader_type spatial;
-render_mode unshaded, cull_front, blend_mix, depth_prepass_alpha;
+// El alfa máximo es 0.94: nunca alcanza el umbral 0.99 de la prepasada
+// opaca de Forward+. El velo no proyecta sombra y conserva su mezcla de color.
+render_mode unshaded, cull_front, blend_mix;
 
 uniform vec2 wind = vec2(1.0, 0.28);
 uniform vec2 world_anchor = vec2(0.0);
@@ -197,6 +199,8 @@ void fragment() {
 	vec3 direction = normalize(sky_direction);
 	float elevation = clamp(direction.y, 0.0, 1.0);
 	float above_horizon = smoothstep(0.008, 0.10, elevation);
+	// Con alfa exactamente cero no hay color, emisión ni profundidad que conservar.
+	if (above_horizon <= 0.0 || opacity <= 0.0) { discard; }
 	float horizon_blend = 1.0 - smoothstep(0.04, 0.48, direction.y);
 	vec2 normalized_wind = normalize(wind);
 	vec3 drift = vec3(normalized_wind.x, 0.0, normalized_wind.y) * TIME * speed;
@@ -222,6 +226,8 @@ void fragment() {
 		region_threshold + 0.065,
 		region_field
 	);
+	// Ambas capas multiplican cloud_region: fuera de sus bancos son transparentes.
+	if (cloud_region <= 0.0) { discard; }
 	// Primera escala: bancos atmosféricos realmente grandes. Una corona suave
 	// cerca del horizonte garantiza la neblina blanca lejana de la referencia.
 	vec3 broad_domain = direction * 4.10 + anchor + drift;

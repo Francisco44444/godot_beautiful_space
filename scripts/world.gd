@@ -50,6 +50,8 @@ const CLIFF_SAFE_DESCENTS: Array = [
 
 var sun_cycle_radians := 0.86
 var daylight_factor := 1.0
+# Contador de subidas reales: permite comprobar que una paleta quieta no se invalida.
+var actualizaciones_paleta_cielo := 0
 var time_of_day := "Día"
 var day_duration_seconds := 320.0
 var night_duration_seconds := 160.0
@@ -778,12 +780,27 @@ func _update_sun_cycle(delta: float) -> void:
 	var day_top := Color(0.16, 0.50, 0.88)
 	var day_horizon := Color(0.82, 0.94, 1.0)
 	var sunset_horizon := Color(1.0, 0.36, 0.12)
-	sky_material.sky_top_color = night_top.lerp(day_top, daylight_factor)
-	sky_material.sky_horizon_color = night_horizon.lerp(day_horizon, daylight_factor).lerp(sunset_horizon, twilight * 0.72)
-	sky_material.ground_bottom_color = Color(0.018, 0.025, 0.045).lerp(Color(0.20, 0.31, 0.18), daylight_factor)
+	# Reasignar el mismo color invalida la radiancia en Godot. Comparar sin
+	# tolerancia conserva todos los cambios del crepúsculo y evita reconstruir
+	# el cubemap de 512 cuando su paleta sigue siendo exactamente la misma.
+	var nuevo_superior := night_top.lerp(day_top, daylight_factor)
+	var nuevo_horizonte := night_horizon.lerp(day_horizon, daylight_factor).lerp(sunset_horizon, twilight * 0.72)
+	var nuevo_fondo := Color(0.018, 0.025, 0.045).lerp(Color(0.20, 0.31, 0.18), daylight_factor)
+	if sky_material.sky_top_color != nuevo_superior:
+		sky_material.sky_top_color = nuevo_superior
+		actualizaciones_paleta_cielo += 1
+	if sky_material.sky_horizon_color != nuevo_horizonte:
+		sky_material.sky_horizon_color = nuevo_horizonte
+		actualizaciones_paleta_cielo += 1
+	if sky_material.ground_bottom_color != nuevo_fondo:
+		sky_material.ground_bottom_color = nuevo_fondo
+		actualizaciones_paleta_cielo += 1
 	# El color bajo el horizonte coincide con el mar distante para borrar la
 	# línea blanca del final del mapa y reforzar la curvatura falsa del océano.
-	sky_material.ground_horizon_color = Color(0.035, 0.075, 0.16).lerp(Color(0.34, 0.64, 0.76), daylight_factor).lerp(sunset_horizon, twilight * 0.28)
+	var nuevo_horizonte_inferior := Color(0.035, 0.075, 0.16).lerp(Color(0.34, 0.64, 0.76), daylight_factor).lerp(sunset_horizon, twilight * 0.28)
+	if sky_material.ground_horizon_color != nuevo_horizonte_inferior:
+		sky_material.ground_horizon_color = nuevo_horizonte_inferior
+		actualizaciones_paleta_cielo += 1
 	environment.ambient_light_energy = lerpf(0.22, 0.66, daylight_factor) * maxf(storm_dimming, 0.34)
 	environment.ambient_light_color = Color(0.28, 0.36, 0.62).lerp(Color(0.91, 0.93, 0.87), daylight_factor)
 	environment.tonemap_exposure = lerpf(0.84, 0.98, daylight_factor)

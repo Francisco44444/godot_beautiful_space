@@ -645,6 +645,9 @@ func _build_moon() -> void:
 	moon_light.name = "MoonLight"
 	moon_light.light_color = Color(0.52, 0.66, 1.0)
 	moon_light.light_energy = 0.0
+	# Los astros visibles son mallas independientes. Con el disco procedural
+	# desactivado, esta luz ilumina el mundo sin invalidar la radiancia del cielo.
+	moon_light.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	moon_light.shadow_enabled = false
 	var directional_sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
 	if directional_sun != null:
