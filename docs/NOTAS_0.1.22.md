@@ -6,6 +6,6 @@
 - A 2560×1440: villa 44,57→55,03 FPS; bosque 31,22→34,62 FPS.
 - Nuevas pruebas gráficas y de paleta/caché; cooperativo real comprobado.
 
-[Mediciones y límites](https://github.com/Francisco 44444/godot_beautiful_space/blob/v 0.1.22/docs/CACHE_CIELO_Y_PANTALLA_GRANDE.md).
+[Mediciones y límites](https://github.com/Francisco44444/godot_beautiful_space/blob/v0.1.22/docs/CACHE_CIELO_Y_PANTALLA_GRANDE.md).
 El objetivo general 100–120 FPS sigue pendiente; Windows necesita medición real.
 ZIP con .exe como descarga principal, instalador como alternativa.
