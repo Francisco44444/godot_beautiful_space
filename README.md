@@ -4,6 +4,7 @@ Aventura medieval en tercera persona construida con Godot 4.7, GDScript y Terrai
 
 ## Estado actual
 
+- Perfiles opcionales para ventanas grandes: Nativo conserva la nitidez; Equilibrado y Más fluido reconstruyen desde menor resolución 3D. [Mediciones, pérdida de nitidez y límites](docs/PERFILES_PANTALLA_GRANDE.md).
 - Caché del cielo y nubes optimizadas: +10,60–24,19 % de FPS medios en seis vistas de este Mac con el ciclo solar activo, a 1600×900 y 2560×1440 nativos. [Mediciones y límites](docs/CACHE_CIELO_Y_PANTALLA_GRANDE.md).
 
 - Terreno con normales constantes verificadas en GPU: entre +2,18 % y +9,86 % de FPS medios en las siete vistas medidas del Mac, conservando la calidad y la oclusión. [Mediciones y comprobaciones](docs/NORMALES_DEL_TERRENO.md). El objetivo general de 100–120 FPS sigue pendiente.

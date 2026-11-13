@@ -4,6 +4,10 @@ extends SceneTree
 ## ya se representan con mallas y parámetros idénticos que ensucian el cubemap.
 var mundo: Node3D
 
+class TormentaDeControl extends Node:
+	var atenuacion := 1.0
+	func get_dimming() -> float: return atenuacion
+
 func _init() -> void: call_deferred("_comprobar")
 
 func _comprobar() -> void:
@@ -25,6 +29,10 @@ func _comprobar() -> void:
 	var luna := mundo.get_node("IslandEnvironment").get("moon_light") as DirectionalLight3D
 	for luz in [sol, luna, mundo.get_node("SkyFill")]:
 		if not _exigir(luz.sky_mode == DirectionalLight3D.SKY_MODE_LIGHT_ONLY and luz.light_angular_distance == 0.0, "Una luz direccional vuelve a invalidar el cielo con discos inactivos."): return
+	var isla := mundo.get_node("IslandEnvironment")
+	if not _exigir(sol.get_child_count() == 0 and luna.get_child_count() == 0, "Ocultar una luz retiraría también sus hijos visuales."): return
+	if not _exigir(not sol.is_ancestor_of(isla.sun_visual) and not luna.is_ancestor_of(isla.moon_visual), "Los astros dependen de la visibilidad de las luces."): return
+	if not _probar_luces_no_nulas(sol,luna,isla): return
 	# Valores canónicos del diseño previo: la paleta se conserva al pasar por
 	# día y noche, no sólo en una captura que podría quedar congelada.
 	for caso in [{"fase":PI * 0.5,"colores":[Color(0.16,0.50,0.88),Color(0.82,0.94,1.0),Color(0.20,0.31,0.18),Color(0.34,0.64,0.76)]},{"fase":PI * 1.5,"colores":[Color(0.012,0.025,0.10),Color(0.075,0.11,0.20),Color(0.018,0.025,0.045),Color(0.035,0.075,0.16)]}]:
@@ -38,6 +46,7 @@ func _comprobar() -> void:
 			mundo._update_sun_cycle(0.0)
 			if not _exigir(mundo.actualizaciones_paleta_cielo == subidas, "Repetir una paleta idéntica vuelve a subir uniformes e invalidar la radiancia."): return
 			if not _exigir(_paleta(material) == actual, "Una fase fija no conserva exactamente sus colores."): return
+			if not _visibilidad_exacta(sol,luna): return
 		if caso.fase < PI:
 			if not _exigir(is_equal_approx(sol.light_energy,1.35) and sol.shadow_enabled and is_equal_approx(entorno.ambient_light_energy,0.66), "La optimización debilita la luz o las sombras diurnas."): return
 		else:
@@ -48,6 +57,7 @@ func _comprobar() -> void:
 	for i in 12289:
 		mundo.sun_cycle_radians = TAU * float(i) / 12288.0
 		mundo._update_sun_cycle(0.0)
+		if not _visibilidad_exacta(sol,luna): return
 		var actual := _paleta(material)
 		if not anterior.is_empty():
 			for canal in 4:
@@ -57,8 +67,40 @@ func _comprobar() -> void:
 					if diferencia > 0.0: transiciones += 1
 		anterior = actual
 	if not _exigir(transiciones > 1000 and maximo < 0.015, "El ciclo pierde cambios de color o introduce un salto en el crepúsculo."): return
-	print("SKY RADIANCE TEST OK: cubemap 512, tres luces sólo mundo, paletas, 200 repeticiones exactas y 12289 fases; salto máximo %.6f." % maximo)
+	print("SKY RADIANCE TEST OK: cubemap 512, luces sólo mundo, cero exacto, aportes pequeños/negativos, astros independientes, paletas, 200 repeticiones y 12289 fases; salto máximo %.6f." % maximo)
 	quit(0)
+
+func _visibilidad_exacta(sol: DirectionalLight3D,luna: DirectionalLight3D) -> bool:
+	return _exigir(sol.visible == (sol.light_energy != 0.0) and luna.visible == (luna.light_energy != 0.0), "Una luz nula sigue en el render o se oculta un aporte no nulo.")
+
+func _probar_luces_no_nulas(sol: DirectionalLight3D,luna: DirectionalLight3D,isla: Node) -> bool:
+	var control := TormentaDeControl.new()
+	mundo.add_child(control)
+	control.add_to_group("atmosphere_storm")
+	mundo.sun_cycle_radians = PI * 0.5
+	# El atenuador de prueba alcanza el setter real del sol, incluidos los
+	# pequeños valores que un is_zero_approx descartaría sin ser nulos.
+	for valor in PackedFloat32Array([0.0,0.000000001,-0.000000001]):
+		control.atenuacion = valor
+		mundo._update_sun_cycle(0.0)
+		if not _exigir(sol.visible == (sol.light_energy != 0.0), "La visibilidad solar descarta una energía pequeña o negativa."):
+			control.free(); return false
+		if valor != 0.0 and not _exigir(sol.light_energy != 0.0, "El control solar no alcanza un aporte no nulo real."):
+			control.free(); return false
+		if not _exigir(isla.sun_visual.is_visible_in_tree(), "Ocultar el foco solar borra también su disco independiente."):
+			control.free(); return false
+	control.free()
+	# Justo bajo el umbral diurno queda un aporte lunar muy pequeño y positivo.
+	for claridad in PackedFloat64Array([1.0,0.11 - 0.0000001,0.0]):
+		isla.sincronizar_luz_celeste(claridad)
+		if not _exigir(luna.visible == (luna.light_energy != 0.0), "La visibilidad lunar descarta un aporte pequeño o conserva uno nulo."): return false
+		if claridad > 0.0 and claridad < 1.0:
+			if not _exigir(luna.light_energy > 0.0 and luna.light_energy < 0.00000001, "El control lunar no alcanza un aporte positivo diminuto."): return false
+	isla.sincronizar_luz_celeste(0.0)
+	luna.visible = false
+	if not _exigir(isla.moon_visual.is_visible_in_tree(), "Ocultar el foco lunar borra también su disco independiente."): return false
+	isla.sincronizar_luz_celeste(0.0)
+	return true
 
 func _paleta(material: ProceduralSkyMaterial) -> Array[Color]:
 	return [material.sky_top_color,material.sky_horizon_color,material.ground_bottom_color,material.ground_horizon_color]

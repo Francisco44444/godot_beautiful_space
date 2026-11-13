@@ -269,6 +269,8 @@ func sincronizar_luz_celeste(daylight: float, camera: Camera3D = null) -> void:
 		moon_visual.visible = night > 0.025
 	if moon_light != null:
 		moon_light.light_energy = night * 0.72
+		# Sin umbral: el primer aporte del crepúsculo sigue siendo visible.
+		moon_light.visible = moon_light.light_energy != 0.0
 		var moon_owns_shadows := night >= MOON_SHADOW_HANDOFF
 		moon_light.shadow_enabled = moon_owns_shadows
 		moon_light.shadow_opacity = smoothstep(MOON_SHADOW_HANDOFF, NOCHE_SOMBRA_LUNA_COMPLETA, night)

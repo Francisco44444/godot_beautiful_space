@@ -17,6 +17,8 @@ var settings_open := false
 var settings_overlay: ColorRect
 var settings_controls: RichTextLabel
 var resolution_selector: OptionButton
+var render_profile_selector: OptionButton
+var render_profile_description: Label
 var vsync_toggle: CheckButton
 var lod_slider: HSlider
 var lod_value_label: Label
@@ -128,6 +130,7 @@ func _ready() -> void:
 	GameSettings.resolution_changed.connect(_sync_resolution_selector)
 	GameSettings.lod_distance_changed.connect(_sync_lod_slider)
 	GameSettings.vsync_changed.connect(_sync_vsync_toggle)
+	GameSettings.render_profile_changed.connect(_sync_render_profile_selector)
 	GameSettings.identity_changed.connect(_sync_identity_controls)
 	NetworkSession.session_started.connect(_on_network_session_started)
 	NetworkSession.session_ended.connect(_sincronizar_pausa)
@@ -339,6 +342,7 @@ func _set_settings_open(open: bool) -> void:
 		mini_map.visible = false
 		settings_controls.text = _controls_summary()
 		_sync_resolution_selector(GameSettings.resolution)
+		_sync_render_profile_selector(GameSettings.render_profile)
 		_sync_lod_slider(GameSettings.lod_distance_metres)
 		_sync_vsync_toggle(GameSettings.vsync_enabled)
 		_sync_identity_controls(GameSettings.player_name, GameSettings.character_index)
@@ -1210,6 +1214,27 @@ func _build_settings_overlay() -> void:
 		resolution_selector.add_item("%d × %d" % [resolution.x, resolution.y])
 	resolution_selector.item_selected.connect(_on_resolution_selected)
 	resolution_row.add_child(resolution_selector)
+	var render_profile_row := HBoxContainer.new()
+	render_profile_row.name = "RenderProfileRow"
+	render_profile_row.add_theme_constant_override("separation", 18)
+	content.add_child(render_profile_row)
+	var render_profile_title := Label.new()
+	render_profile_title.text = "Renderizado 3D"
+	render_profile_title.custom_minimum_size.x = 260.0
+	render_profile_title.add_theme_font_size_override("font_size", 18)
+	render_profile_row.add_child(render_profile_title)
+	render_profile_selector = OptionButton.new()
+	render_profile_selector.name = "RenderProfileSelector"
+	render_profile_selector.custom_minimum_size = Vector2(230.0, 38.0)
+	for option in GameSettings.RENDER_PROFILE_OPTIONS:
+		render_profile_selector.add_item(option)
+	render_profile_selector.item_selected.connect(_on_render_profile_selected)
+	render_profile_row.add_child(render_profile_selector)
+	render_profile_description = Label.new()
+	render_profile_description.name = "RenderProfileDescription"
+	render_profile_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	render_profile_description.add_theme_font_size_override("font_size", 15)
+	content.add_child(render_profile_description)
 	vsync_toggle = CheckButton.new()
 	vsync_toggle.name = "VSyncToggle"
 	vsync_toggle.text = "Sincronizar con la pantalla (VSync)"
@@ -1279,6 +1304,7 @@ func _build_settings_overlay() -> void:
 	close_button.pressed.connect(func() -> void: _set_settings_open(false))
 	button_row.add_child(close_button)
 	_sync_resolution_selector(GameSettings.resolution)
+	_sync_render_profile_selector(GameSettings.render_profile)
 	_sync_lod_slider(GameSettings.lod_distance_metres)
 	_sync_vsync_toggle(GameSettings.vsync_enabled)
 	_sync_identity_controls(GameSettings.player_name, GameSettings.character_index)
@@ -2377,6 +2403,18 @@ func _on_resolution_selected(index: int) -> void:
 	settings_status.text = "Resolución aplicada: %d × %d" % [resolutions[index].x, resolutions[index].y]
 
 
+func _on_render_profile_selected(index: int) -> void:
+	GameSettings.set_render_profile(index)
+	settings_status.text = "Renderizado 3D: %s" % GameSettings.RENDER_PROFILE_OPTIONS[GameSettings.render_profile]
+
+
+func _sync_render_profile_selector(profile: int) -> void:
+	if render_profile_selector != null:
+		render_profile_selector.select(profile)
+	if render_profile_description != null:
+		render_profile_description.text = GameSettings.render_profile_description()
+
+
 func _on_lod_distance_changed(value: float) -> void:
 	GameSettings.set_lod_distance(value)
 	settings_status.text = "Distancia LOD aplicada a todo el mundo"
@@ -2393,6 +2431,7 @@ func _sync_vsync_toggle(value: bool) -> void:
 
 
 func _sync_resolution_selector(resolution: Vector2i) -> void:
+	_sync_render_profile_selector(GameSettings.render_profile)
 	if resolution_selector == null:
 		return
 	var resolutions := GameSettings.get_supported_resolutions()

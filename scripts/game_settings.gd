@@ -7,7 +7,11 @@ extends Node
 signal resolution_changed(resolution: Vector2i)
 signal lod_distance_changed(distance_metres: float)
 signal vsync_changed(enabled: bool)
+signal render_profile_changed(profile: int)
 signal identity_changed(player_name: String, character_index: int)
+
+const PerfilesRender = preload("res://scripts/perfiles_render.gd")
+const RENDER_PROFILE_OPTIONS: Array[String] = ["Nativo", "Equilibrado", "Más fluido"]
 
 const SETTINGS_PATH := "user://graphics_settings.cfg"
 const SETTINGS_SCHEMA_VERSION := 2
@@ -38,6 +42,7 @@ const SUPPORTED_RESOLUTIONS: Array[Vector2i] = [
 var resolution := DEFAULT_RESOLUTION
 var lod_distance_metres := DEFAULT_LOD_DISTANCE
 var vsync_enabled := true
+var render_profile := 0
 var settings_path := SETTINGS_PATH
 var player_name := DEFAULT_PLAYER_NAME
 var character_index := DEFAULT_CHARACTER_INDEX
@@ -49,7 +54,11 @@ func _ready() -> void:
 	if _settings_need_migration_save:
 		_save_settings()
 	_apply_vsync()
+	# La reconstrucción sólo se recalcula al cambiar el ajuste o el tamaño real;
+	# ampliar la ventana con el ratón no añade trabajo a cada fotograma.
+	get_window().size_changed.connect(_apply_render_profile)
 	call_deferred("_apply_resolution")
+	call_deferred("_apply_render_profile")
 
 
 func set_resolution(value: Vector2i, persist: bool = true) -> void:
@@ -72,6 +81,33 @@ func set_vsync_enabled(value: bool, persist: bool = true) -> void:
 	_apply_vsync()
 	vsync_changed.emit(vsync_enabled)
 	if persist: _save_settings()
+
+
+func set_render_profile(value: int, persist: bool = true) -> void:
+	render_profile = value if value >= 0 and value < RENDER_PROFILE_OPTIONS.size() else 0
+	_apply_render_profile()
+	render_profile_changed.emit(render_profile)
+	if persist: _save_settings()
+
+
+func render_profile_description() -> String:
+	match render_profile:
+		1: return "Reconstruye la imagen 3D para ganar fluidez; los detalles finos pueden perder nitidez. Interfaz a resolución completa."
+		2: return "Prioriza los FPS con menor nitidez en la imagen 3D. Interfaz a resolución completa."
+	return "Máxima nitidez: imagen 3D e interfaz a resolución completa."
+
+
+func _apply_render_profile() -> void:
+	if not is_inside_tree(): return
+	var ventana := get_window()
+	var renderer := "headless" if DisplayServer.get_name() == "headless" else RenderingServer.get_current_rendering_method()
+	var dispositivo := RenderingServer.get_rendering_device() if renderer == "forward_plus" else null
+	var metal_espacial := dispositivo != null and dispositivo.has_feature(RenderingDevice.SUPPORTS_METALFX_SPATIAL)
+	var perfil := PerfilesRender.resolver(render_profile,ventana.size,renderer,metal_espacial)
+	# El perfil no toca densidad, distancias, iluminación, LOD ni antialiasing.
+	# Nativo sigue siendo el valor inicial y el retorno seguro sin soporte.
+	ventana.scaling_3d_mode = perfil.mode
+	ventana.scaling_3d_scale = perfil.scale
 
 
 func set_player_identity(name_value: String, index_value: int, persist: bool = true) -> void:
@@ -100,6 +136,7 @@ func reset_defaults(persist: bool = true) -> void:
 	set_resolution(DEFAULT_RESOLUTION, false)
 	set_lod_distance(DEFAULT_LOD_DISTANCE, false)
 	set_vsync_enabled(true, false)
+	set_render_profile(0, false)
 	set_player_identity(DEFAULT_PLAYER_NAME, DEFAULT_CHARACTER_INDEX, false)
 	if persist:
 		_save_settings()
@@ -136,6 +173,8 @@ func _load_settings() -> void:
 		stored_resolution = DEFAULT_RESOLUTION
 	resolution = _closest_supported_resolution(stored_resolution)
 	vsync_enabled = bool(config.get_value("video", "vsync_enabled", true))
+	var stored_profile := int(config.get_value("graphics", "render_profile", 0))
+	render_profile = stored_profile if stored_profile >= 0 and stored_profile < RENDER_PROFILE_OPTIONS.size() else 0
 	lod_distance_metres = snappedf(clampf(
 		float(config.get_value("graphics", "lod_distance_metres", DEFAULT_LOD_DISTANCE)),
 		MIN_LOD_DISTANCE,
@@ -156,6 +195,7 @@ func _save_settings() -> void:
 	config.set_value("video", "width", resolution.x)
 	config.set_value("video", "height", resolution.y)
 	config.set_value("video", "vsync_enabled", vsync_enabled)
+	config.set_value("graphics", "render_profile", render_profile)
 	config.set_value("graphics", "lod_distance_metres", lod_distance_metres)
 	config.set_value("identity", "player_name", player_name)
 	config.set_value("identity", "character_index", character_index)

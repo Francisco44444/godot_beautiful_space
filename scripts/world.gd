@@ -755,6 +755,9 @@ func _update_sun_cycle(delta: float) -> void:
 	# borraría en el fotograma siguiente y el giro saldría a plena luz.
 	var storm_dimming := _atmosphere_storm_dimming()
 	sun.light_energy = daylight_factor * lerpf(0.62, 1.35, maxf(solar_height, 0.0)) * storm_dimming
+	# Forward+ mantiene el BRDF de una direccional con energía cero. Retirar
+	# sólo la luz conserva el astro independiente y todo valor no nulo.
+	sun.visible = sun.light_energy != 0.0
 	sun.light_color = Color(1.0, 0.58, 0.32).lerp(Color(1.0, 0.93, 0.79), smoothstep(0.05, 0.62, solar_height))
 	if island_environment != null:
 		island_environment.sincronizar_luz_celeste(daylight_factor)

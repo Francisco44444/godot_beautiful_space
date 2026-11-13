@@ -12,6 +12,9 @@ var _main: VBoxContainer
 var _page: VBoxContainer
 var _page_title: Label
 var _page_content: VBoxContainer
+var _page_scroll: ScrollContainer
+var _render_profile_selector: OptionButton
+var _render_profile_description: Label
 var _save_list: ItemList
 var _status: Label
 var _credits_bbcode := ""
@@ -28,6 +31,8 @@ func _ready() -> void:
 	visible = false
 	_build_interface()
 	SaveGameManager.status_changed.connect(_set_status)
+	GameSettings.render_profile_changed.connect(_sync_render_profile_selector)
+	GameSettings.resolution_changed.connect(_on_resolution_changed)
 
 
 func set_open(open: bool) -> void:
@@ -97,15 +102,26 @@ func _build_interface() -> void:
 	_page.name = "SubPage"
 	_page.visible = false
 	_page.add_theme_constant_override("separation", 12)
+	_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root_content.add_child(_page)
 	_page_title = Label.new()
 	_page_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_page_title.add_theme_font_size_override("font_size", 23)
 	_page_title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.48))
 	_page.add_child(_page_title)
+	# El contenido puede crecer sin sacar el botón Volver de una ventana 1280×720.
+	_page_scroll = ScrollContainer.new()
+	_page_scroll.name = "PageScroll"
+	_page_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_page_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_page_scroll.custom_minimum_size.y = 240.0
+	_page_scroll.follow_focus = true
+	_page.add_child(_page_scroll)
 	_page_content = VBoxContainer.new()
+	_page_content.name = "PageContent"
+	_page_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_page_content.add_theme_constant_override("separation", 10)
-	_page.add_child(_page_content)
+	_page_scroll.add_child(_page_content)
 	var back := Button.new()
 	UiTheme.style_button(back)
 	back.name = "BackButton"
@@ -133,6 +149,9 @@ func _add_main_button(text_value: String, node_name: String, callback: Callable)
 
 
 func _clear_page(title_value: String) -> void:
+	_render_profile_selector = null
+	_render_profile_description = null
+	_page_scroll.scroll_vertical = 0
 	for child in _page_content.get_children():
 		_page_content.remove_child(child)
 		child.queue_free()
@@ -206,6 +225,22 @@ func _show_graphics() -> void:
 		GameSettings.set_resolution(GameSettings.get_supported_resolutions()[index])
 	)
 	_page_content.add_child(selector)
+	var render_profile_title := Label.new()
+	render_profile_title.text = "Renderizado 3D"
+	_page_content.add_child(render_profile_title)
+	_render_profile_selector = OptionButton.new()
+	_render_profile_selector.name = "RenderProfileSelector"
+	_render_profile_selector.custom_minimum_size.y = 36.0
+	for option in GameSettings.RENDER_PROFILE_OPTIONS:
+		_render_profile_selector.add_item(option)
+	_render_profile_selector.item_selected.connect(GameSettings.set_render_profile)
+	_page_content.add_child(_render_profile_selector)
+	_render_profile_description = Label.new()
+	_render_profile_description.name = "RenderProfileDescription"
+	_render_profile_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_render_profile_description.add_theme_font_size_override("font_size", 15)
+	_page_content.add_child(_render_profile_description)
+	_sync_render_profile_selector(GameSettings.render_profile)
 	var lod_label := Label.new()
 	lod_label.text = "Distancia de detalle: %.0f m" % GameSettings.lod_distance_metres
 	_page_content.add_child(lod_label)
@@ -234,6 +269,17 @@ func _show_graphics() -> void:
 	hint.text = "El LOD cambia automáticamente modelos lejanos por versiones ligeras."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_page_content.add_child(hint)
+
+
+func _sync_render_profile_selector(profile: int) -> void:
+	if is_instance_valid(_render_profile_selector):
+		_render_profile_selector.select(profile)
+	if is_instance_valid(_render_profile_description):
+		_render_profile_description.text = GameSettings.render_profile_description()
+
+
+func _on_resolution_changed(_resolution: Vector2i) -> void:
+	_sync_render_profile_selector(GameSettings.render_profile)
 
 
 func _show_sound() -> void:

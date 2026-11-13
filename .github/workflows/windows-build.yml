@@ -144,6 +144,10 @@ jobs:
             --headless --path . --script res://tests/celestial_transition_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/sky_radiance_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/render_profiles_test.gd
+          timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/render_profile_settings_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/exploration_manager_test.gd
           timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
