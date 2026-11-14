@@ -173,6 +173,9 @@ const CHARACTER_PATHS: Array[String] = [
 ## no en el mundo, el arma hereda la rotación real de la mano en cada fotograma
 ## y deja de parecer atada al antebrazo.
 const HAND_GRIP_OFFSET := Vector3(0.0, 0.105, 0.0)
+## El puño del rig empieza en Y=0,142 y su centro medido está en Y=0,258.
+## El hacha usaba 0,105: quedaba junto a la muñeca, fuera de la mano.
+const AXE_HAND_GRIP_OFFSET := Vector3(0.0, 0.25, 0.015)
 const EQUIPMENT_SPECS: Dictionary = {
 	1: {
 		"category": "sword", "node_name": "EquippedSword",
@@ -2672,13 +2675,14 @@ func equip_item(slot: int, objeto_remoto: String = "") -> bool:
 	grip_euler = (Basis.from_euler(grip_euler) * Basis(Vector3.UP, deg_to_rad(float(spec.get("grip_roll_degrees", 0.0))))).get_euler()
 	_equipped_mesh.set_meta("held_in_right_hand", target_hand == "right")
 	_equipped_mesh.set_meta("held_in_hand", target_hand)
-	_equipped_mesh.set_meta("grip_position", HAND_GRIP_OFFSET)
+	var desplazamiento_agarre := AXE_HAND_GRIP_OFFSET if slot == 2 else HAND_GRIP_OFFSET
+	_equipped_mesh.set_meta("grip_position", desplazamiento_agarre)
 	_equipped_mesh.set_meta("grip_point", grip_point)
 	_equipped_mesh.set_meta("grip_euler", grip_euler)
 	# El puño se cierra sobre `grip_point`: desplazamos la malla para que ese
 	# punto caiga en el centro de la mano en lugar de su origen de exportación,
 	# que en el hacha está a media caña y en la espada bajo el pomo.
-	_weapon_grip.position = HAND_GRIP_OFFSET
+	_weapon_grip.position = desplazamiento_agarre
 	_weapon_grip.rotation = grip_euler
 	_equipped_mesh.position = -grip_point * float(spec.scale) * _item_mesh_scale(item_id)
 	if draw_from_back:

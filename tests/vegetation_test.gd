@@ -20,10 +20,6 @@ const EXPECTED_GRASS_CLUMPS_PER_PATCH := 12000
 const MAX_GRASS_FULL_TRIANGLES_PER_PATCH := 12000
 const MAX_GRASS_MID_TRIANGLES_PER_PATCH := 1200
 const MAX_GRASS_LOD_TRIANGLES_PER_PATCH := 192
-const EXPECTED_FERN_COUNT := 800
-const EXPECTED_SHRUB_COUNT := 700
-const EXPECTED_FLOWER_COUNT := 500
-const EXPECTED_MUSHROOM_COUNT := 2200
 const EXPECTED_PATH_PEBBLE_COUNT := 12000
 const EXPECTED_CHARACTER_COUNT := 50
 const MIN_EXPECTED_CELL_COUNT := 2800
@@ -263,8 +259,8 @@ func _run_test() -> void:
 	if scatter.generated_green_tree_count + scatter.generated_snow_tree_count + scatter.generated_mystery_tree_count + scatter.generated_autumn_tree_count != scatter.generated_tree_count:
 		_fail("El reparto de árboles verdes, nevados, tenebrosos y otoñales no coincide con el total.")
 		return
-	if scatter.generated_snow_tree_count < 1200 or scatter.generated_snow_grass_count != 0 or scatter.generated_snow_fern_count <= 0 or scatter.generated_snow_shrub_count <= 0:
-		_fail("La cordillera debe conservar árboles y plantas nevadas, pero ninguna instancia de hierba.")
+	if scatter.generated_snow_tree_count < 1200 or scatter.generated_snow_grass_count != 0 or scatter.generated_snow_fern_count != 0 or scatter.generated_snow_shrub_count != 0:
+		_fail("La cordillera debe conservar sus árboles nevados, sin hierba ni sotobosque retirado.")
 		return
 	var high_snow_point := Vector2(520.0, -3000.0)
 	var high_snow_height := terrain.data.get_height(Vector3(high_snow_point.x, 0.0, high_snow_point.y))
@@ -369,10 +365,6 @@ func _run_test() -> void:
 		["rocas musgosas", scatter.moss_rock_count, scatter.generated_moss_rock_count, EXPECTED_MOSS_ROCK_COUNT],
 		["cactus", scatter.cactus_count, scatter.generated_cactus_count, EXPECTED_CACTUS_COUNT],
 		["hierba", scatter.grass_count, scatter.generated_grass_count - int(scatter.get_meta("village_grass_added", 0)), EXPECTED_GRASS_COUNT],
-		["helechos", scatter.fern_count, scatter.generated_fern_count + int(scatter.get_meta("urban_ferns_removed", 0)), EXPECTED_FERN_COUNT],
-		["arbustos", scatter.shrub_count, scatter.generated_shrub_count + int(scatter.get_meta("urban_shrubs_removed", 0)), EXPECTED_SHRUB_COUNT],
-		["flores", scatter.flower_count, scatter.generated_flower_count + int(scatter.get_meta("urban_flowers_removed", 0)), EXPECTED_FLOWER_COUNT],
-		["setas", scatter.mushroom_count, scatter.generated_mushroom_count + int(scatter.get_meta("urban_mushrooms_removed", 0)), EXPECTED_MUSHROOM_COUNT],
 		["guijarros", scatter.path_pebble_count, scatter.generated_path_pebble_count, EXPECTED_PATH_PEBBLE_COUNT],
 	]
 	for spec in count_specs:
@@ -395,6 +387,20 @@ func _run_test() -> void:
 			_fail("Una roca decorativa quedó fuera de la arena transitable del desierto: %s." % rock_point)
 			return
 
+	for categoria in ["FernCells","ShrubCells","FlowerCells","MushroomCells"]:
+		if scatter.has_node(categoria):
+			_fail("Reaparece una categoría de plantas retirada: "+categoria)
+			return
+	if scatter.generated_fern_count!=0 or scatter.generated_shrub_count!=0 or scatter.generated_flower_count!=0 or scatter.generated_mushroom_count!=0 or not scatter.get_meta("sotobosque_decorativo_retirado",false):
+		_fail("Se genera sotobosque oculto bajo la pradera elegida.")
+		return
+	for biblioteca in ["_fern_meshes","_shrub_meshes","_flower_meshes","_mushroom_meshes"]:
+		if not (scatter.get(biblioteca) as Array).is_empty():
+			_fail("Se cargan mallas de una planta retirada: "+biblioteca)
+			return
+	if (scatter.get("_grass_meshes") as Array).size()!=1 or int(scatter.get("_dense_grass_offset"))!=0:
+		_fail("Se cargan hierbas antiguas además de la pradera elegida.")
+		return
 	var cell_specs: Array[Array] = [
 		["TreeCells", scatter.generated_tree_count],
 		["RockCells", scatter.generated_rock_count],
@@ -402,17 +408,12 @@ func _run_test() -> void:
 		["CactusCells", scatter.generated_cactus_count],
 		["GrassCells", scatter.generated_grass_count],
 		["GrassMidLODCells", scatter.generated_grass_count],
-		["FernCells", scatter.generated_fern_count],
-		["ShrubCells", scatter.generated_shrub_count],
-		["FlowerCells", scatter.generated_flower_count],
-		["MushroomCells", scatter.generated_mushroom_count],
 		["PathDetailCells", scatter.generated_path_pebble_count],
 		["ForestDetailCells", scatter.forest_detail_count],
 		["MysteryDeadTreeCells", scatter.generated_mystery_dead_tree_count],
 	]
 	var reduced_vegetation_lod_categories := PackedStringArray([
-		"TreeCells", "FernCells", "ShrubCells", "FlowerCells",
-		"MushroomCells", "ForestDetailCells", "MysteryDeadTreeCells",
+		"TreeCells", "ForestDetailCells", "MysteryDeadTreeCells",
 	])
 	var counted_cells := 0
 	for spec in cell_specs:
@@ -974,7 +975,7 @@ func _run_test() -> void:
 		await process_frame
 	print(
 		"QUATERNIUS TEST OK: %d árboles + %d proxies (%.1f%% lejos de rutas), %d hierbas fijas con fundido LOD, %d celdas base, %d elementos y %d personajes."
-		% [EXPECTED_TREE_COUNT, tree_lod_instance_total, float(far_from_route_count) * 100.0 / float(EXPECTED_TREE_COUNT), grass_lod_instance_total, generated_cell_total, EXPECTED_TREE_COUNT + EXPECTED_ROCK_COUNT + EXPECTED_MOSS_ROCK_COUNT + EXPECTED_CACTUS_COUNT + EXPECTED_MYSTERY_DEAD_TREE_COUNT + EXPECTED_GRASS_COUNT + EXPECTED_FERN_COUNT + EXPECTED_SHRUB_COUNT + EXPECTED_FLOWER_COUNT + EXPECTED_MUSHROOM_COUNT + EXPECTED_PATH_PEBBLE_COUNT, EXPECTED_CHARACTER_COUNT]
+		% [EXPECTED_TREE_COUNT, tree_lod_instance_total, float(far_from_route_count) * 100.0 / float(EXPECTED_TREE_COUNT), grass_lod_instance_total, generated_cell_total, EXPECTED_TREE_COUNT + EXPECTED_ROCK_COUNT + EXPECTED_MOSS_ROCK_COUNT + EXPECTED_CACTUS_COUNT + EXPECTED_MYSTERY_DEAD_TREE_COUNT + EXPECTED_GRASS_COUNT + EXPECTED_PATH_PEBBLE_COUNT, EXPECTED_CHARACTER_COUNT]
 	)
 	quit(0)
 

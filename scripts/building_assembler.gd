@@ -444,6 +444,7 @@ func _add_roof_mesh(mesh_name: String, placement: Transform3D, roof: Dictionary,
 			for surface in visual.mesh.get_surface_count():
 				_clip_roof_surface(mesh, visual.mesh, surface, placement.basis * visual.transform.basis,
 					local_min, local_max)
+		mesh = preload("res://scripts/lod_tejados.gd").aplicar(mesh)
 		_trimmed_roofs[key] = mesh
 	source.free()
 	if mesh.get_surface_count() == 0:

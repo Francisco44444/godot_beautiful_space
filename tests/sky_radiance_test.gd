@@ -91,7 +91,7 @@ func _probar_luces_no_nulas(sol: DirectionalLight3D,luna: DirectionalLight3D,isl
 			control.free(); return false
 	control.free()
 	# Justo bajo el umbral diurno queda un aporte lunar muy pequeño y positivo.
-	for claridad in PackedFloat64Array([1.0,0.11 - 0.0000001,0.0]):
+	for claridad in PackedFloat64Array([1.0,0.95 - 0.0000001,0.0]):
 		isla.sincronizar_luz_celeste(claridad)
 		if not _exigir(luna.visible == (luna.light_energy != 0.0), "La visibilidad lunar descarta un aporte pequeño o conserva uno nulo."): return false
 		if claridad > 0.0 and claridad < 1.0:

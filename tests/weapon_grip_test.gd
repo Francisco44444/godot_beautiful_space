@@ -10,6 +10,7 @@ var jugador: Player
 var inventario: Node
 var error_maximo := 0.0
 var filo_minimo := 1.0
+var _palmas := {}
 
 func _init() -> void: call_deferred("_comprobar")
 
@@ -75,12 +76,48 @@ func _comprobar_mano(pieza: String, andando: bool) -> bool:
 	if error > 0.002: return _fallar("Cambiar a una pieza de otra escala separa la empuñadura de la mano: " + pieza)
 	var escala := float(Player.EQUIPMENT_SPECS[int(PIEZAS[pieza][0])].scale) * float(inventario.get_item_definition(pieza).get("mesh_scale", 1.0))
 	if not malla.scale.is_equal_approx(Vector3.ONE * escala): return _fallar("La mano pierde la escala propia de " + pieza)
+	if int(PIEZAS[pieza][0]) == 2 and not _comprobar_palma(): return false
 	if pieza == "Torch":
 		if malla.global_basis.y.normalized().dot(Vector3.UP) < 0.97: return _fallar("La antorcha pierde la vertical al caminar o descansar.")
 	else:
 		var filo := malla.global_basis.x.normalized().dot(jugador._hero_direction(Vector3(0, 0, 1)).normalized())
 		filo_minimo = minf(filo_minimo, filo)
 		if filo < 0.70: return _fallar("El filo vuelve hacia el personaje: %s, andando=%s, %.3f." % [pieza, andando, filo])
+	return true
+
+func _comprobar_palma() -> bool:
+	var clave := jugador.skeleton.get_instance_id()
+	if not _palmas.has(clave):
+		var puntos := PackedVector3Array()
+		for instancia: MeshInstance3D in jugador.find_children("*","MeshInstance3D",true,false):
+			if instancia.skin == null or instancia.mesh == null: continue
+			for enlace in instancia.skin.get_bind_count():
+				var nombre := String(instancia.skin.get_bind_name(enlace))
+				if nombre.is_empty() and instancia.skin.get_bind_bone(enlace)>=0:
+					nombre = jugador.skeleton.get_bone_name(instancia.skin.get_bind_bone(enlace))
+				if nombre!="Fist.R": continue
+				for superficie in instancia.mesh.get_surface_count():
+					var datos := instancia.mesh.surface_get_arrays(superficie)
+					var vertices: PackedVector3Array = datos[Mesh.ARRAY_VERTEX]
+					var huesos = datos[Mesh.ARRAY_BONES]
+					var pesos: PackedFloat32Array = datos[Mesh.ARRAY_WEIGHTS]
+					if huesos == null: continue
+					var stride: int = huesos.size()/vertices.size()
+					for i in vertices.size():
+						for j in stride:
+							if huesos[i*stride+j]==enlace and pesos[i*stride+j]>0.95:
+								puntos.append(instancia.skin.get_bind_pose(enlace)*vertices[i])
+		if puntos.size()<8: return _fallar("No se mide la geometría real de la mano del hacha.")
+		var centro := Vector3.ZERO
+		var caja := AABB(puntos[0],Vector3.ZERO)
+		for punto in puntos:
+			centro += punto
+			caja = caja.expand(punto)
+		_palmas[clave] = {"centro":centro/puntos.size(),"caja":caja}
+	var palma: Dictionary = _palmas[clave]
+	var agarre: Vector3 = jugador.get("_weapon_grip").position
+	if not (palma.caja as AABB).has_point(agarre) or agarre.distance_to(palma.centro)>0.08:
+		return _fallar("El hacha se sujeta fuera de la palma real: %s frente a %s."%[agarre,palma.centro])
 	return true
 
 func _fallar(texto: String) -> bool:

@@ -10,6 +10,7 @@ const SUN_DISTANCE := 20000.0
 const MOON_RISE_START_DAYLIGHT := 0.11
 const MOON_FULL_DAYLIGHT := 0.018
 const MOON_SHADOW_HANDOFF := 0.42
+const INICIO_LUZ_LUNAR := 0.95
 const RANGO_FUNDIDO_SOMBRA_SOL := Vector2(0.10, 0.28)
 const NOCHE_SOMBRA_LUNA_COMPLETA := 0.95
 const FOG_STREAM_REFRESH_SECONDS := 0.40
@@ -268,7 +269,10 @@ func sincronizar_luz_celeste(daylight: float, camera: Camera3D = null) -> void:
 		# desaparecido; antes nacía demasiado pronto junto al disco solar.
 		moon_visual.visible = night > 0.025
 	if moon_light != null:
-		moon_light.light_energy = night * 0.72
+		# La curva del disco y las estrellas esperaba hasta el 11% de día: el
+		# suelo quedaba oscuro antes de recibir la luna. Su iluminación se solapa
+		# con el crepúsculo; la noche completa sigue teniendo energía 0,72.
+		moon_light.light_energy = (1.0 - smoothstep(0.0, INICIO_LUZ_LUNAR, daylight)) * 0.72
 		# Sin umbral: el primer aporte del crepúsculo sigue siendo visible.
 		moon_light.visible = moon_light.light_energy != 0.0
 		var moon_owns_shadows := night >= MOON_SHADOW_HANDOFF

@@ -280,6 +280,8 @@ const GRASS_CACHE_STRIDE := 9
 @export var moss_rock_count := 0
 @export var cactus_count := 0
 @export var grass_count := 220000
+## Conteos antiguos conservados sólo para mantener la secuencia RNG de árboles
+## secos y recursos persistentes. Estas plantas ya no cargan ni se dibujan.
 @export var fern_count := 800
 @export var shrub_count := 700
 @export var flower_count := 500
@@ -463,26 +465,18 @@ func _ready() -> void:
 	_tree_lod_meshes = _make_tree_lod_mesh_library()
 	_rock_meshes = _load_mesh_library(ROCK_FILES)
 	_cactus_meshes = _make_cactus_mesh_library()
-	_grass_meshes = _load_mesh_library(GRASS_FILES)
+	# La pradera elegida es la única hierba: no cargar los cuatro modelos antiguos.
+	_grass_meshes.clear()
 	_dense_grass_offset = _grass_meshes.size()
 	_grass_meshes.append(_make_meadow_blades(DENSE_GRASS_CLUSTER_COPIES, Vector2(0.035, 0.065), Vector2(0.90, 1.34)))
 	_grass_mid_lod_meshes = [_make_meadow_blades(GRASS_MID_CLUSTER_COPIES, Vector2(0.05, 0.09), Vector2(0.90, 1.34))]
 	_grass_lod_meshes = [_make_meadow_blades(GRASS_LOD_CLUSTER_COPIES, Vector2(0.075, 0.13), Vector2(0.80, 1.14))]
-	_fern_meshes = _load_mesh_library(FERN_FILES)
-	_snow_fern_offset = _fern_meshes.size()
-	_fern_meshes.append_array(_make_snow_mesh_library(_fern_meshes.duplicate()))
-	_shrub_meshes = _load_mesh_library(SHRUB_FILES)
-	_snow_shrub_offset = _shrub_meshes.size()
-	_shrub_meshes.append_array(_make_snow_mesh_library(_shrub_meshes.duplicate()))
-	_flower_meshes = _load_mesh_library(FLOWER_FILES)
-	_mushroom_meshes = _load_mesh_library(MUSHROOM_FILES)
 	_dead_tree_meshes = _load_mesh_library(DEAD_TREE_FILES)
 	_pebble_meshes = _load_mesh_library(PEBBLE_FILES)
 	if (
 		_tree_meshes.is_empty() or _rock_meshes.is_empty()
 		or _cactus_meshes.is_empty() or _grass_meshes.is_empty() or _dense_grass_offset < 0
-		or _fern_meshes.is_empty() or _shrub_meshes.is_empty() or _flower_meshes.is_empty()
-		or _mushroom_meshes.is_empty() or _dead_tree_meshes.is_empty() or _pebble_meshes.is_empty()
+		or _dead_tree_meshes.is_empty() or _pebble_meshes.is_empty()
 	):
 		push_error("No se pudo cargar la biblioteca visual Quaternius completa.")
 		return
@@ -1231,102 +1225,37 @@ func _scatter_ground_cover() -> void:
 	grass_root.set_meta("clumps_per_instance", DENSE_GRASS_CLUSTER_COPIES)
 	grass_root.set_meta("effective_clump_count", generated_grass_count * DENSE_GRASS_CLUSTER_COPIES)
 
-	var fern_buckets: Dictionary = {}
-	var attempts := 0
-	while generated_fern_count < fern_count and attempts < fern_count * 16:
-		attempts += 1
-		var point := _corridor_point(2.8, 132.0, 0.70)
-		if distance_to_route(point) < 8.5 or _inside_clearing(point, 5.4, 10.0) or _inside_stone_village_street(point, 2.1) or _inside_desert(point) or _inside_mystery_forest(point) or _slope_at(point) > 0.82:
-			continue
-		var height := _height_at(point)
-		if is_nan(height):
-			continue
-		var variant := _random.randi_range(0, FERN_FILES.size() - 1)
-		if _random.randf() < _snow_probability(point, height):
-			variant += _snow_fern_offset
-			generated_snow_fern_count += 1
-		var scale_value := _random.randf_range(0.30, 0.62) if variant == 0 else _random.randf_range(0.52, 1.10)
-		_bucket_transform(fern_buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.03, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
-		generated_fern_count += 1
-	generated_fern_count -= _mask_urban_buckets(fern_buckets, "urban_ferns_removed")
-	_install_cell_buckets("FernCells", fern_buckets, _fern_meshes, 245.0, true)
-
-	var shrub_buckets: Dictionary = {}
-	attempts = 0
-	while generated_shrub_count < shrub_count and attempts < shrub_count * 16:
-		attempts += 1
-		var point := _corridor_point(3.4, 136.0, 0.68)
-		if distance_to_route(point) < 9.0 or _inside_clearing(point, 6.2, 11.5) or _inside_stone_village_street(point, 2.5) or _inside_desert(point) or _inside_mystery_forest(point) or _slope_at(point) > 0.82:
-			continue
-		var height := _height_at(point)
-		if is_nan(height):
-			continue
-		var variant := _random.randi_range(0, SHRUB_FILES.size() - 1)
-		if _random.randf() < _snow_probability(point, height):
-			variant += _snow_shrub_offset
-			generated_snow_shrub_count += 1
-		var scale_value := _random.randf_range(0.82, 1.62)
-		_bucket_transform(shrub_buckets, variant, point, DETAIL_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.04, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
-		generated_shrub_count += 1
-	generated_shrub_count -= _mask_urban_buckets(shrub_buckets, "urban_shrubs_removed")
-	_install_cell_buckets("ShrubCells", shrub_buckets, _shrub_meshes, 270.0, true)
-
 
 func _scatter_color_details() -> void:
-	var flower_buckets: Dictionary = {}
-	var attempts := 0
-	while generated_flower_count < flower_count and attempts < flower_count * 15:
-		attempts += 1
-		var point := _corridor_point(1.9, 108.0, 0.78)
-		if distance_to_route(point) < 8.0 or _inside_clearing(point, 3.8, 7.0) or _inside_stone_village_street(point, 1.5) or _inside_desert(point) or _inside_mystery_forest(point) or _slope_at(point) > 0.84:
-			continue
-		var height := _height_at(point)
-		if is_nan(height):
-			continue
-		if _snow_probability(point, height) > 0.62:
-			continue
-		var variant := _random.randi_range(0, _flower_meshes.size() - 1)
-		var scale_value := _random.randf_range(0.40, 0.82)
-		_bucket_transform(flower_buckets, variant, point, GROUND_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.025, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
-		generated_flower_count += 1
-	generated_flower_count -= _mask_urban_buckets(flower_buckets, "urban_flowers_removed")
-	_install_cell_buckets("FlowerCells", flower_buckets, _flower_meshes, 185.0, false)
-
-	var mushroom_buckets: Dictionary = {}
-	attempts = 0
-	while generated_mushroom_count < mushroom_count and attempts < mushroom_count * 18:
-		attempts += 1
-		var point := _corridor_point(2.0, 112.0, 0.72)
-		if distance_to_route(point) < 8.0 or _inside_clearing(point, 3.8, 7.5) or _inside_stone_village_street(point, 1.5) or _inside_desert(point) or _inside_mystery_forest(point):
-			continue
-		var height := _height_at(point)
-		if is_nan(height):
-			continue
-		if _snow_probability(point, height) > 0.72:
-			continue
-		var variant := _random.randi_range(0, _mushroom_meshes.size() - 1)
-		var scale_value := _random.randf_range(0.72, 1.42)
-		_bucket_transform(mushroom_buckets, variant, point, GROUND_CELL_SIZE, _make_transform(Vector3(point.x, height + 0.02, point.y), _random.randf_range(0.0, TAU), Vector3.ONE * scale_value))
-		generated_mushroom_count += 1
-	# Retirar las setas del casco urbano después del sorteo conserva la secuencia
-	# aleatoria de los demás adornos. No se recolocan ni se toca la hierba densa.
-	var urban_mushrooms_removed := 0
-	for key in mushroom_buckets.keys():
-		var bucket: Dictionary = mushroom_buckets[key]
-		var outdoors: Array = []
-		for transform_value in bucket["transforms"]:
-			var placement: Transform3D = transform_value
-			if _inside_village_clearing(Vector2(placement.origin.x, placement.origin.z), 3.0) or VillageLayout.occupies(Vector2(placement.origin.x, placement.origin.z)):
-				generated_mushroom_count -= 1
-				urban_mushrooms_removed += 1
-			else:
-				outdoors.append(placement)
-		if outdoors.is_empty():
-			mushroom_buckets.erase(key)
-		else:
-			bucket["transforms"] = outdoors
-	set_meta("urban_mushrooms_removed", urban_mushrooms_removed)
-	_install_cell_buckets("MushroomCells", mushroom_buckets, _mushroom_meshes, 150.0, false)
+	# Estos cuatro sorteos se consumen sólo al cargar. Conservan exactamente la
+	# secuencia de los guijarros y los árboles secos (incluidos sus IDs de tala
+	# guardados), sin cargar mallas ni crear una sola instancia de las plantas
+	# retiradas. Saltar el RNG desplazaba toda la decoración posterior.
+	var tipos := [
+		{"cantidad":fern_count,"intentos":16,"franja":Vector3(2.8,132.0,0.70),"camino":8.5,"claro":Vector2(5.4,10.0),"calle":2.1,"pendiente":0.82,"variantes":FERN_FILES.size(),"nieve":true,"limite_nieve":-1.0},
+		{"cantidad":shrub_count,"intentos":16,"franja":Vector3(3.4,136.0,0.68),"camino":9.0,"claro":Vector2(6.2,11.5),"calle":2.5,"pendiente":0.82,"variantes":SHRUB_FILES.size(),"nieve":true,"limite_nieve":-1.0},
+		{"cantidad":flower_count,"intentos":15,"franja":Vector3(1.9,108.0,0.78),"camino":8.0,"claro":Vector2(3.8,7.0),"calle":1.5,"pendiente":0.84,"variantes":FLOWER_FILES.size(),"nieve":false,"limite_nieve":0.62},
+		{"cantidad":mushroom_count,"intentos":18,"franja":Vector3(2.0,112.0,0.72),"camino":8.0,"claro":Vector2(3.8,7.5),"calle":1.5,"pendiente":-1.0,"variantes":MUSHROOM_FILES.size(),"nieve":false,"limite_nieve":0.72},
+	]
+	for tipo in tipos:
+		var completados := 0
+		var intentos := 0
+		while completados < int(tipo.cantidad) and intentos < int(tipo.cantidad)*int(tipo.intentos):
+			intentos += 1
+			var franja: Vector3 = tipo.franja
+			var punto := _corridor_point(franja.x,franja.y,franja.z)
+			var claro: Vector2 = tipo.claro
+			if distance_to_route(punto)<float(tipo.camino) or _inside_clearing(punto,claro.x,claro.y) or _inside_stone_village_street(punto,float(tipo.calle)) or _inside_desert(punto) or _inside_mystery_forest(punto): continue
+			if float(tipo.pendiente)>=0.0 and _slope_at(punto)>float(tipo.pendiente): continue
+			var altura := _height_at(punto)
+			if is_nan(altura): continue
+			if float(tipo.limite_nieve)>=0.0 and _snow_probability(punto,altura)>float(tipo.limite_nieve): continue
+			_random.randi_range(0,int(tipo.variantes)-1)
+			if bool(tipo.nieve): _random.randf()
+			_random.randf()
+			_random.randf()
+			completados += 1
+	set_meta("sotobosque_decorativo_retirado",true)
 
 
 func _mask_urban_buckets(buckets: Dictionary, metric: String) -> int:
