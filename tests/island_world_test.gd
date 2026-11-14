@@ -227,11 +227,9 @@ func _run_test() -> void:
 	var storey := float(BuildingSolver.STOREY)
 	var flight_pitch := rad_to_deg(atan(storey / (float(BuildingSolver.STAIR_RUN_CELLS) * cell)))
 	var building_count := 0
-	var three_storey_count := 0
-	var tall_house_count := 0
 	var robledal_floors: Dictionary = {}
 	var robledal_count := 0
-	var switchbacks_measured := 0
+	var escaleras_dobles_medidas := 0
 	var measured_flights := 0
 	var measured_slabs := 0
 	var measured_gables := 0
@@ -252,17 +250,10 @@ func _run_test() -> void:
 		var house_name := building.name
 		building_count += 1
 		var floors := int(building.get_meta("floor_count", 0))
-		if floors < 2 or floors > 5:
-			_fail("%s declara %d plantas, fuera del rango habitable de 2 a 5." % [house_name, floors])
+		if floors != 2:
+			_fail("%s supera el diseño de planta baja y primera: %d plantas." % [house_name, floors])
 			return
-		if floors == 3:
-			three_storey_count += 1
-		if floors >= 3:
-			tall_house_count += 1
 		if String(house_name).begins_with("Villa Robledal"):
-			if floors < 3:
-				_fail("%s debe tener entre tres y cinco plantas." % house_name)
-				return
 			robledal_count += 1
 			robledal_floors[floors] = int(robledal_floors.get(floors, 0)) + 1
 
@@ -536,18 +527,7 @@ func _run_test() -> void:
 					_fail("%s no invierte el sentido del tramo en la transición de la planta %d." % [
 						house_name, level + 1])
 					return
-		if floors == 3:
-			# Y el tramo de vuelta va corrido exactamente una celda: si no, su
-			# pie cae en el borde del hueco que abrió el tramo de ida y quien
-			# sube se despeña por él. Medido en el taller: la cápsula subía dos
-			# de los cuatro tramos de un hall.
-			var low := _run_origin(by_level[0])
-			var high := _run_origin(by_level[1])
-			if absf(high - low - cell) > 0.02:
-				_fail("%s no corre una celda el tramo de vuelta: desfase %.2f m, esperado %.2f." % [
-					house_name, high - low, cell])
-				return
-			switchbacks_measured += 1
+		escaleras_dobles_medidas += 1
 		for flight in flights:
 			var foot: Vector3 = flight["foot"]
 			var head: Vector3 = flight["head"]
@@ -586,15 +566,11 @@ func _run_test() -> void:
 		_fail("Se esperaban %d viviendas; hay %d nodos y el generador cuenta %d." % [
 			EXPECTED_HOUSES, building_count, medieval.generated_house_count])
 		return
-	if robledal_count != EXPECTED_ROBLEDAL_HOUSES or not (robledal_floors.has(3) and robledal_floors.has(4) and robledal_floors.has(5)):
-		_fail("Robledal debe conservar %d casas y variantes de 3/4/5 plantas: %d, %s." % [EXPECTED_ROBLEDAL_HOUSES, robledal_count, robledal_floors])
+	if robledal_count != EXPECTED_ROBLEDAL_HOUSES or robledal_floors.size()!=1 or int(robledal_floors.get(2,0))!=EXPECTED_ROBLEDAL_HOUSES:
+		_fail("Robledal debe conservar %d viviendas de dos plantas: %d, %s." % [EXPECTED_ROBLEDAL_HOUSES, robledal_count, robledal_floors])
 		return
-	if medieval.generated_three_storey_count != tall_house_count:
-		_fail("El generador no contabiliza correctamente las casas de tres plantas o más.")
-		return
-	if switchbacks_measured != three_storey_count:
-		_fail("Sólo %d de las %d casas de tres plantas han medido el desfase de su ida y vuelta." % [
-			switchbacks_measured, three_storey_count])
+	if escaleras_dobles_medidas != building_count:
+		_fail("No se miden los dos tramos de todas las viviendas: %d de %d." % [escaleras_dobles_medidas, building_count])
 		return
 	if (
 		medieval.generated_village_count != EXPECTED_VILLAGES
@@ -819,8 +795,8 @@ func _run_test() -> void:
 		_fail("Los tres castillos deben ser fortalezas completas con torre del homenaje y dos salidas.")
 		return
 
-	print("ISLAND WORLD TEST OK: HUD N/B/0, %d casas del generador nuevo (%d de tres plantas) con %d tramos de ida y vuelta, %d celdas de forjado, %d hastiales y %d castillos modulares monumentales." % [
-		building_count, three_storey_count, measured_flights, measured_slabs, measured_gables,
+	print("ISLAND WORLD TEST OK: HUD N/B/0, %d casas de planta baja y primera con %d tramos de ida y vuelta, %d celdas de forjado, %d hastiales y %d castillos modulares monumentales." % [
+		building_count, measured_flights, measured_slabs, measured_gables,
 		medieval.generated_castle_count])
 	quit(0)
 

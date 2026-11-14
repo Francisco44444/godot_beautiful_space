@@ -43,7 +43,7 @@ func _run_test() -> void:
 	var medieval := world.get_node("MedievalSetDressing") as MedievalSetDressing
 	var walked := 0
 	var flights := 0
-	var floors_walked: Dictionary = {}
+	var recetas_recorridas: Dictionary = {}
 	for child in medieval.get_children():
 		if not child is StaticBody3D:
 			continue
@@ -70,11 +70,15 @@ func _run_test() -> void:
 			_fail("No se puede SALIR de %s por la misma puerta y rampa." % body.name)
 			return
 		var floor_count := int(body.get_meta("floor_count"))
-		if floors_walked.has(floor_count):
+		if floor_count != 2:
+			_fail("Una vivienda supera planta baja y primera: " + String(body.name))
+			return
+		var receta := String(body.get_meta("recipe", ""))
+		if recetas_recorridas.has(receta):
 			walker.queue_free()
 			await physics_frame
 			continue
-		floors_walked[floor_count] = true
+		recetas_recorridas[receta] = true
 
 		var ramps := _ramps(body)
 		var expected := int(body.get_meta("stair_count", 0))
@@ -114,10 +118,10 @@ func _run_test() -> void:
 		walker.queue_free()
 		await process_frame
 
-	if walked < MIN_HOUSES_TO_WALK or floors_walked.size() != 3:
-		_fail("Sólo se han recorrido %d casas; plantas representadas: %s." % [walked, floors_walked])
+	if walked < MIN_HOUSES_TO_WALK or recetas_recorridas.size() != 3:
+		_fail("Sólo se han recorrido %d casas; recetas representadas: %s." % [walked, recetas_recorridas])
 		return
-	print("HOUSE TRAVERSAL OK: %d puertas recorridas entrando y saliendo, %d tramos subidos y bajados sin saltar; casas de 3, 4 y 5 plantas." % [walked, flights])
+	print("HOUSE TRAVERSAL OK: %d puertas recorridas entrando y saliendo, %d tramos subidos y bajados sin saltar; tres recetas de planta baja y primera." % [walked, flights])
 	quit()
 
 

@@ -1,8 +1,8 @@
 class_name MedievalSetDressing
 extends Node3D
 
-## Villas y caseríos Quaternius a escala habitable. Las viviendas tienen entre
-## dos y tres plantas, fachada de hastial cerrada y acceso a ras del terreno.
+## Villas y caseríos Quaternius: planta baja, primera y cubierta, con fachada
+## de hastial cerrada y acceso a ras del terreno.
 
 const ROOT := "res://assets/quaternius/store_bundle/glTF/"
 # Escala uniforme: Jolt conserva exactamente las colisiones de suelos, paredes
@@ -101,7 +101,6 @@ var generated_castle_count := 0
 var generated_light_count := 0
 var generated_enterable_house_count := 0
 var generated_hamlet_count := 0
-var generated_three_storey_count := 0
 var generated_folk_count := 0
 var generated_tower_roof_count := 0
 var _tower_roof_material: StandardMaterial3D = null
@@ -126,7 +125,7 @@ func _ready() -> void:
 	if DisplayServer.get_name()!="headless":
 		var oclusion = preload("res://scripts/oclusion_edificios.gd").new()
 		set_meta("oclusion_estructura",oclusion.construir(self))
-	print("MEDIEVAL WORLD READY: %d villas, %d caseríos, %d casas accesibles (%d de tres pisos), %d castillos, %d vecinos, %d piezas y %d colisiones." % [generated_village_count, generated_hamlet_count, generated_house_count, generated_three_storey_count, generated_castle_count, generated_folk_count, generated_prop_count, generated_collision_count])
+	print("MEDIEVAL WORLD READY: %d villas, %d caseríos, %d casas accesibles (máximo dos plantas), %d castillos, %d vecinos, %d piezas y %d colisiones." % [generated_village_count, generated_hamlet_count, generated_house_count, generated_castle_count, generated_folk_count, generated_prop_count, generated_collision_count])
 
 
 ## Radio del casco de la villa grande, en metros. Tiene que caber dentro del
@@ -266,12 +265,12 @@ func _grand_village_plots() -> Array[Dictionary]:
 	return VillageLayout.plots()
 
 func _build_cottage(center: Vector2, yaw: float, house_name: String) -> void:
-	var floors := 3 + generated_house_count % 3 if house_name.begins_with("VillaRobledal") or house_name.begins_with("Villa Robledal") else 2
+	var floors := BuildingRecipes.MAX_PLANTAS
 	_build_large_house(center, yaw, house_name, false, floors)
 
 
 func _build_hall(center: Vector2, yaw: float, house_name: String) -> void:
-	var floors := 5 if "Robledal" in house_name else 3
+	var floors := BuildingRecipes.MAX_PLANTAS
 	_build_large_house(center, yaw, house_name, true, floors)
 
 
@@ -287,12 +286,12 @@ func _build_hamlet(spec: Dictionary) -> void:
 	for index in layout.size():
 		var item := layout[index]
 		var local := Vector2(item.x, item.y).rotated(yaw)
-		var floors := 3 if index == 2 and generated_hamlet_count % 2 == 0 else 2
+		var floors := BuildingRecipes.MAX_PLANTAS
 		_build_large_house(
 			center + local,
 			yaw + item.z,
 			"%sRuralHouse%02d" % [hamlet_name.validate_node_name(), index],
-			floors == 3,
+			index == 2 and generated_hamlet_count % 2 == 0,
 			floors
 		)
 	_add_village_lights(center, yaw)
@@ -305,6 +304,8 @@ func _build_large_house(center: Vector2, yaw: float, house_name: String, is_hall
 	## pisen ni muros duplicados en la cara compartida. El generador anterior
 	## levantaba una única caja cerrada con una sola escalera por planta, en el
 	## extremo contrario cada vez.
+	# El límite se aplica también si otro llamador solicita más alturas.
+	floors = clampi(floors, 1, BuildingRecipes.MAX_PLANTAS)
 	var body := _create_building_body(center, yaw, house_name)
 	body.scale = VillageLayout.SCALE if house_name.begins_with("Villa Robledal") else HOUSE_SCALE
 	var variant := generated_house_count + (1 if is_hall else 0)
@@ -332,8 +333,6 @@ func _build_large_house(center: Vector2, yaw: float, house_name: String, is_hall
 	_publish_house_metrics(body, solver, recipe, box, floors)
 	HouseInterior.decorate(body, solver, variant)
 	generated_house_count += 1
-	if floors >= 3:
-		generated_three_storey_count += 1
 
 
 func _fit_house_to_terrain(body: StaticBody3D, solver: BuildingSolver) -> void:

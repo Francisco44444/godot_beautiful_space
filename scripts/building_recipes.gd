@@ -13,6 +13,9 @@ extends RefCounted
 ## se pisan. `origin` es la esquina mínima en celdas y `size` el tamaño en
 ## celdas; los metros se derivan, nunca se escriben a mano.
 
+## Las viviendas conservan una escala de planta baja y primera, más cubierta.
+const MAX_PLANTAS := 2
+
 const ROOF_MESHES: PackedStringArray = [
 	"Roof_RoundTiles_8x12", "Roof_RoundTiles_8x14", "Roof_RoundTiles_6x10",
 	"Roof_RoundTiles_6x8", "Roof_RoundTiles_4x8", "Roof_RoundTiles_4x4",
@@ -28,7 +31,7 @@ static func for_house(floors: int, variant: int) -> Dictionary:
 	## Lo que el mundo pide es "una casa de N plantas"; aquí se elige cuál de las
 	## siluetas del taller le toca. Alternarlas es lo que hace que una villa
 	## grande no parezca la misma casa repetida cincuenta veces.
-	var storeys := maxi(floors, 2)
+	var storeys := clampi(floors, 1, MAX_PLANTAS)
 	match posmod(variant, 3):
 		0:
 			return cottage(storeys)
@@ -38,7 +41,8 @@ static func for_house(floors: int, variant: int) -> Dictionary:
 			return tavern(storeys)
 
 
-static func cottage(floors: int = 3) -> Dictionary:
+static func cottage(floors: int = 2) -> Dictionary:
+	floors = clampi(floors, 1, MAX_PLANTAS)
 	return {
 		"id": &"casa_del_rio",
 		"display_name": "Casa del Río",
@@ -58,7 +62,8 @@ static func cottage(floors: int = 3) -> Dictionary:
 	}
 
 
-static func merchant_house(floors: int = 3) -> Dictionary:
+static func merchant_house(floors: int = 2) -> Dictionary:
+	floors = clampi(floors, 1, MAX_PLANTAS)
 	return {
 		"id": &"casa_del_mercader",
 		"display_name": "Casa del Mercader",
@@ -83,7 +88,8 @@ static func merchant_house(floors: int = 3) -> Dictionary:
 	}
 
 
-static func tavern(floors: int = 3) -> Dictionary:
+static func tavern(floors: int = 2) -> Dictionary:
+	floors = clampi(floors, 1, MAX_PLANTAS)
 	return {
 		"id": &"posada_del_ciervo",
 		"display_name": "Posada del Ciervo Dorado",
@@ -118,28 +124,28 @@ static func manor() -> Dictionary:
 		"volumes": [
 			{
 				"name": "cuerpo", "origin": Vector2i(-2, -4), "size": Vector2i(4, 7),
-				"floors": 4, "style": "manor", "stairs": true,
+				"floors": 2, "style": "manor", "stairs": true,
 				"roof": "Roof_RoundTiles_8x14", "roof_front": "Roof_Front_Brick8",
 				"door": {"side": 3, "module": 1},
 			},
 			{
 				"name": "ala_oeste", "origin": Vector2i(-5, -4), "size": Vector2i(3, 5),
-				"floors": 3, "style": "stone", "stairs": true,
+				"floors": 1, "style": "stone", "stairs": true,
 				"roof": "Roof_RoundTiles_6x10", "roof_front": "Roof_Front_Brick6",
 			},
 			{
 				"name": "ala_este", "origin": Vector2i(2, -4), "size": Vector2i(3, 5),
-				"floors": 3, "style": "stone", "stairs": true,
+				"floors": 1, "style": "stone", "stairs": true,
 				"roof": "Roof_RoundTiles_6x10", "roof_front": "Roof_Front_Brick6",
 			},
 			{
 				"name": "torre_oeste", "origin": Vector2i(-2, -6), "size": Vector2i(2, 2),
-				"floors": 5, "style": "manor", "stairs": true,
+				"floors": 2, "style": "manor", "stairs": true,
 				"roof": "Roof_Tower_RoundTiles",
 			},
 			{
 				"name": "torre_este", "origin": Vector2i(0, -6), "size": Vector2i(2, 2),
-				"floors": 5, "style": "manor", "stairs": true,
+				"floors": 2, "style": "manor", "stairs": true,
 				"roof": "Roof_Tower_RoundTiles",
 			},
 		],

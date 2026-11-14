@@ -38,8 +38,19 @@ func _run_test() -> void:
 		_fail("Se esperaban %d recetas y hay %d." % [EXPECTED_RECIPES, recipes.size()])
 		return
 
+	# Incluso una petición antigua de cinco pisos debe producir una vivienda
+	# baja. Se mide el plan real, no sólo el metadato publicado por la casa.
+	for peticion in [0,1,2,3,5,100]:
+		for variante in 3:
+			var receta := Recipes.for_house(peticion,variante)
+			for cuerpo in receta.volumes:
+				if int(cuerpo.get("base_level",0))+int(cuerpo.floors)>2:
+					_fail("Una receta de vivienda supera las dos plantas: "+str(receta.id));return
 	for recipe in recipes:
 		var name: String = recipe["display_name"]
+		for cuerpo in recipe.volumes:
+			if int(cuerpo.get("base_level",0))+int(cuerpo.floors)>2:
+				_fail("Una receta de vivienda supera las dos plantas: "+name);return
 		var solver = Solver.new()
 		var ok: bool = solver.solve(recipe, metrics)
 		if not ok:

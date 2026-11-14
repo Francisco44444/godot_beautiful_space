@@ -178,6 +178,8 @@ jobs:
             --headless --path . --script res://tests/building_geometry_test.gd
           timeout 15m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/house_traversal_test.gd
+          timeout 10m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/island_world_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/village_avoidance_test.gd
           timeout 15m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
