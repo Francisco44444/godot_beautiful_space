@@ -6,5 +6,7 @@
 - Comprobados 300 movimientos sin reconstrucciones ni cambios en la textura GPU. La actualización CPU del minimapa mide 0,038 ms de mediana en el Mac de prueba; no es el coste completo del renderizado.
 - Incluye las 107 viviendas de planta baja, primera y tejado, y las correcciones de hierba, hacha, crepúsculo y LOD de tejados.
 
+La versión jugable web se ha evaluado y descartado por ahora: necesita una adaptación propia de gráficos y red. [Evaluación y límites](https://github.com/Francisco44444/godot_beautiful_space/blob/v0.1.26/docs/VIABILIDAD_WEB.md).
+
 [Diseño, caché y comprobaciones](https://github.com/Francisco44444/godot_beautiful_space/blob/v0.1.26/docs/CARTOGRAFIA_MEDIEVAL.md).
 El objetivo general de 100–120 FPS sigue pendiente. ZIP completo con .exe como descarga principal; instalador como alternativa.
