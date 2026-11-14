@@ -497,7 +497,7 @@ custom_minimum_size = Vector2(760, 310)
 layout_mode = 2
 mouse_filter = 0
 bbcode_enabled = true
-text = "[center][font_size=24][b]MÚSICA[/b][/font_size]\n\nUso comercial y personal.\nPara proyectos ilimitados, en todo el mundo, para siempre.\n[b]SE REQUIERE ATRIBUCIÓN.[/b]\nPara poder utilizar nuestra música debes dar crédito a FiftySounds.\nIncluye esta información en tu proyecto:\n\n[b]Obras: La Colina que Conoce tu Voz · Promise · Ashes[/b]\n[b]Música de https://www.fiftysounds.com/es/[/b]\n\n[color=#e8c878]Esc · volver[/color][/center]"
+text = "[center][font_size=24][b]MÚSICA[/b][/font_size]\n\nUso comercial y personal.\nPara proyectos ilimitados, en todo el mundo, para siempre.\n[b]SE REQUIERE ATRIBUCIÓN.[/b]\nPara poder utilizar nuestra música debes dar crédito a FiftySounds.\nIncluye esta información en tu proyecto:\n\n[b]Obras: La Colina que Conoce tu Voz · Promise · Ashes[/b]\n[b]Música de https://www.fiftysounds.com/es/[/b]\n\n[b]TIPOGRAFÍA CARTOGRÁFICA[/b]\nCinzel · Natanael Gama / The Cinzel Project Authors\nCrimson Pro · Jacques Le Bailly / The Crimson Pro Project Authors\nSIL Open Font License 1.1 · Licencias incluidas con el juego\n\n[color=#e8c878]Esc · volver[/color][/center]"
 fit_content = true
 scroll_active = false
 theme_override_colors/default_color = Color(0.92, 0.94, 0.91, 1)
