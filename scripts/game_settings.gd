@@ -160,7 +160,7 @@ func aplicar_nivel_calidad(nivel: int) -> void:
 	graphics_changed.emit()
 
 func set_manual_render_scale(valor: float, persist: bool = true) -> void:
-	manual_render_scale=snappedf(clampf(valor,0.5,1.0),0.05) if is_finite(valor) else 1.0
+	manual_render_scale=snappedf(clampf(valor,0.35,1.0),0.05) if is_finite(valor) else 1.0
 	set_render_profile(3,false)
 	if persist:_save_settings()
 
@@ -305,14 +305,14 @@ func _load_settings() -> void:
 	quality_preset=clampi(int(config.get_value("graphics","quality_preset",0)),0,4)
 	for clave in Calidad.OPCIONES:visual_options[clave]=Calidad.validar(clave,config.get_value("detail",clave,Calidad.OPCIONES[clave][2]))
 	var escala: float=float(config.get_value("graphics","manual_render_scale",0.75))
-	manual_render_scale=clampf(escala,0.5,1.0) if is_finite(escala) else 0.75
+	manual_render_scale=clampf(escala,0.35,1.0) if is_finite(escala) else 0.75
 	var limite:int=int(config.get_value("video","fps_limit",120))
 	fps_limit=limite if limite in [0,30,60,90,120,144,200,240] else 120
 	var objetivo:int=int(config.get_value("graphics","auto_target_fps",60))
 	auto_target_fps=objetivo if objetivo in [60,90,120] else 60
 	window_mode=clampi(int(config.get_value("video","window_mode",0)),0,1)
 	auto_fingerprint=String(config.get_value("graphics","auto_fingerprint",""))
-	auto_level=clampi(int(config.get_value("graphics","auto_level",2)),1,3)
+	auto_level=clampi(int(config.get_value("graphics","auto_level",2)),1,Calidad.NIVEL_MINIMO)
 	auto_status="Automática pendiente de medir" if quality_preset==0 else ("Calidad personalizada" if quality_preset==4 else "Calidad: "+Calidad.NOMBRES[quality_preset])
 	_settings_need_migration_save = stored_schema < SETTINGS_SCHEMA_VERSION
 

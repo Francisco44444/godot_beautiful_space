@@ -13,7 +13,8 @@ func _comprobar()->void:
 		[2,0.0,4.0,80.0,60,16.67,3],
 		[2,4.0,26.0,26.0,60,0.0,3],
 		[2,4.0,4.0,30.0,60,16.67,3],
-		[3,40.0,5.0,50.0,60,0.0,3],
+		[3,40.0,5.0,50.0,60,0.0,4],
+		[4,40.0,5.0,50.0,60,0.0,4],
 	]
 	for c in casos:
 		if Calidad.recomendar(c[0],c[1],c[2],c[3],c[4],c[5])!=c[6]:_fallar("La detección confunde espera de VSync, GPU o cuello de CPU: "+str(c));return
@@ -27,6 +28,8 @@ func _comprobar()->void:
 	for metal in [true,false]:
 		var personalizado:=Perfiles.resolver(3,Vector2i(2560,1440),"forward_plus",metal,0.5)
 		if personalizado.input_expected!=Vector2i(1280,720) or personalizado.scale!=0.5 or personalizado.mode!=(3 if metal else 1):_fallar("La escala personalizada no llega a 720p desde 1440p.");return
+		var minimo:=Perfiles.resolver(3,Vector2i(2560,1440),"forward_plus",metal,0.35)
+		if minimo.input_expected!=Vector2i(960,540):_fallar("El último escalón automático no respeta su mínimo interno.");return
 		var pequeno:=Perfiles.resolver(3,Vector2i(1280,720),"forward_plus",metal,0.5)
 		if pequeno.input_expected!=Vector2i(960,540) or pequeno.scale!=0.75:_fallar("La escala personalizada pierde el mínimo de 960×540.");return
 	if not _comprobar_migracion():return

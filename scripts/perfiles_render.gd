@@ -16,7 +16,7 @@ static func resolver(perfil: int, salida: Vector2i, renderer: String, metal_spat
 	var escala_base := 0.77 if solicitado == 1 else 2.0 / 3.0
 	var minimo := MINIMO_INTERNO
 	if solicitado == 3:
-		escala_base = clampf(escala_manual,0.5,1.0) if is_finite(escala_manual) else 1.0
+		escala_base = clampf(escala_manual,0.35,1.0) if is_finite(escala_manual) else 1.0
 		minimo = Vector2i(960,540)
 	var escala := maxf(escala_base,maxf(float(minimo.x)/salida.x,float(minimo.y)/salida.y))
 	if escala >= 1.0:

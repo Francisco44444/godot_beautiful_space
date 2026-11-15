@@ -1,7 +1,8 @@
 extends Node
 
 ## Un único aplicador por mundo; no recorre materiales ni vegetación por frame.
-## La medición sólo vive durante la detección y usa tiempos GPU sin VSync.
+## La calibración usa tiempos GPU; después un temporizador comprueba los FPS
+## una vez por segundo, sin recorrer la escena ni medir GPU continuamente.
 const Calidad = preload("res://scripts/calidad_grafica.gd")
 var mundo: Node3D
 var _nivel := 2
@@ -14,6 +15,10 @@ var _pared: Array[float] = []
 var _medidos: Dictionary = {}
 var _aplicado: Dictionary = {}
 var _midiendo := false
+var _vigilante = preload("res://scripts/vigilancia_fps.gd").new()
+var _temporizador: Timer
+var _proxima_revision := 0
+var _minimo_avisado := false
 
 func _ready() -> void:
 	mundo=get_parent()
@@ -28,12 +33,16 @@ func _ready() -> void:
 	# cambiar de gráfica, versión, resolución o elegir «Detectar equipo».
 	if _automatico_permitido() and GameSettings.quality_preset==0:
 		if GameSettings.auto_fingerprint!=GameSettings.huella_equipo():_empezar()
-		else:GameSettings._set_auto_status("Automática: "+Calidad.NOMBRES[GameSettings.auto_level])
+		else:
+			_nivel=GameSettings.auto_level
+			GameSettings._set_auto_status("Automática: "+Calidad.nombre_nivel(_nivel)+" · vigilancia activa")
+			_activar_vigilancia()
 
 func _automatico_permitido() -> bool:
 	return DisplayServer.get_name()!="headless" and not Engine.is_editor_hint() and not "--script" in OS.get_cmdline_args()
 
 func _aplicar() -> void:
+	if GameSettings.quality_preset!=0:_parar_vigilancia()
 	var opciones: Dictionary=GameSettings.visual_options
 	if _aplicado==opciones:return
 	_aplicado=opciones.duplicate()
@@ -71,6 +80,7 @@ func _al_cambiar_ventana() -> void:
 
 func _empezar() -> void:
 	if DisplayServer.get_name()=="headless":return
+	_parar_vigilancia()
 	_midiendo=true;_nivel=2;_medidos.clear()
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	GameSettings.aplicar_nivel_calidad(_nivel)
@@ -114,10 +124,7 @@ func _resolver_medicion() -> void:
 	var gpu:=Calidad.percentil(_gpu)
 	var cpu:=Calidad.percentil(_cpu)
 	var pared:=Calidad.percentil(_pared)
-	var tope:=float(GameSettings.fps_limit)
-	if GameSettings.vsync_enabled:
-		var hz:=DisplayServer.screen_get_refresh_rate(DisplayServer.window_get_current_screen())
-		if hz>0:tope=minf(tope,hz) if tope>0 else hz
+	var tope:=_limite_efectivo()
 	var limite:=1000.0/tope if tope>0 else 0.0
 	_medidos[_nivel]={"gpu_ms":gpu,"cpu_ms":cpu,"frame_ms":pared}
 	var recomendado:=Calidad.recomendar(_nivel,gpu,cpu,pared,GameSettings.auto_target_fps,limite)
@@ -130,7 +137,7 @@ func _resolver_medicion() -> void:
 	_nivel=recomendado
 	GameSettings.aplicar_nivel_calidad(_nivel)
 	var datos:Dictionary=_medidos.get(_nivel,{"gpu_ms":gpu,"cpu_ms":cpu,"frame_ms":pared})
-	GameSettings.guardar_autoconfiguracion(_nivel,"Automática: %s · objetivo %d FPS"%[Calidad.NOMBRES[_nivel],GameSettings.auto_target_fps])
+	GameSettings.guardar_autoconfiguracion(_nivel,"Automática: %s · objetivo %d FPS"%[Calidad.nombre_nivel(_nivel),GameSettings.auto_target_fps])
 	mundo.set_meta("ultima_autodeteccion",{"nivel":_nivel,"mediciones":_medidos.duplicate(true),"equipo":GameSettings.huella_equipo(),"muestra_elegida":datos})
 	_detener()
 
@@ -138,6 +145,58 @@ func _detener() -> void:
 	_midiendo=false
 	set_process(false)
 	if DisplayServer.get_name()!="headless":RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),false)
+	if GameSettings.quality_preset==0:_activar_vigilancia()
+
+func _limite_efectivo() -> float:
+	var tope:=float(GameSettings.fps_limit)
+	if GameSettings.vsync_enabled:
+		var hz:=DisplayServer.screen_get_refresh_rate(DisplayServer.window_get_current_screen())
+		if hz>0:tope=minf(tope,hz) if tope>0 else hz
+	return tope
+
+func _activar_vigilancia() -> void:
+	if DisplayServer.get_name()=="headless" or GameSettings.quality_preset!=0:return
+	if _temporizador==null:
+		_temporizador=Timer.new();_temporizador.name="VigilanciaFPS"
+		_temporizador.wait_time=1.0;_temporizador.ignore_time_scale=true
+		_temporizador.timeout.connect(_vigilar_rendimiento);add_child(_temporizador)
+	_proxima_revision=Time.get_ticks_msec()+2000
+	_minimo_avisado=false
+	_vigilante.reiniciar(Time.get_ticks_usec(),Engine.get_frames_drawn())
+	_temporizador.start()
+
+func _parar_vigilancia() -> void:
+	if _temporizador!=null:_temporizador.stop()
+	_vigilante.reiniciar(Time.get_ticks_usec(),Engine.get_frames_drawn())
+
+func _vigilar_rendimiento() -> void:
+	if GameSettings.quality_preset!=0:
+		_parar_vigilancia()
+		return
+	var elegible:=not _midiendo and _puede_medir() and Time.get_ticks_msec()>=_proxima_revision
+	var objetivo:=float(GameSettings.auto_target_fps)
+	var limite:=_limite_efectivo()
+	if limite>0:objetivo=minf(objetivo,limite)
+	var resultado:Dictionary=_vigilante.observar(Time.get_ticks_usec(),Engine.get_frames_drawn(),elegible,objetivo)
+	if resultado.is_empty():return
+	mundo.set_meta("ultima_vigilancia_fps",resultado.duplicate())
+	if not resultado.degradar:
+		if _minimo_avisado:
+			_minimo_avisado=false
+			GameSettings._set_auto_status("Automática: "+Calidad.nombre_nivel(_nivel)+" · vigilancia activa")
+		return
+	if _nivel>=Calidad.NIVEL_MINIMO:
+		if not _minimo_avisado:
+			GameSettings._set_auto_status("Automática: Mínima · el equipo sigue por debajo del objetivo")
+			_minimo_avisado=true
+		return
+	_nivel+=1
+	GameSettings.aplicar_nivel_calidad(_nivel)
+	GameSettings.guardar_autoconfiguracion(_nivel,"Automática: %s · ajuste por FPS bajos sostenidos"%Calidad.nombre_nivel(_nivel))
+	mundo.set_meta("ultimo_descenso_automatico",{"fps":resultado.fps,"nivel":_nivel,"instante_ms":Time.get_ticks_msec()})
+	# Dejar estabilizar los nuevos búferes y evitar varios cambios seguidos.
+	_proxima_revision=Time.get_ticks_msec()+8000
+	_vigilante.reiniciar(Time.get_ticks_usec(),Engine.get_frames_drawn())
 
 func _exit_tree() -> void:
 	if _midiendo and DisplayServer.get_name()!="headless":RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),false)

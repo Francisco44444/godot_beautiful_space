@@ -14,13 +14,14 @@ func _ready() -> void:
 	var detectar:=Button.new();detectar.name="AutoDetectButton";detectar.text="Detectar configuración del equipo";detectar.custom_minimum_size.y=36
 	detectar.pressed.connect(GameSettings.solicitar_autoconfiguracion);add_child(detectar)
 	_estado=Label.new();_estado.name="AutoGraphicsStatus";_estado.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;add_child(_estado)
+	var ayuda_auto:=Label.new();ayuda_auto.text="Automática vigila los FPS al jugar y reduce la calidad si la lentitud persiste. Los ajustes manuales desactivan esa vigilancia.";ayuda_auto.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;ayuda_auto.add_theme_font_size_override("font_size",13);add_child(ayuda_auto)
 	_equipo=Label.new();_equipo.name="GraphicsDevice";_equipo.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;_equipo.add_theme_font_size_override("font_size",13)
 	_equipo.text="GPU: "+RenderingServer.get_video_adapter_name() if DisplayServer.get_name()!="headless" else "Sin dispositivo gráfico en esta prueba"
 	add_child(_equipo)
 	_selector("auto_target_fps","Objetivo del ajuste automático",["60 FPS","90 FPS","120 FPS"],func(i:int)->void:GameSettings.set_auto_target_fps([60,90,120][i]),"AutoTargetSelector")
 	_selector("window_mode","Modo de pantalla",["Ventana","Pantalla completa"],GameSettings.set_window_mode,"WindowModeSelector")
 	_selector("fps_limit","Límite de fotogramas",["Sin límite","30 FPS","60 FPS","90 FPS","120 FPS","144 FPS","200 FPS","240 FPS"],func(i:int)->void:GameSettings.set_fps_limit([0,30,60,90,120,144,200,240][i]),"FrameLimitSelector")
-	_deslizador("manual_render_scale","Escala de imagen 3D actual",0.5,1.0,0.01,GameSettings.set_manual_render_scale,"RenderScaleSlider")
+	_deslizador("manual_render_scale","Escala de imagen 3D actual",0.35,1.0,0.01,GameSettings.set_manual_render_scale,"RenderScaleSlider")
 	var nitidez:=Label.new();nitidez.text="Menor escala gana fluidez y pierde nitidez. La interfaz conserva su resolución. Al moverla se activa Personalizado.";nitidez.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;nitidez.add_theme_font_size_override("font_size",13);add_child(nitidez)
 	_selector("shadow_quality","Calidad de sombras",["Desactivadas","Rápidas · 1024","Medias · 2048","Nítidas · 4096"],func(i:int)->void:GameSettings.set_visual_option("shadow_quality",i),"ShadowQualitySelector")
 	_deslizador("shadow_distance","Distancia de sombras",50,480,10,func(v:float)->void:GameSettings.set_visual_option("shadow_distance",v),"ShadowDistanceSlider")

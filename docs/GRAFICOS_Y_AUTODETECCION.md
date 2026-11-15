@@ -19,7 +19,7 @@ perfiles no se presentan como una optimización de aspecto idéntico.
 ## Uso
 
 En `Esc → Gráficos` o `Z` se puede elegir Automática, Alta, Equilibrada,
-Rendimiento o Personalizada. «Detectar configuración del equipo» vuelve a medir;
+Rendimiento o Personalizada. Automática es el valor inicial en Windows y Mac. «Detectar configuración del equipo» vuelve a medir;
 hay que cerrar los menús y jugar unos segundos. El objetivo automático puede
 ser 60, 90 o 120 FPS; es una preferencia, no una garantía.
 
@@ -27,7 +27,7 @@ Ambos paneles comparten y guardan:
 
 - Pantalla completa o ventana y resolución de ventana.
 - Límite de FPS: 30, 60, 90, 120, 144, 200, 240 o sin límite; VSync independiente.
-- Escala 3D personalizada entre 50 y 100 %, con interfaz a resolución completa.
+- Escala 3D personalizada entre 35 y 100 %, con interfaz a resolución completa.
 - Sombras desactivadas o atlas de 1024, 2048 y 4096; distancia de 50 a 480 m.
 - Densidad de pradera al 50, 75 o 100 %, manteniendo altura, color y viento.
 - Horizonte de árboles entre 2 y 5,2 km y distancia de detalle entre 180 y 900 m.
@@ -45,6 +45,7 @@ FPS y opciones. No envía datos automáticamente.
 | Alta | 100 % | 4096, 480 m, 4 cascadas | 100 % | Completos |
 | Equilibrada | 77 % | 2048, 180 m, 2 cascadas | 75 % | SSAO y resplandor; niebla ligera |
 | Rendimiento | 50 % | 1024, 100 m, 2 cascadas | 50 % | Sin SSAO, resplandor ni niebla volumétrica |
+| Mínima automática | 37,5 % efectivo | Sin sombras | 50 % | Sin SSAO, resplandor ni niebla volumétrica |
 
 Equilibrada mantiene el horizonte de 5,2 km y detalle hasta 260 m. Rendimiento
 lo limita a 3,2 km y detalle hasta 180 m. La reconstrucción usa MetalFX espacial
@@ -70,9 +71,21 @@ clasificar el equipo como lento. Sin información GPU tampoco se asciende a Alta
 por una falsa lectura de coste cero.
 
 El resultado se guarda por GPU, renderizador, sistema, tamaño de ventana,
-objetivo y versión. Al cambiar el tamaño se espera a que termine el arrastre
-antes de medir otra vez. La medición se desactiva al acabar y no queda un bucle
-de adaptación permanente. Los scripts de pruebas no arrancan una calibración
+objetivo y versión. El último escalón automático añade sombras desactivadas,
+horizonte de 2 km y escala solicitada de 35 %, respetando el mínimo interno de
+960×540; a 1440p supone 37,5 %. Al cambiar el tamaño se espera a que termine el arrastre
+antes de medir otra vez. La calibración por fotograma se desactiva al acabar. Un temporizador de un
+segundo mantiene la vigilancia durante la partida, también al arrancar con una
+configuración guardada. Cuenta fotogramas realmente dibujados y tiempo real.
+Baja un escalón si al menos el 80 % de una ventana de seis segundos queda por
+debajo del 98 % del objetivo (tolerancia para no confundir 59,9 con falta de
+potencia). Después espera ocho segundos antes de acumular una nueva ventana.
+No acumula pausas, menús, pérdida de foco ni bloqueos de carga. Respeta un límite
+voluntario de FPS o la frecuencia con VSync; tampoco sube y baja la calidad
+continuamente. Si se alcanza Mínima y el equipo sigue lento, lo indica sin
+prometer unos FPS que el hardware no puede dar. Elegir un ajuste manual detiene
+la vigilancia. La lógica pura de muestreo mide aproximadamente 1,62 microsegundos
+por llamada en el Mac, sin contar el resto del callback ni el renderizado. Los scripts de pruebas no arrancan una calibración
 implícita; una sonda nativa sí verifica el botón explícito.
 
 La configuración pasa al esquema 3. Se conserva una resolución de 1280×720
@@ -120,7 +133,8 @@ VSync, límite a 30 FPS, saturación CPU, presentación lenta, percentiles,
 validación, migración y escala personalizada. `graphics_controls_test.gd`
 comprueba ambos menús, persistencia, índice y RID de hierba, sombras de sol y
 luna, efectos, MSAA, límite de FPS, LOD sincronizado y recuperación de Alta.
-Las dos pruebas se incluyen en la compilación automática.
+Las dos pruebas y `adaptive_graphics_test.gd`, que comprueba la vigilancia
+continua, se incluyen en la compilación automática.
 
 Se inyectan fallos de VSync, densidad, sombras, control LOD y horizonte y se comprueba que fallan por el
 aserto previsto, con restauración posterior. La prueba de controles se ejecuta
@@ -131,3 +145,21 @@ Los FPS del Mac no predicen los de la GTX 1060. El objetivo general de 100–120
 FPS sigue pendiente, especialmente a 1440p nativos en bosque. La siguiente
 medición de Windows debe incluir el diagnóstico del juego para confirmar GPU,
 API, escala efectiva y opciones; no se presupone que esté usando la GTX.
+
+
+### Comprobación de la vigilancia continua en 0.1.28
+
+Se recorre el arranque con la huella del equipo guardada y se comprueba que el
+temporizador queda activo sin pulsar Detectar. En una ventana real del Mac se
+simula una caída a 10 FPS usando un límite de prueba externo a los ajustes:
+no degrada con Esc pausado, baja de Equilibrada a Rendimiento al jugar y conserva
+ese nivel cuando se retira la limitación y la ventana recupera unos 114 FPS.
+Una segunda caída llega a Mínima; el descenso queda acotado, el aviso se retira
+al recuperarse y un ajuste manual detiene el temporizador. Esta simulación
+verifica decisiones, no demuestra una mejora de 10 a 114 FPS causada por la
+calidad ni mide el PC Windows. Se revisaron las capturas del nivel mínimo y del
+estado automático; los datos quedan en `generated/reviews/2026-11-15/vigilancia-continua/`.
+
+Las pruebas adicionales detectaron siete defectos inyectados: descenso
+prematuro, descenso omitido, tirón aislado, pausa ignorada, pérdida de una caída
+que cruza ventanas, nivel guardado recortado y modo inicial manual.
