@@ -116,6 +116,8 @@ func _ready() -> void:
 	var normales_constantes = preload("res://scripts/normales_constantes_terreno.gd").new()
 	normales_constantes.name = "NormalesConstantesTerreno"
 	add_child(normales_constantes)
+	var calidad = preload("res://scripts/configuracion_visual.gd").new()
+	add_child(calidad)
 	normales_constantes.iniciar(terrain)
 	if DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="forward_plus":
 		# Las grutas esculpen el suelo de forma diferida. Validar el cache antes

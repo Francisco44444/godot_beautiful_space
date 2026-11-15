@@ -13,6 +13,8 @@ var _page: VBoxContainer
 var _page_title: Label
 var _page_content: VBoxContainer
 var _page_scroll: ScrollContainer
+var _lod_slider: HSlider
+var _lod_label: Label
 var _render_profile_selector: OptionButton
 var _render_profile_description: Label
 var _save_list: ItemList
@@ -33,6 +35,7 @@ func _ready() -> void:
 	SaveGameManager.status_changed.connect(_set_status)
 	GameSettings.render_profile_changed.connect(_sync_render_profile_selector)
 	GameSettings.resolution_changed.connect(_on_resolution_changed)
+	GameSettings.lod_distance_changed.connect(_sincronizar_lod)
 
 
 func set_open(open: bool) -> void:
@@ -151,6 +154,8 @@ func _add_main_button(text_value: String, node_name: String, callback: Callable)
 func _clear_page(title_value: String) -> void:
 	_render_profile_selector = null
 	_render_profile_description = null
+	_lod_slider = null
+	_lod_label = null
 	_page_scroll.scroll_vertical = 0
 	for child in _page_content.get_children():
 		_page_content.remove_child(child)
@@ -213,10 +218,13 @@ func _show_credits() -> void:
 
 func _show_graphics() -> void:
 	_clear_page("GRÁFICOS")
+	_page_content.add_child(preload("res://scripts/opciones_graficas.gd").new())
 	var resolution_label := Label.new()
-	resolution_label.text = "Resolución"
+	resolution_label.text = "Resolución en ventana"
 	_page_content.add_child(resolution_label)
 	var selector := OptionButton.new()
+	selector.name="ResolutionSelector"
+	selector.disabled=GameSettings.window_mode==1
 	for resolution in GameSettings.get_supported_resolutions():
 		selector.add_item("%d × %d" % [resolution.x, resolution.y])
 		if resolution == GameSettings.resolution:
@@ -241,19 +249,16 @@ func _show_graphics() -> void:
 	_render_profile_description.add_theme_font_size_override("font_size", 15)
 	_page_content.add_child(_render_profile_description)
 	_sync_render_profile_selector(GameSettings.render_profile)
-	var lod_label := Label.new()
-	lod_label.text = "Distancia de detalle: %.0f m" % GameSettings.lod_distance_metres
-	_page_content.add_child(lod_label)
-	var lod := HSlider.new()
-	lod.min_value = GameSettings.MIN_LOD_DISTANCE
-	lod.max_value = GameSettings.MAX_LOD_DISTANCE
-	lod.step = 10.0
-	lod.value = GameSettings.lod_distance_metres
-	lod.value_changed.connect(func(value: float) -> void:
-		GameSettings.set_lod_distance(value)
-		lod_label.text = "Distancia de detalle: %.0f m" % value
-	)
-	_page_content.add_child(lod)
+	_lod_label = Label.new()
+	_page_content.add_child(_lod_label)
+	_lod_slider = HSlider.new()
+	_lod_slider.name = "DetailDistanceSlider"
+	_lod_slider.min_value = GameSettings.MIN_LOD_DISTANCE
+	_lod_slider.max_value = GameSettings.MAX_LOD_DISTANCE
+	_lod_slider.step = 10.0
+	_lod_slider.value_changed.connect(GameSettings.set_lod_distance)
+	_page_content.add_child(_lod_slider)
+	_sincronizar_lod(GameSettings.lod_distance_metres)
 	var vsync := CheckButton.new()
 	vsync.name = "VSyncToggle"
 	vsync.text = "Sincronizar con la pantalla (VSync)"
@@ -269,6 +274,11 @@ func _show_graphics() -> void:
 	hint.text = "El LOD cambia automáticamente modelos lejanos por versiones ligeras."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_page_content.add_child(hint)
+
+
+func _sincronizar_lod(distancia: float) -> void:
+	if is_instance_valid(_lod_slider): _lod_slider.set_value_no_signal(distancia)
+	if is_instance_valid(_lod_label): _lod_label.text = "Distancia de detalle: %.0f m" % distancia
 
 
 func _sync_render_profile_selector(profile: int) -> void:

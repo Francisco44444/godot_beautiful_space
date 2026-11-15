@@ -8,13 +8,17 @@ signal resolution_changed(resolution: Vector2i)
 signal lod_distance_changed(distance_metres: float)
 signal vsync_changed(enabled: bool)
 signal render_profile_changed(profile: int)
+signal graphics_changed()
+signal auto_configuration_requested()
+signal auto_status_changed(message: String)
 signal identity_changed(player_name: String, character_index: int)
 
 const PerfilesRender = preload("res://scripts/perfiles_render.gd")
-const RENDER_PROFILE_OPTIONS: Array[String] = ["Nativo", "Equilibrado", "Más fluido"]
+const Calidad = preload("res://scripts/calidad_grafica.gd")
+const RENDER_PROFILE_OPTIONS: Array[String] = ["Nativo", "Equilibrado", "Más fluido", "Personalizado"]
 
 const SETTINGS_PATH := "user://graphics_settings.cfg"
-const SETTINGS_SCHEMA_VERSION := 2
+const SETTINGS_SCHEMA_VERSION := 3
 const LEGACY_DEFAULT_RESOLUTION := Vector2i(1280, 720)
 const DEFAULT_RESOLUTION := Vector2i(1600, 900)
 const DEFAULT_LOD_DISTANCE := 340.0
@@ -47,6 +51,17 @@ var settings_path := SETTINGS_PATH
 var player_name := DEFAULT_PLAYER_NAME
 var character_index := DEFAULT_CHARACTER_INDEX
 var _settings_need_migration_save := false
+var quality_preset := 0
+var visual_options: Dictionary = Calidad.valores_iniciales()
+var manual_render_scale := 0.75
+var fps_limit := 120
+var auto_target_fps := 60
+var window_mode := 0
+var auto_status := "Automática pendiente de medir"
+var auto_fingerprint := ""
+var auto_level := 2
+var _aplicando_calidad := false
+
 
 
 func _ready() -> void:
@@ -54,6 +69,7 @@ func _ready() -> void:
 	if _settings_need_migration_save:
 		_save_settings()
 	_apply_vsync()
+	Engine.max_fps = fps_limit
 	# La reconstrucción sólo se recalcula al cambiar el ajuste o el tamaño real;
 	# ampliar la ventana con el ratón no añade trabajo a cada fotograma.
 	get_window().size_changed.connect(_apply_render_profile)
@@ -70,6 +86,7 @@ func set_resolution(value: Vector2i, persist: bool = true) -> void:
 
 
 func set_lod_distance(value: float, persist: bool = true) -> void:
+	_marcar_personalizado()
 	lod_distance_metres = snappedf(clampf(value, MIN_LOD_DISTANCE, MAX_LOD_DISTANCE), 10.0)
 	lod_distance_changed.emit(lod_distance_metres)
 	if persist:
@@ -84,14 +101,17 @@ func set_vsync_enabled(value: bool, persist: bool = true) -> void:
 
 
 func set_render_profile(value: int, persist: bool = true) -> void:
+	_marcar_personalizado()
 	render_profile = value if value >= 0 and value < RENDER_PROFILE_OPTIONS.size() else 0
 	_apply_render_profile()
 	render_profile_changed.emit(render_profile)
+	graphics_changed.emit()
 	if persist: _save_settings()
 
 
 func render_profile_description() -> String:
 	match render_profile:
+		3: return "Escala solicitada: %.0f%%; se limita en ventanas pequeñas para conservar detalle. Interfaz a resolución completa." % (manual_render_scale*100.0)
 		1: return "Reconstruye la imagen 3D para ganar fluidez; los detalles finos pueden perder nitidez. Interfaz a resolución completa."
 		2: return "Prioriza los FPS con menor nitidez en la imagen 3D. Interfaz a resolución completa."
 	return "Máxima nitidez: imagen 3D e interfaz a resolución completa."
@@ -103,11 +123,96 @@ func _apply_render_profile() -> void:
 	var renderer := "headless" if DisplayServer.get_name() == "headless" else RenderingServer.get_current_rendering_method()
 	var dispositivo := RenderingServer.get_rendering_device() if renderer == "forward_plus" else null
 	var metal_espacial := dispositivo != null and dispositivo.has_feature(RenderingDevice.SUPPORTS_METALFX_SPATIAL)
-	var perfil := PerfilesRender.resolver(render_profile,ventana.size,renderer,metal_espacial)
-	# El perfil no toca densidad, distancias, iluminación, LOD ni antialiasing.
-	# Nativo sigue siendo el valor inicial y el retorno seguro sin soporte.
+	var perfil := PerfilesRender.resolver(render_profile,ventana.size,renderer,metal_espacial,manual_render_scale)
+	# La escala 3D sigue separada del detalle, sombras y posprocesado.
+	# El resultado usa el tamaño real al maximizar y conserva la interfaz.
 	ventana.scaling_3d_mode = perfil.mode
 	ventana.scaling_3d_scale = perfil.scale
+
+
+func set_visual_option(clave: String, valor: Variant, persist: bool = true) -> void:
+	if not Calidad.OPCIONES.has(clave):return
+	_marcar_personalizado()
+	visual_options[clave]=Calidad.validar(clave,valor)
+	graphics_changed.emit()
+	if persist:_save_settings()
+
+func set_quality_preset(indice: int, persist: bool = true) -> void:
+	quality_preset=clampi(indice,0,4)
+	if quality_preset==0:
+		auto_fingerprint=""
+		_set_auto_status("Reanuda el juego para medir la configuración")
+		auto_configuration_requested.emit()
+	elif quality_preset!=4:
+		aplicar_nivel_calidad(quality_preset)
+		_set_auto_status("Calidad: "+Calidad.NOMBRES[quality_preset])
+	graphics_changed.emit()
+	if persist:_save_settings()
+
+func aplicar_nivel_calidad(nivel: int) -> void:
+	var datos: Dictionary=Calidad.preset(nivel)
+	_aplicando_calidad=true
+	for clave in Calidad.OPCIONES:visual_options[clave]=float(datos[clave])
+	manual_render_scale=float(datos.manual_scale)
+	set_lod_distance(float(datos.lod),false)
+	set_render_profile(int(datos.render_profile),false)
+	_aplicando_calidad=false
+	graphics_changed.emit()
+
+func set_manual_render_scale(valor: float, persist: bool = true) -> void:
+	manual_render_scale=snappedf(clampf(valor,0.5,1.0),0.05) if is_finite(valor) else 1.0
+	set_render_profile(3,false)
+	if persist:_save_settings()
+
+func set_fps_limit(valor: int, persist: bool = true) -> void:
+	fps_limit=valor if valor in [0,30,60,90,120,144,200,240] else 120
+	Engine.max_fps=fps_limit
+	graphics_changed.emit()
+	if persist:_save_settings()
+
+func set_auto_target_fps(valor: int, persist: bool = true) -> void:
+	auto_target_fps=valor if valor in [60,90,120] else 60
+	if quality_preset==0:
+		auto_fingerprint=""
+		auto_configuration_requested.emit()
+	graphics_changed.emit()
+	if persist:_save_settings()
+
+func set_window_mode(valor: int, persist: bool = true) -> void:
+	window_mode=clampi(valor,0,1)
+	_apply_resolution()
+	graphics_changed.emit()
+	if persist:_save_settings()
+
+func solicitar_autoconfiguracion() -> void:set_quality_preset(0)
+
+func _marcar_personalizado() -> void:
+	if _aplicando_calidad:return
+	quality_preset=4
+	_set_auto_status("Calidad personalizada")
+
+func _set_auto_status(texto: String) -> void:
+	if auto_status==texto:return
+	auto_status=texto
+	auto_status_changed.emit(texto)
+
+func huella_equipo() -> String:
+	if DisplayServer.get_name()=="headless":return "headless"
+	return "%s|%s|%s|%s|%d|%s"%[RenderingServer.get_video_adapter_name(),RenderingServer.get_current_rendering_method(),OS.get_name(),get_window().size,auto_target_fps,ProjectSettings.get_setting("application/config/version","")]
+
+func guardar_autoconfiguracion(nivel: int, resumen: String) -> void:
+	if quality_preset!=0:return
+	auto_level=nivel
+	auto_fingerprint=huella_equipo()
+	_set_auto_status(resumen)
+	_save_settings()
+
+
+func diagnostico_grafico() -> String:
+	var gpu:="Sin GPU" if DisplayServer.get_name()=="headless" else RenderingServer.get_video_adapter_name()
+	var api:=RenderingServer.get_current_rendering_driver_name()
+	var ventana:=get_window()
+	return "Senderos %s\nGPU: %s · API: %s\nSalida: %s · escala 3D: %.0f %%\nCalidad: %s · %s\nFPS actuales: %.1f · límite: %d · VSync: %s\nOpciones: %s"%[ProjectSettings.get_setting("application/config/version",""),gpu,api,ventana.size,ventana.scaling_3d_scale*100.0,Calidad.NOMBRES[quality_preset],auto_status,Engine.get_frames_per_second(),fps_limit,vsync_enabled,JSON.stringify(visual_options)]
 
 
 func set_player_identity(name_value: String, index_value: int, persist: bool = true) -> void:
@@ -133,11 +238,22 @@ func get_character_path(index: int) -> String:
 
 
 func reset_defaults(persist: bool = true) -> void:
+
+	_aplicando_calidad=true
+	visual_options=Calidad.valores_iniciales()
+	manual_render_scale=0.75
+	fps_limit=120;Engine.max_fps=120
+	auto_target_fps=60;window_mode=0;auto_fingerprint="";auto_level=2
 	set_resolution(DEFAULT_RESOLUTION, false)
 	set_lod_distance(DEFAULT_LOD_DISTANCE, false)
 	set_vsync_enabled(true, false)
 	set_render_profile(0, false)
 	set_player_identity(DEFAULT_PLAYER_NAME, DEFAULT_CHARACTER_INDEX, false)
+	_aplicando_calidad=false
+	quality_preset=0
+	_set_auto_status("Automática pendiente de medir")
+	auto_configuration_requested.emit()
+	graphics_changed.emit()
 	if persist:
 		_save_settings()
 
@@ -169,7 +285,7 @@ func _load_settings() -> void:
 	# Las instalaciones existentes guardaron 1280×720 como valor inicial. Se
 	# migra una sola vez al nuevo tamaño; después, si el usuario elige 1280 desde
 	# Gráficos, la versión 2 de la configuración respetará esa decisión.
-	if stored_schema < SETTINGS_SCHEMA_VERSION and stored_resolution == LEGACY_DEFAULT_RESOLUTION:
+	if stored_schema < 2 and stored_resolution == LEGACY_DEFAULT_RESOLUTION:
 		stored_resolution = DEFAULT_RESOLUTION
 	resolution = _closest_supported_resolution(stored_resolution)
 	vsync_enabled = bool(config.get_value("video", "vsync_enabled", true))
@@ -186,6 +302,18 @@ func _load_settings() -> void:
 		0,
 		CHARACTER_OPTIONS.size() - 1
 	)
+	quality_preset=clampi(int(config.get_value("graphics","quality_preset",0)),0,4)
+	for clave in Calidad.OPCIONES:visual_options[clave]=Calidad.validar(clave,config.get_value("detail",clave,Calidad.OPCIONES[clave][2]))
+	var escala: float=float(config.get_value("graphics","manual_render_scale",0.75))
+	manual_render_scale=clampf(escala,0.5,1.0) if is_finite(escala) else 0.75
+	var limite:int=int(config.get_value("video","fps_limit",120))
+	fps_limit=limite if limite in [0,30,60,90,120,144,200,240] else 120
+	var objetivo:int=int(config.get_value("graphics","auto_target_fps",60))
+	auto_target_fps=objetivo if objetivo in [60,90,120] else 60
+	window_mode=clampi(int(config.get_value("video","window_mode",0)),0,1)
+	auto_fingerprint=String(config.get_value("graphics","auto_fingerprint",""))
+	auto_level=clampi(int(config.get_value("graphics","auto_level",2)),1,3)
+	auto_status="Automática pendiente de medir" if quality_preset==0 else ("Calidad personalizada" if quality_preset==4 else "Calidad: "+Calidad.NOMBRES[quality_preset])
 	_settings_need_migration_save = stored_schema < SETTINGS_SCHEMA_VERSION
 
 
@@ -195,6 +323,14 @@ func _save_settings() -> void:
 	config.set_value("video", "width", resolution.x)
 	config.set_value("video", "height", resolution.y)
 	config.set_value("video", "vsync_enabled", vsync_enabled)
+	config.set_value("video","fps_limit",fps_limit)
+	config.set_value("video","window_mode",window_mode)
+	config.set_value("graphics","quality_preset",quality_preset)
+	config.set_value("graphics","manual_render_scale",manual_render_scale)
+	config.set_value("graphics","auto_target_fps",auto_target_fps)
+	config.set_value("graphics","auto_fingerprint",auto_fingerprint)
+	config.set_value("graphics","auto_level",auto_level)
+	for clave in visual_options:config.set_value("detail",clave,visual_options[clave])
 	config.set_value("graphics", "render_profile", render_profile)
 	config.set_value("graphics", "lod_distance_metres", lod_distance_metres)
 	config.set_value("identity", "player_name", player_name)
@@ -211,6 +347,9 @@ func _apply_vsync() -> void:
 
 func _apply_resolution() -> void:
 	if DisplayServer.get_name().to_lower() == "headless":
+		return
+	if window_mode==1:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 		return
 	if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_WINDOWED:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)

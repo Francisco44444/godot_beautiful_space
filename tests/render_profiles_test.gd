@@ -26,7 +26,7 @@ func _probar() -> void:
 		if not _exigir(limitado.profile == perfil and limitado.scale == 0.8 and limitado.input_expected == Vector2i(1280,720) and limitado.mode == 3, "El mínimo permite una entrada menor de 1280 por 720."): return
 	for salida in [Vector2i.ZERO,Vector2i(1920,0),Vector2i(-1,1080),Vector2i(1920,-5)]:
 		if not _exigir(_es_nativo(PERFILES.resolver(2,salida,"forward_plus",true),2,Vector2i.ZERO), "Una salida inválida activa reconstrucción o un tamaño interno inválido."): return
-	for id in [-123,-1,3,999999]:
+	for id in [-123,-1,4,999999]:
 		if not _exigir(_es_nativo(PERFILES.resolver(id,Vector2i(2560,1440),"forward_plus",true),0,Vector2i(2560,1440)), "Un identificador inválido no recupera Nativo."): return
 	# La misma preferencia vuelve a reconstruir después de reducir y ampliar
 	# la ventana; el caso pequeño no debe reescribirla como Nativo.

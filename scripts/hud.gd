@@ -1198,17 +1198,19 @@ func _build_settings_overlay() -> void:
 	settings_controls.text = _controls_summary()
 	content.add_child(settings_controls)
 
+	content.add_child(preload("res://scripts/opciones_graficas.gd").new())
 	var resolution_row := HBoxContainer.new()
 	resolution_row.name = "ResolutionRow"
 	resolution_row.add_theme_constant_override("separation", 18)
 	content.add_child(resolution_row)
 	var resolution_label := Label.new()
-	resolution_label.text = "Resolución"
+	resolution_label.text = "Resolución en ventana"
 	resolution_label.custom_minimum_size.x = 260.0
 	resolution_label.add_theme_font_size_override("font_size", 18)
 	resolution_row.add_child(resolution_label)
 	resolution_selector = OptionButton.new()
 	resolution_selector.name = "ResolutionSelector"
+	resolution_selector.disabled = GameSettings.window_mode == 1
 	resolution_selector.custom_minimum_size = Vector2(230.0, 38.0)
 	for resolution in GameSettings.get_supported_resolutions():
 		resolution_selector.add_item("%d × %d" % [resolution.x, resolution.y])

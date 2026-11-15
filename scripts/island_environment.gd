@@ -15,6 +15,7 @@ const RANGO_FUNDIDO_SOMBRA_SOL := Vector2(0.10, 0.28)
 const NOCHE_SOMBRA_LUNA_COMPLETA := 0.95
 const FOG_STREAM_REFRESH_SECONDS := 0.40
 const FOG_VOLUME_BUDGET := 2
+var sombras_habilitadas := true
 const MOON_TEXTURE: Texture2D = preload("res://assets/textures/moon/moon_craters_lowpoly.png")
 const OCEAN_SHADER := """
 shader_type spatial;
@@ -276,14 +277,14 @@ func sincronizar_luz_celeste(daylight: float, camera: Camera3D = null) -> void:
 		# Sin umbral: el primer aporte del crepúsculo sigue siendo visible.
 		moon_light.visible = moon_light.light_energy != 0.0
 		var moon_owns_shadows := night >= MOON_SHADOW_HANDOFF
-		moon_light.shadow_enabled = moon_owns_shadows
+		moon_light.shadow_enabled = moon_owns_shadows and sombras_habilitadas
 		moon_light.shadow_opacity = smoothstep(MOON_SHADOW_HANDOFF, NOCHE_SOMBRA_LUNA_COMPLETA, night)
 		var directional_sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
 		if directional_sun != null:
 			# El relevo sucede con ambas opacidades a cero. Antes la sombra de una
 			# luna ya intensa sustituía de golpe a la del sol, en otra dirección.
 			# Se mantiene un único mapa direccional; día y noche recuperan opacidad 1.
-			directional_sun.shadow_enabled = not moon_owns_shadows
+			directional_sun.shadow_enabled = not moon_owns_shadows and sombras_habilitadas
 			directional_sun.shadow_opacity = smoothstep(RANGO_FUNDIDO_SOMBRA_SOL.x, RANGO_FUNDIDO_SOMBRA_SOL.y, daylight)
 		set_meta("moon_shadow_owner", moon_owns_shadows)
 		set_meta("exclusive_celestial_shadows", true)

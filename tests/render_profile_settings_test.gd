@@ -50,7 +50,7 @@ func comprobar() -> void:
 	var hud := mundo.get_node("HUD")
 	hud._set_settings_open(true)
 	var z := hud.get_node("SettingsOverlay").find_child("RenderProfileSelector",true,false) as OptionButton
-	if not exigir(z != null and z.item_count == 3 and z.selected == 0,"El panel Z no refleja los tres perfiles y el valor nativo."): return
+	if not exigir(z != null and z.item_count == 4 and z.selected == 0,"El panel Z no refleja los cuatro perfiles y el valor nativo."): return
 	z.select(1)
 	z.item_selected.emit(1)
 	if not exigir(ajustes.render_profile == 1,"El selector Z no aplica la elección."): return
@@ -84,7 +84,7 @@ func comprobar() -> void:
 	if not exigir(z.selected == 0 and root.scaling_3d_scale == 1.0 and root.scaling_3d_mode == 0,"No se recupera nativo o queda una conexión de interfaz liberada."): return
 	ajustes.set_render_profile(2,false)
 	ajustes.reset_defaults(false)
-	if not exigir(ajustes.render_profile == 0 and z.selected == 0,"Restaurar valores no recupera nativo."): return
+	if not exigir(ajustes.quality_preset == 0 and z.selected == ajustes.render_profile,"Restaurar valores no recupera el modo automático sincronizado."): return
 	pausa.set_open(false)
 	hud._set_settings_open(false)
 	mundo.queue_free()

@@ -7,20 +7,24 @@ const MODO_NATIVO := 0
 const MODO_FSR1 := 1
 const MODO_METAL_ESPACIAL := 3
 
-static func resolver(perfil: int, salida: Vector2i, renderer: String, metal_spatial: bool) -> Dictionary:
-	var solicitado := perfil if perfil >= 0 and perfil <= 2 else 0
+static func resolver(perfil: int, salida: Vector2i, renderer: String, metal_spatial: bool, escala_manual: float = 0.75) -> Dictionary:
+	var solicitado := perfil if perfil >= 0 and perfil <= 3 else 0
 	if salida.x <= 0 or salida.y <= 0:
 		return _nativo(solicitado,Vector2i.ZERO)
 	if solicitado == 0 or renderer != "forward_plus":
 		return _nativo(solicitado,salida)
 	var escala_base := 0.77 if solicitado == 1 else 2.0 / 3.0
-	var escala := maxf(escala_base,maxf(float(MINIMO_INTERNO.x)/salida.x,float(MINIMO_INTERNO.y)/salida.y))
+	var minimo := MINIMO_INTERNO
+	if solicitado == 3:
+		escala_base = clampf(escala_manual,0.5,1.0) if is_finite(escala_manual) else 1.0
+		minimo = Vector2i(960,540)
+	var escala := maxf(escala_base,maxf(float(minimo.x)/salida.x,float(minimo.y)/salida.y))
 	if escala >= 1.0:
 		return _nativo(solicitado,salida)
 	var entrada := _entrada(salida,escala)
 	# Godot almacena la escala como float32 y trunca el producto float32 a int.
 	# Si el redondeo cae bajo el mínimo, subir un ULP conserva ese contrato.
-	while entrada.x < MINIMO_INTERNO.x or entrada.y < MINIMO_INTERNO.y:
+	while entrada.x < minimo.x or entrada.y < minimo.y:
 		escala = _siguiente_float32(escala)
 		if escala >= 1.0: return _nativo(solicitado,salida)
 		entrada = _entrada(salida,escala)

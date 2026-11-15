@@ -294,6 +294,9 @@ const GRASS_CACHE_STRIDE := 9
 
 @onready var terrain: Terrain3D = get_node(terrain_path) as Terrain3D
 
+var _densidad_pradera = preload("res://scripts/densidad_pradera.gd").new()
+var tree_visibility_distance := TREE_LOD_VISIBILITY_END
+
 var generated_tree_count := 0
 var generated_rock_count := 0
 var generated_moss_rock_count := 0
@@ -2188,6 +2191,17 @@ func _install_grass_lod_buckets(buckets: Dictionary) -> void:
 		generated_grass_lod_instances += local_transforms.size()
 
 
+func configurar_pradera(densidad: float, distancia_arboles: float) -> void:
+	var mallas: Array=[]
+	mallas.append_array(_grass_meshes)
+	mallas.append_array(_grass_mid_lod_meshes)
+	mallas.append_array(_grass_lod_meshes)
+	_densidad_pradera.aplicar(mallas,densidad)
+	if not is_equal_approx(tree_visibility_distance,distancia_arboles):
+		tree_visibility_distance=clampf(distancia_arboles,2000.0,TREE_LOD_VISIBILITY_END)
+		_update_explicit_lod_visibility(true)
+
+
 func set_lod_switch_distance(distance_metres: float) -> void:
 	lod_switch_distance = clampf(distance_metres, 180.0, 900.0)
 	_tree_cell_states.clear()
@@ -2229,7 +2243,7 @@ func _update_explicit_lod_visibility(force: bool) -> void:
 		TREE_CELL_SIZE,
 		lod_switch_distance,
 		TREE_LOD_HYSTERESIS,
-		TREE_LOD_VISIBILITY_END,
+		tree_visibility_distance,
 		force
 	)
 	_update_grass_near_field(focus, force)
