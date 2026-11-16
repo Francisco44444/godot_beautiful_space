@@ -101,6 +101,10 @@ bash tools/publicar_juego_web_nas.sh IDENTIFICADOR dist/web-game
   3D. La comprobación visual de la partida se hizo en el navegador de este Mac.
 - Regresión ENet y prueba de interfaz cooperativa con dos procesos: correctas.
 - Prueba de atmósfera de escritorio y de accesorios exportados: correctas.
+- La prueba de incorporación tardía espera tanto la marca de apertura como
+  la colisión ya aplicada. La apertura conserva un cambio físico diferido;
+  se reprodujo la transición y una puerta deliberadamente bloqueada sigue
+  fallando en la comprobación corregida.
 - Tres defectos inyectados y detectados: exceso del bloque WebGL, materiales
   compartidos entre accesorios y noveno jugador admitido.
 

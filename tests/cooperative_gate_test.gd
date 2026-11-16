@@ -87,10 +87,13 @@ func _probar() -> void:
 		sesion.set("_save_snapshot_accumulator", -1000000.0)
 		await create_timer(0.7).timeout
 		if tardio:
+			# opened cambia al recibir el paquete, pero set_deferred aplica la
+			# colisión después. Esperar ambos conserva el mismo contrato físico
+			# sin consultar el espacio entre la apertura y su actualización.
 			if not await _esperar(func():
 				for nodo in get_nodes_in_group("rpg_cave_gate"):
-					if not nodo.opened: return false
-				return true): _fallar("La incorporación tardía no recupera las puertas abiertas."); return
+					if not nodo.opened or _bloquea(nodo): return false
+				return true): _fallar("La incorporación tardía no recupera puertas abiertas y transitables."); return
 			for nodo in get_nodes_in_group("rpg_cave_gate"):
 				if _bloquea(nodo) or inventario.has_item(nodo.key_item_id): _fallar("El invitado tardío necesita llaves o conserva una colisión cerrada."); return
 			if not await _consultar("fin"): return
