@@ -34,7 +34,7 @@ const WORLD_LIMIT := 6200.0
 
 var session_mode := SessionMode.OFFLINE
 var players: Dictionary = {}
-var _peer: ENetMultiplayerPeer
+var _peer: MultiplayerPeer
 var _state_accumulator := 0.0
 var _world_state_accumulator := 0.0
 var _save_snapshot_accumulator := 0.0
@@ -103,13 +103,20 @@ func play_offline() -> void:
 
 
 func host_game(port_value: int = PORT) -> Error:
+	if OS.has_feature("web"): return host_web()
 	if not _is_valid_port(port_value):
 		session_status_changed.emit("Puerto no válido: %d" % port_value)
 		return ERR_INVALID_PARAMETER
 	leave_session()
-	_peer = ENetMultiplayerPeer.new()
+	if not ClassDB.class_exists("ENetMultiplayerPeer"):
+		session_status_changed.emit("El navegador necesita el transporte cooperativo web")
+		return ERR_UNAVAILABLE
+	# ENet no existe en WebAssembly. La resolución dinámica mantiene el
+	# transporte nativo sin impedir compilar el cliente de navegador.
+	var peer_nativo = ClassDB.instantiate("ENetMultiplayerPeer")
+	_peer = peer_nativo
 	# create_server cuenta clientes remotos; anfitrión + 7 invitados = 8.
-	var error := _peer.create_server(port_value, MAX_PLAYERS - 1)
+	var error: Error = peer_nativo.create_server(port_value, MAX_PLAYERS - 1)
 	if error != OK:
 		_peer = null
 		session_status_changed.emit("No se pudo abrir el puerto UDP %d: %s" % [port_value, error_string(error)])
@@ -125,6 +132,7 @@ func host_game(port_value: int = PORT) -> Error:
 
 
 func join_game(address: String, port_value: int = PORT) -> Error:
+	if OS.has_feature("web"): return join_web(address)
 	var clean_address := address.strip_edges()
 	if clean_address.is_empty():
 		clean_address = "127.0.0.1"
@@ -132,8 +140,14 @@ func join_game(address: String, port_value: int = PORT) -> Error:
 		session_status_changed.emit("Puerto no válido: %d" % port_value)
 		return ERR_INVALID_PARAMETER
 	leave_session()
-	_peer = ENetMultiplayerPeer.new()
-	var error := _peer.create_client(clean_address, port_value)
+	if not ClassDB.class_exists("ENetMultiplayerPeer"):
+		session_status_changed.emit("El navegador necesita el transporte cooperativo web")
+		return ERR_UNAVAILABLE
+	# ENet no existe en WebAssembly. La resolución dinámica mantiene el
+	# transporte nativo sin impedir compilar el cliente de navegador.
+	var peer_nativo = ClassDB.instantiate("ENetMultiplayerPeer")
+	_peer = peer_nativo
+	var error: Error = peer_nativo.create_client(clean_address, port_value)
 	if error != OK:
 		_peer = null
 		session_status_changed.emit("No se pudo iniciar la conexión: %s" % error_string(error))
@@ -143,6 +157,60 @@ func join_game(address: String, port_value: int = PORT) -> Error:
 	session_mode = SessionMode.CONNECTING
 	session_status_changed.emit("Conectando con %s:%d…" % [clean_address, _active_port])
 	return OK
+
+
+func _url_relay_web() -> String:
+	if OS.has_feature("web"):
+		var origen := String(JavaScriptBridge.eval("window.location.origin"))
+		if origen.begins_with("http://127.0.0.1:") or origen.begins_with("http://localhost:"):
+			return "ws://127.0.0.1:8770/senderos/coop/ws"
+		return origen.replace("https://", "wss://").replace("http://", "ws://") + "/senderos/coop/ws"
+	return "wss://franfuco4444.synology.me:24573/senderos/coop/ws"
+
+
+func host_web(url: String = "") -> Error:
+	return _conectar_web(true, "", url)
+
+
+func join_web(codigo: String, url: String = "") -> Error:
+	var limpio := codigo.strip_edges().to_upper()
+	var patron := RegEx.new()
+	patron.compile("^[A-Z2-9]{6}$")
+	if patron.search(limpio) == null:
+		session_status_changed.emit("Escribe el código de seis letras y números de la sala")
+		return ERR_INVALID_PARAMETER
+	return _conectar_web(false, limpio, url)
+
+
+func _conectar_web(crear: bool, codigo: String, url: String) -> Error:
+	leave_session()
+	var web = preload("res://scripts/transporte_web.gd").new()
+	web.sala_lista.connect(_sala_web_lista)
+	web.fallo.connect(func(mensaje: String): session_status_changed.emit(mensaje))
+	var error: Error = web.conectar(_url_relay_web() if url.is_empty() else url, crear, codigo, String(ProjectSettings.get_setting("application/config/version", "")))
+	if error != OK: return error
+	_peer = web
+	session_mode = SessionMode.CONNECTING
+	multiplayer.multiplayer_peer = _peer
+	session_status_changed.emit("Abriendo expedición en el NAS…" if crear else "Conectando con la sala %s…" % codigo)
+	return OK
+
+
+func _sala_web_lista(codigo: String) -> void:
+	if _peer == null or not _peer.get("anfitrion"): return
+	session_mode = SessionMode.HOST
+	players = {1: _local_identity()}
+	_emit_roster()
+	session_started.emit("anfitrión")
+	session_status_changed.emit("Sala %s · comparte este código · 1/%d jugadores" % [codigo, MAX_PLAYERS])
+
+
+func get_web_room_code() -> String:
+	return String(_peer.get("codigo_sala")) if uses_web_transport() else ""
+
+
+func uses_web_transport() -> bool:
+	return _peer != null and _peer.get_script() == preload("res://scripts/transporte_web.gd")
 
 
 func leave_session() -> void:
@@ -265,6 +333,7 @@ func get_lan_addresses() -> PackedStringArray:
 
 
 func _on_connected_to_server() -> void:
+	if uses_web_transport() and bool(_peer.get("anfitrion")): return
 	session_mode = SessionMode.CLIENT
 	var identity := _local_identity()
 	_server_register_identity.rpc_id(1, String(identity.name), int(identity.character_index))
@@ -272,7 +341,7 @@ func _on_connected_to_server() -> void:
 	if local != null:
 		_server_receive_save_snapshot.rpc_id(1, _local_save_snapshot(local))
 	session_started.emit("invitado")
-	session_status_changed.emit("Conectado al anfitrión")
+	session_status_changed.emit("Conectado a la sala %s" % get_web_room_code() if uses_web_transport() else "Conectado al anfitrión")
 
 
 func _on_connection_failed() -> void:
@@ -519,8 +588,9 @@ func _broadcast_world_state(state: Dictionary) -> void:
 func _is_peer_ready(peer_id: int) -> bool:
 	if _peer == null or peer_id not in multiplayer.get_peers():
 		return false
-	var packet_peer := _peer.get_peer(peer_id)
-	return packet_peer != null and packet_peer.get_state() == ENetPacketPeer.STATE_CONNECTED
+	if not _peer.has_method("get_peer"):return multiplayer.get_peers().has(peer_id)
+	var packet_peer = _peer.call("get_peer",peer_id)
+	return packet_peer != null and packet_peer.get_state() == ClassDB.class_get_integer_constant("ENetPacketPeer","STATE_CONNECTED")
 
 
 func _local_identity() -> Dictionary:

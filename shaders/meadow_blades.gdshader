@@ -33,7 +33,13 @@ uniform float _vertex_density = 1.0;
 uniform float _region_size = 1024.0;
 uniform float _region_texel_size = 0.0009765625;
 uniform int _region_map_size = 32;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+uniform ivec4 _region_map[256];
+int leer_region(int indice) { return _region_map[indice / 4][indice % 4]; }
+#else
 uniform int _region_map[1024];
+int leer_region(int indice) { return _region_map[indice]; }
+#endif
 uniform highp sampler2DArray _height_maps : repeat_disable, filter_linear;
 uniform highp sampler2DArray _color_maps : source_color, repeat_disable, filter_linear;
 uniform sampler2D urban_mask : filter_nearest, repeat_disable;
@@ -46,7 +52,7 @@ ivec3 terrain_index_coord(vec2 grid) {
 	ivec2 region = ivec2(floor(texel_position * _region_texel_size)) + ivec2(_region_map_size / 2);
 	bool valid = all(greaterThanEqual(region, ivec2(0))) && all(lessThan(region, ivec2(_region_map_size)));
 	ivec2 safe_region = clamp(region, ivec2(0), ivec2(_region_map_size - 1));
-	int layer = valid ? _region_map[safe_region.y * _region_map_size + safe_region.x] - 1 : -1;
+	int layer = valid ? leer_region(safe_region.y * _region_map_size + safe_region.x) - 1 : -1;
 	return ivec3(ivec2(mod(texel_position, _region_size)), layer);
 }
 

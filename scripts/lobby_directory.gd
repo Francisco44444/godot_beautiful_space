@@ -39,6 +39,9 @@ func _ready() -> void:
 	_endpoint_probe.request_completed.connect(_on_endpoint_probe_completed)
 	NetworkSession.session_ended.connect(_on_session_ended)
 	NetworkSession.roster_changed.connect(_on_roster_changed)
+	if OS.has_feature("web"):
+		_endpoint_ready = true
+		return
 	_probe_endpoint()
 
 
@@ -52,6 +55,9 @@ func _process(delta: float) -> void:
 
 
 func refresh_rooms() -> void:
+	if OS.has_feature("web"):
+		directory_status_changed.emit("Crea una sala o introduce el código de tus amigos")
+		return
 	if not _endpoint_ready:
 		_pending_refresh = true
 		return

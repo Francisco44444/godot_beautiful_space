@@ -75,6 +75,8 @@ jobs:
           unzip -q .ci/export-templates.tpz -d .ci/templates
           cp .ci/templates/templates/windows_release_x86_64.exe \
             tools/export_templates/windows_release_x86_64.exe
+          cp .ci/templates/templates/web_dlink_nothreads_release.zip \
+            tools/export_templates/web_dlink_nothreads_release.zip
           chmod +x ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
 
       - name: Aplicar la versión e importar recursos
@@ -90,6 +92,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/test_lobby_directory.py -v
+          python3 -m venv .ci/web-tests
+          .ci/web-tests/bin/pip install aiohttp==3.12.15
+          .ci/web-tests/bin/python tests/test_web_coop.py \
+            --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/web_assets_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/island_map_cache_test.gd
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
@@ -222,6 +230,12 @@ jobs:
             "${{ steps.build.outputs.package_url }}" \
             "${{ steps.build.outputs.notes }}"
 
+      - name: Crear juego web para el NAS
+        shell: bash
+        env:
+          GODOT_BIN: ${{ github.workspace }}/.ci/godot/Godot_v4.7.1-stable_linux.x86_64
+        run: bash tools/build_web_release_ci.sh "${{ steps.build.outputs.version }}"
+
       - name: Conservar la compilación de prueba
         uses: actions/upload-artifact@v7
         with:
@@ -230,6 +244,7 @@ jobs:
             dist/releases/${{ steps.build.outputs.version }}/SenderosDelHorizonte-Windows-x86_64-${{ steps.build.outputs.version }}.zip
             dist/releases/${{ steps.build.outputs.version }}/SenderosDelHorizonte-Instalador.zip
             dist/releases/${{ steps.build.outputs.version }}/version.json
+            dist/releases/${{ steps.build.outputs.version }}/SenderosDelHorizonte-Web-${{ steps.build.outputs.version }}.zip
           compression-level: 0
           retention-days: 14
           if-no-files-found: error
@@ -246,17 +261,18 @@ jobs:
           package="$release_dir/SenderosDelHorizonte-Windows-x86_64-$VERSION.zip"
           manifest="$release_dir/version.json"
           installer="$release_dir/SenderosDelHorizonte-Instalador.zip"
+          web_game="$release_dir/SenderosDelHorizonte-Web-$VERSION.zip"
           notes_file="docs/NOTAS_$VERSION.md"
 
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
-              "$package" "$manifest" "$installer" \
+              "$package" "$manifest" "$installer" "$web_game" \
               --repo "$GITHUB_REPOSITORY" --clobber
             gh release edit "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" --latest
           else
             gh release create "$GITHUB_REF_NAME" \
-              "$package" "$manifest" "$installer" \
+              "$package" "$manifest" "$installer" "$web_game" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag --generate-notes --latest \
               --title "Senderos del Horizonte $GITHUB_REF_NAME"

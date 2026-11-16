@@ -47,10 +47,12 @@ func _aplicar() -> void:
 	if _aplicado==opciones:return
 	_aplicado=opciones.duplicate()
 	var entorno:Environment=mundo.get_node("WorldEnvironment").environment
-	entorno.ssao_enabled=bool(opciones.ssao)
+	var completo:=DisplayServer.get_name()=="headless" or RenderingServer.get_current_rendering_method()=="forward_plus"
+	entorno.ssao_enabled=completo and bool(opciones.ssao)
 	entorno.glow_enabled=bool(opciones.glow)
-	entorno.volumetric_fog_enabled=int(opciones.fog_quality)>0
-	if DisplayServer.get_name()!="headless":
+	entorno.volumetric_fog_enabled=completo and int(opciones.fog_quality)>0
+	if not completo:entorno.fog_enabled=int(opciones.fog_quality)>0
+	if DisplayServer.get_name()!="headless" and completo:
 		RenderingServer.directional_shadow_atlas_set_size([1024,1024,2048,4096][int(opciones.shadow_quality)],bool(ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/16_bits",true)))
 		RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW if int(opciones.shadow_quality)<=1 else RenderingServer.SHADOW_QUALITY_SOFT_LOW)
 		var tamanos:Vector2i=Vector2i(64,64) if int(opciones.fog_quality)<2 else Vector2i(int(ProjectSettings.get_setting("rendering/environment/volumetric_fog/volume_size",64)),int(ProjectSettings.get_setting("rendering/environment/volumetric_fog/volume_depth",128)))
@@ -149,8 +151,9 @@ func _detener() -> void:
 
 func _limite_efectivo() -> float:
 	var tope:=float(GameSettings.fps_limit)
-	if GameSettings.vsync_enabled:
+	if GameSettings.vsync_enabled or OS.has_feature("web"):
 		var hz:=DisplayServer.screen_get_refresh_rate(DisplayServer.window_get_current_screen())
+		if hz<=0 and OS.has_feature("web"):hz=60.0
 		if hz>0:tope=minf(tope,hz) if tope>0 else hz
 	return tope
 

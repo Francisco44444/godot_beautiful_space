@@ -1398,13 +1398,14 @@ func _build_lobby_overlay() -> void:
 	room_name_row.add_child(lobby_room_name_edit)
 
 	var rooms_title := Label.new()
-	rooms_title.text = "PARTIDAS ACTIVAS EN EL NAS"
+	rooms_title.text = "COOPERATIVO POR CÓDIGO · HASTA OCHO JUGADORES" if OS.has_feature("web") else "PARTIDAS ACTIVAS EN EL NAS"
 	rooms_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	rooms_title.add_theme_font_size_override("font_size", 17)
 	rooms_title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.52))
 	content.add_child(rooms_title)
 	lobby_room_list = ItemList.new()
 	lobby_room_list.name = "ActiveRoomList"
+	lobby_room_list.visible = not OS.has_feature("web")
 	lobby_room_list.custom_minimum_size = Vector2(680.0, 128.0)
 	lobby_room_list.select_mode = ItemList.SELECT_SINGLE
 	lobby_room_list.allow_reselect = true
@@ -1417,18 +1418,20 @@ func _build_lobby_overlay() -> void:
 	content.add_child(room_actions)
 	var refresh_button := Button.new()
 	refresh_button.name = "RefreshRoomsButton"
+	refresh_button.visible = not OS.has_feature("web")
 	refresh_button.text = "Actualizar lista"
 	refresh_button.pressed.connect(func() -> void: LobbyDirectory.refresh_rooms())
 	room_actions.add_child(refresh_button)
 	lobby_join_room_button = Button.new()
 	lobby_join_room_button.name = "JoinRoomButton"
+	lobby_join_room_button.visible = not OS.has_feature("web")
 	lobby_join_room_button.text = "Unirse a la seleccionada"
 	lobby_join_room_button.disabled = true
 	lobby_join_room_button.pressed.connect(_on_join_room_pressed)
 	room_actions.add_child(lobby_join_room_button)
 	var advanced_button := Button.new()
 	advanced_button.name = "AdvancedConnectionButton"
-	advanced_button.text = "Avanzado · IP manual"
+	advanced_button.text = "Introducir código de sala" if OS.has_feature("web") else "Avanzado · IP manual"
 	advanced_button.pressed.connect(func() -> void:
 		lobby_advanced_box.visible = not lobby_advanced_box.visible
 	)
@@ -1437,35 +1440,35 @@ func _build_lobby_overlay() -> void:
 	lobby_advanced_box = VBoxContainer.new()
 	lobby_advanced_box.name = "AdvancedConnection"
 	lobby_advanced_box.add_theme_constant_override("separation", 6)
-	lobby_advanced_box.visible = false
+	lobby_advanced_box.visible = OS.has_feature("web")
 	content.add_child(lobby_advanced_box)
 
 	var address_row := HBoxContainer.new()
 	address_row.add_theme_constant_override("separation", 18)
 	lobby_advanced_box.add_child(address_row)
 	var address_label := Label.new()
-	address_label.text = "IP del anfitrión"
+	address_label.text = "Código de la sala" if OS.has_feature("web") else "IP del anfitrión"
 	address_label.custom_minimum_size.x = 190.0
 	address_label.add_theme_font_size_override("font_size", 18)
 	address_row.add_child(address_label)
 	lobby_address_edit = LineEdit.new()
 	lobby_address_edit.name = "HostAddress"
-	lobby_address_edit.placeholder_text = "192.168.1.50 o IP pública"
-	lobby_address_edit.text = "127.0.0.1"
+	lobby_address_edit.placeholder_text = "Código de seis caracteres" if OS.has_feature("web") else "192.168.1.50 o IP pública"
+	lobby_address_edit.text = "" if OS.has_feature("web") else "127.0.0.1"
 	lobby_address_edit.custom_minimum_size = Vector2(410.0, 40.0)
 	address_row.add_child(lobby_address_edit)
 
 	var help := Label.new()
 	var local_addresses := NetworkSession.get_lan_addresses()
 	var local_text := ", ".join(local_addresses) if not local_addresses.is_empty() else "no detectada"
-	help.text = "LAN del anfitrión: %s  ·  Internet: abrir UDP %d en el router" % [local_text, NetworkSession.PORT]
+	help.text = "Comparte el código; no hace falta abrir puertos" if OS.has_feature("web") else "LAN del anfitrión: %s  ·  Internet: abrir UDP %d en el router" % [local_text, NetworkSession.PORT]
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.add_theme_color_override("font_color", Color(0.68, 0.78, 0.80))
 	lobby_advanced_box.add_child(help)
 	var manual_join_button := Button.new()
 	manual_join_button.name = "JoinButton"
-	manual_join_button.text = "Unirse por IP manual"
+	manual_join_button.text = "Unirse a la expedición" if OS.has_feature("web") else "Unirse por IP manual"
 	manual_join_button.pressed.connect(_on_join_pressed)
 	lobby_advanced_box.add_child(manual_join_button)
 
@@ -1489,9 +1492,29 @@ func _build_lobby_overlay() -> void:
 	buttons.add_child(solo_button)
 	var host_button := Button.new()
 	host_button.name = "HostButton"
-	host_button.text = "Crear y anunciar"
+	host_button.text = "Crear sala y obtener código" if OS.has_feature("web") else "Crear y anunciar"
 	host_button.pressed.connect(_on_host_pressed)
 	buttons.add_child(host_button)
+	if not OS.has_feature("web"):
+		var crear_web := Button.new()
+		crear_web.text = "Crear sala por código"
+		crear_web.pressed.connect(func() -> void:
+			_save_lobby_identity()
+			NetworkSession.host_web()
+		)
+		buttons.add_child(crear_web)
+		var codigo_web := LineEdit.new()
+		codigo_web.placeholder_text = "Código de sala web"
+		codigo_web.max_length = 6
+		codigo_web.custom_minimum_size.x = 190.0
+		lobby_advanced_box.add_child(codigo_web)
+		var unir_web := Button.new()
+		unir_web.text = "Unirse por código · navegador, Mac o Windows"
+		unir_web.pressed.connect(func() -> void:
+			_save_lobby_identity()
+			NetworkSession.join_web(codigo_web.text)
+		)
+		lobby_advanced_box.add_child(unir_web)
 	var back_button := Button.new()
 	back_button.name = "BackButton"
 	back_button.text = "Volver"
@@ -1536,7 +1559,7 @@ func _on_play_solo_pressed() -> void:
 func _on_host_pressed() -> void:
 	_save_lobby_identity()
 	var error := NetworkSession.host_game()
-	if error == OK:
+	if error == OK and not OS.has_feature("web"):
 		LobbyDirectory.publish_room(lobby_room_name_edit.text)
 
 
@@ -1597,6 +1620,9 @@ func _on_directory_rooms_changed(active_rooms: Array) -> void:
 
 
 func _on_directory_status_changed(message: String) -> void:
+	if NetworkSession.uses_web_transport() and not NetworkSession.get_web_room_code().is_empty():
+		lobby_status.text = "Sala %s · comparte este código · %d/%d jugadores" % [NetworkSession.get_web_room_code(), NetworkSession.get_player_count(), NetworkSession.MAX_PLAYERS]
+		return
 	if lobby_status != null:
 		lobby_status.text = message
 
@@ -1629,7 +1655,7 @@ func is_lobby_open() -> bool:
 
 
 func _on_network_session_started(_mode_name: String) -> void:
-	if lobby_open:
+	if lobby_open and not (NetworkSession.uses_web_transport() and NetworkSession.is_host()):
 		_set_lobby_open(false)
 	_update_network_status_label()
 	_sincronizar_pausa()
@@ -1643,10 +1669,14 @@ func _on_network_status_changed(message: String) -> void:
 
 func _on_network_roster_changed(_roster: Dictionary) -> void:
 	_update_network_status_label()
+	if lobby_open and NetworkSession.uses_web_transport(): _on_directory_status_changed("")
 
 
 func _update_network_status_label() -> void:
 	if network_status_label != null:
+		if NetworkSession.uses_web_transport():
+			network_status_label.text = "Sala %s · %s · %d/%d jugadores" % [NetworkSession.get_web_room_code(), NetworkSession.get_mode_name(), NetworkSession.get_player_count(), NetworkSession.MAX_PLAYERS]
+			return
 		network_status_label.text = "Sesión: %s · %d/%d jugadores · UDP %d" % [
 			NetworkSession.get_mode_name(),
 			NetworkSession.get_player_count(),

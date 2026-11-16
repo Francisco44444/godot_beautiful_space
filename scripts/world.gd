@@ -75,6 +75,8 @@ var _last_exploration_time_of_day := ""
 
 
 func _ready() -> void:
+	preload("res://scripts/compatibilidad_web.gd").instalar(terrain)
+	island_environment.instalar_niebla_valle()
 	_place_on_terrain(player, 0.12)
 	player.spawn_position = player.global_position
 	_place_on_terrain(horse, 0.12)
@@ -759,11 +761,13 @@ func _update_sun_cycle(delta: float) -> void:
 	sun.light_energy = daylight_factor * lerpf(0.62, 1.35, maxf(solar_height, 0.0)) * storm_dimming
 	# Forward+ mantiene el BRDF de una direccional con energía cero. Retirar
 	# sólo la luz conserva el astro independiente y todo valor no nulo.
+	if OS.has_feature("web"): sun.light_energy *= 0.70
 	sun.visible = sun.light_energy != 0.0
 	sun.light_color = Color(1.0, 0.58, 0.32).lerp(Color(1.0, 0.93, 0.79), smoothstep(0.05, 0.62, solar_height))
 	if island_environment != null:
 		island_environment.sincronizar_luz_celeste(daylight_factor)
 	sky_fill.light_energy = lerpf(0.19, 0.22, daylight_factor) * storm_dimming
+	if OS.has_feature("web"): sky_fill.light_energy *= 0.75
 	sky_fill.light_color = Color(0.34, 0.44, 0.78).lerp(Color(0.58, 0.7, 0.92), daylight_factor)
 	if daylight_factor < 0.14:
 		time_of_day = "Noche"
@@ -807,6 +811,7 @@ func _update_sun_cycle(delta: float) -> void:
 		sky_material.ground_horizon_color = nuevo_horizonte_inferior
 		actualizaciones_paleta_cielo += 1
 	environment.ambient_light_energy = lerpf(0.22, 0.66, daylight_factor) * maxf(storm_dimming, 0.34)
+	if OS.has_feature("web"): environment.ambient_light_energy *= 0.62
 	environment.ambient_light_color = Color(0.28, 0.36, 0.62).lerp(Color(0.91, 0.93, 0.87), daylight_factor)
 	environment.tonemap_exposure = lerpf(0.84, 0.98, daylight_factor)
 	for lantern in get_tree().get_nodes_in_group("night_lantern"):

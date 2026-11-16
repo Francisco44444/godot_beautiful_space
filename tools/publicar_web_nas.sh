@@ -92,5 +92,21 @@ while IFS= read -r archivo; do subir "${archivo#website/}"; done < <(rg --files 
 subir style.css
 subir app.js
 subir version.json
+# Una release completa también publica el juego de navegador en su carpeta.
+web_zip="SenderosDelHorizonte-Web-$version.zip"
+if [[ ! -f "$origen/$web_zip" ]]; then
+  gh release download "v$version" --repo Francisco44444/godot_beautiful_space --pattern "$web_zip" --dir "$origen"
+fi
+mkdir -p "$origen/juego-web"
+python3 - "$origen/$web_zip" "$origen/juego-web" <<'PYWEB'
+from pathlib import Path
+import sys,zipfile
+with zipfile.ZipFile(sys.argv[1]) as archivo:
+    if archivo.testzip():raise SystemExit('ZIP web corrupto')
+    for nombre in archivo.namelist():
+        if '/' in nombre or nombre.startswith('.') or not all(c.isalnum() or c in '._-' for c in nombre):raise SystemExit('Nombre no válido dentro del ZIP web')
+    archivo.extractall(sys.argv[2])
+PYWEB
+bash tools/publicar_juego_web_nas.sh "$version" "$origen/juego-web"
 subir index.html
 echo "Web publicada: $base_url/"

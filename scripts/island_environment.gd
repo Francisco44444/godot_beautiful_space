@@ -238,6 +238,9 @@ func _process(delta: float) -> void:
 		_update_tide(delta)
 	var camera := get_viewport().get_camera_3d()
 	var daylight := float(get_parent().get("daylight_factor"))
+	if DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="gl_compatibility":
+		var entorno:Environment=get_parent().get_node("WorldEnvironment").environment
+		entorno.fog_light_color=Color(0.025,0.045,0.075).lerp(Color(0.76,0.82,0.87),daylight)
 	sync_celestial_sources(camera)
 	if camera != null:
 		_update_fog_streaming(camera, delta)
@@ -541,7 +544,30 @@ func _add_scenic_cascade(container: Node3D, cascade_name: String, top: Vector3, 
 	scenic_cascade_mist_count += 1
 
 
+func instalar_niebla_valle() -> void:
+	if DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="gl_compatibility":
+		var entorno:Environment=get_parent().get_node("WorldEnvironment").environment
+		entorno.volumetric_fog_enabled=false
+		entorno.fog_enabled=true
+		entorno.fog_density=0.00055
+		entorno.fog_sky_affect=0.26
+		return
+	# Mismas propiedades y ruta del antiguo nodo de escena; crearlo sólo en
+	# el renderizador compatible evita un shader fog inválido en WebGL.
+	var valle:=FogVolume.new();valle.name="ValleyMist"
+	valle.position=Vector3(18,4,12);valle.size=Vector3(500,18,500)
+	var material:=FogMaterial.new();material.density=0.0065
+	material.albedo=Color(0.76,0.82,0.9);material.emission=Color(0.008,0.01,0.018)
+	material.edge_fade=0.42;material.height_falloff=0.28
+	valle.material=material;get_parent().add_child(valle)
+
+
 func _build_fog_zones() -> void:
+	# WebGL no admite volúmenes de niebla. No crear FogMaterial evita compilar
+	# un shader fog incompatible; la atmósfera web se resuelve en el entorno.
+	if DisplayServer.get_name()!="headless" and RenderingServer.get_current_rendering_method()=="gl_compatibility":
+		set_meta("niebla_compatibilidad",true)
+		return
 	for zone in FOG_ZONES:
 		var volume := FogVolume.new()
 		volume.name = zone.name

@@ -13,10 +13,17 @@ const WORLD_PATH := "res://scenes/world.tscn"
 var _load_started := false
 var _instantiating := false
 var _progress: Array = []
+# ResourceLoader sólo retiene una referencia débil: conservar este recurso
+# evita que el mundo vuelva a cargar el material original de 32 KiB.
+var _material_web: Terrain3DMaterial
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	if OS.has_feature("web"):
+		_material_web = load("res://terrain/data/material.tres")
+		_material_web.set_shader_override(preload("res://shaders/terreno_web.gdshader"))
+		_material_web.enable_shader_override(true)
 	_apply_theme()
 	progress_bar.value = 2.0
 	stage_label.text = "Preparando la expedición…"

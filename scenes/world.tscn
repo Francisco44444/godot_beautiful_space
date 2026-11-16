@@ -63,13 +63,6 @@ adjustment_enabled = true
 adjustment_contrast = 1.04
 adjustment_saturation = 1.04
 
-[sub_resource type="FogMaterial" id="FogMaterial_valley"]
-density = 0.0065
-albedo = Color(0.76, 0.82, 0.9, 1)
-emission = Color(0.008, 0.01, 0.018, 1)
-edge_fade = 0.42
-height_falloff = 0.28
-
 [sub_resource type="StandardMaterial3D" id="Material_body"]
 albedo_color = Color(0.18, 0.42, 0.54, 1)
 roughness = 0.72
@@ -207,11 +200,6 @@ cloud_altitude = 220.0
 low_cloud_altitude = 108.0
 wind_direction = Vector2(1, 0.33)
 wind_speed = 0.1
-
-[node name="ValleyMist" type="FogVolume" parent="."]
-position = Vector3(18, 4, 12)
-size = Vector3(500, 18, 500)
-material = SubResource("FogMaterial_valley")
 
 [node name="Terrain3D" type="Terrain3D" parent="."]
 data_directory = "res://terrain/data"

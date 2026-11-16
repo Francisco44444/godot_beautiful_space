@@ -6,7 +6,18 @@ extends RefCounted
 ## de color definidos en el MTL de Quaternius.
 
 
+static var _biblioteca: Resource
+static var _biblioteca_consultada := false
+
 static func load_mesh(obj_path: String) -> ArrayMesh:
+	if not FileAccess.file_exists(obj_path):
+		if not _biblioteca_consultada:
+			_biblioteca_consultada=true
+			if ResourceLoader.exists("res://generated/modelos_obj_runtime.res"):
+				_biblioteca=load("res://generated/modelos_obj_runtime.res")
+		if _biblioteca!=null:
+			var mallas:Dictionary=_biblioteca.get("mallas")
+			if mallas.get(obj_path) is ArrayMesh:return mallas[obj_path].duplicate(true) as ArrayMesh
 	var file := FileAccess.open(obj_path, FileAccess.READ)
 	if file == null:
 		push_error("No se pudo abrir el OBJ Quaternius: %s" % obj_path)

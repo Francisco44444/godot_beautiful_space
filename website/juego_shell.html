@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$GODOT_PROJECT_NAME · Jugar</title>
+<style>
+:root{color-scheme:dark;font-family:Georgia,serif;background:#101d24;color:#f4ead2}*{box-sizing:border-box}body{margin:0;overflow:hidden}#canvas{display:block;width:100vw;height:100vh;outline:none}#portada{position:fixed;inset:0;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 70% 25%,#29473d,#12232b 60%,#0c171d)}article{width:min(620px,100%);padding:clamp(24px,5vw,54px);border:1px solid #a58b54;border-radius:8px;background:#13242ee8;box-shadow:0 22px 80px #0007}.ceja{font:12px system-ui;letter-spacing:.22em;color:#c6ad73}h1{font-size:clamp(30px,5vw,44px);font-weight:400;line-height:1.12;margin:16px 0}p{color:#bfcfc7;line-height:1.6;font:16px/1.6 system-ui}button{font:600 16px system-ui;padding:14px 24px;border:1px solid #d2b471;border-radius:4px;background:#d3b473;color:#15252a;cursor:pointer}button:disabled{opacity:.6;cursor:wait}a{color:#dfc488;text-underline-offset:4px}progress{width:100%;height:10px;accent-color:#c9ad70;margin:22px 0 8px}#detalle{font-size:14px;min-height:44px}#error{color:#ffc2ab}footer{display:flex;align-items:center;gap:20px;margin-top:24px;font:14px system-ui}#pantalla{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);font:12px system-ui;padding:5px 10px;background:#12242bd9;color:#e7d5a6;border-color:#8e794a;display:none;opacity:.6}#pantalla:hover{opacity:1}kbd{font:12px system-ui;color:#e6d7b4}.oculto{display:none!important}
+</style>
+$GODOT_HEAD_INCLUDE
+</head>
+<body>
+<canvas id="canvas" tabindex="0" aria-label="Senderos del Horizonte. Usa WASD para caminar y el ratón para mirar."></canvas>
+<section id="portada"><article>
+<div class="ceja">UNA EXPEDICIÓN POR AELORIA</div>
+<h1>Senderos del Horizonte</h1>
+<p>Praderas, pueblos y secretos al otro lado del camino. Entra desde tu navegador y descubre qué hay más allá del siguiente claro.</p>
+<p><kbd>W A S D</kbd> caminar · <kbd>Ratón</kbd> mirar · <kbd>Espacio</kbd> saltar<br><kbd>E</kbd> interactuar · <kbd>Esc</kbd> menú, ajustes y multijugador</p>
+<progress id="progreso" hidden></progress><p id="detalle">La primera carga descarga el mundo completo. Recomendado: ordenador con teclado y ratón.</p>
+<p id="error" role="alert"></p>
+<footer><button id="jugar">Entrar en Aeloria</button><a href="../../">Descargar para Windows</a></footer>
+</article></section>
+<button id="pantalla" aria-label="Activar pantalla completa">Pantalla completa</button>
+<script src="$GODOT_URL"></script>
+<script>
+const configuracion = $GODOT_CONFIG;
+const motor = new Engine(configuracion);
+const boton = document.getElementById('jugar');
+const detalle = document.getElementById('detalle');
+const progreso = document.getElementById('progreso');
+const canvas = document.getElementById('canvas');
+const pantalla = document.getElementById('pantalla');
+pantalla.addEventListener('click',()=>canvas.requestFullscreen?.());
+boton.addEventListener('click',async()=>{
+ boton.disabled=true;
+ const faltan=Engine.getMissingFeatures({threads:$GODOT_THREADS_ENABLED});
+ if(faltan.length){document.getElementById('error').textContent='Este navegador no admite el juego. Prueba Chrome, Edge o Firefox actualizados, o descarga la versión para Windows.';boton.disabled=false;return;}
+ progreso.hidden=false;detalle.textContent='Descargando el mundo…';
+ try{
+  await motor.startGame({onProgress:(actual,total)=>{
+   if(total>0){progreso.max=total;progreso.value=actual;detalle.textContent=`Descargando el mundo · ${Math.round(actual/total*100)} % · ${Math.round(actual/1048576)} / ${Math.round(total/1048576)} MB`;
+   if(actual>=total)detalle.textContent='Preparando el paisaje y sus habitantes…';}
+  }});
+  document.getElementById('portada').remove();pantalla.style.display='block';canvas.focus();
+ }catch(error){console.error(error);document.getElementById('error').textContent='No se ha podido abrir el juego. Recarga para volver a intentarlo. '+error.message;boton.disabled=false;}
+});
+</script>
+</body></html>
