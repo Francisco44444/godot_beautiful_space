@@ -129,6 +129,57 @@ var _damage_cooldown := 0.0
 var _indice_enemigos_red: Dictionary = {}
 
 
+var aventura_pacifica: Node3D
+var _nodos_combate: Array[Node] = []
+var _estados_modo := {}
+var _modo_actual := true
+
+func es_aventura() -> bool: return bool(get_parent().modo_aventura)
+func _crear_aventura() -> void:
+	aventura_pacifica = preload("res://scripts/aventura_pacifica.gd").new()
+	add_child(aventura_pacifica)
+	aventura_pacifica.iniciar(self)
+func reconfigurar_modo() -> void:
+	if campaign == null or sidequests == null or _modo_actual == es_aventura(): return
+	_estados_modo[str(_modo_actual)] = {"campaign":campaign.save_state(),"quests":sidequests.save_state(),"aventura":estado_aventura()}
+	for n in _nodos_combate:
+		if is_instance_valid(n): remove_child(n); n.queue_free()
+	_nodos_combate.clear(); _indice_enemigos_red.clear(); _hazards.clear()
+	generated_enemy_count = 0; generated_boss_count = 0
+	if aventura_pacifica != null:
+		remove_child(aventura_pacifica); aventura_pacifica.queue_free(); aventura_pacifica = null
+	remove_child(campaign); campaign.queue_free(); campaign = null
+	remove_child(sidequests); sidequests.queue_free(); sidequests = null
+	_modo_actual = es_aventura()
+	if not es_aventura(): _crear_combate()
+	_build_campaign(); _build_sidequests()
+	if es_aventura(): _crear_aventura()
+	var anterior: Dictionary = _estados_modo.get(str(_modo_actual),{})
+	if not anterior.is_empty():
+		campaign.load_state(anterior.campaign); sidequests.load_state(anterior.quests)
+		recibir_aventura(anterior.get("aventura",{}))
+	_refresh_hud_bar()
+func _crear_combate() -> void:
+	var antes := get_children()
+	_populate_bestiary()
+	for n in get_children():
+		if n not in antes: _nodos_combate.append(n)
+func estado_aventura() -> Dictionary:
+	if aventura_pacifica == null: return {}
+	var datos: Dictionary = aventura_pacifica.guardar()
+	datos["campaign"] = campaign.save_state()
+	return datos
+func estado_aventura_red() -> Dictionary:
+	var datos := estado_aventura()
+	datos.erase("retorno")
+	return datos
+
+func recibir_aventura(datos: Dictionary) -> void:
+	if aventura_pacifica == null: return
+	aventura_pacifica.cargar(datos)
+	if datos.has("campaign") and datos.campaign != campaign.save_state():
+		campaign.load_state(datos.campaign); _refresh_hud_bar()
+
 func _ready() -> void:
 	_terrain = get_node(terrain_path) as Terrain3D
 	add_to_group("rpg_story_runtime")
@@ -157,9 +208,12 @@ func _build_story_world() -> void:
 	_terrain.data.update_maps(Terrain3DRegion.TYPE_CONTROL)
 	wonders.finish_caves()
 	terreno_preparado.emit()
-	_populate_bestiary()
+	_modo_actual = es_aventura()
+	if not es_aventura(): _crear_combate()
+	for spec in FORGE_SPECS: _spawn_forge(spec)
 	_build_campaign()
 	_build_sidequests()
+	if es_aventura(): _crear_aventura()
 	_build_kill_cam()
 	_build_cinematic()
 	_build_prologue()
@@ -225,8 +279,6 @@ func _populate_bestiary() -> void:
 		_build_arena(arena)
 	for boss in RPGBestiary.BOSSES:
 		_spawn_boss(boss)
-	for forge in FORGE_SPECS:
-		_spawn_forge(forge)
 
 
 func _spawn_creature(point: Vector2, pick: int, index: int, forced_biome: String = "",
@@ -334,6 +386,7 @@ func _spawn_boss(spec: Dictionary) -> void:
 
 func _build_campaign() -> void:
 	campaign = RPGCampaign.new()
+	campaign.modo_aventura = es_aventura()
 	campaign.name = "Campaign"
 	add_child(campaign)
 	campaign.act_completed.connect(_announce_act_end)
@@ -353,6 +406,7 @@ func _build_campaign() -> void:
 
 func _build_sidequests() -> void:
 	sidequests = RPGSideQuests.new()
+	sidequests.modo_aventura = es_aventura()
 	sidequests.name = "SideQuests"
 	add_child(sidequests)
 	sidequests.bind(_inventory, _player)
@@ -704,6 +758,7 @@ func _is_wounded() -> bool:
 
 
 func _bearing_to_quest(quest: Dictionary) -> String:
+	if es_aventura() and quest.has("at"): return bearing_line(quest.at)
 	if _player == null or int(quest["kind"]) != RPGSideQuests.Kind.HUNT:
 		return ""
 	var target := String(quest["target"])
@@ -786,7 +841,7 @@ func _tell_campaign(npc: RPGNPC, identity: Dictionary, player: Node, hello: Stri
 				"Tu siguiente paso es [b]%s[/b]" % String(act["goal"]),
 				RPGDialogue.directions(npc_id, "Es %s" % bearing_line(RPGCampaign.where_of(act)), ""),
 				"[i]%s[/i]" % String(act["hint"]) if told
-					else "[i]No te dijo cómo se le hace daño. Tendrás que verlo tú.[/i]",
+					else ("[i]Observa el mecanismo para encontrar la solución.[/i]" if es_aventura() else "[i]No te dijo cómo se le hace daño. Tendrás que verlo tú.[/i]"),
 				RPGDialogue.regard_line(int(_regard.get(npc_id, 0))),
 				closing,
 			]))
@@ -842,7 +897,7 @@ func chronicle() -> String:
 	var lines := PackedStringArray()
 	lines.append("[color=#f0d089][b]HISTORIA[/b][/color]")
 	var closed := 0
-	for act in RPGCampaign.ACTS:
+	for act in campaign.actos():
 		var act_id := String(act["id"])
 		var head := "%s · %s" % [String(act["numeral"]), String(act["title"])]
 		if campaign != null and campaign.is_done(act_id):
@@ -861,7 +916,7 @@ func chronicle() -> String:
 		lines.append("  [color=#b9b2a2]%d de %d cumplidos[/color]" % [
 			done_count, RPGSideQuests.QUESTS.size()])
 		var listed := 0
-		for quest in RPGSideQuests.QUESTS:
+		for quest in sidequests.encargos():
 			if bool(sidequests.is_done(quest)):
 				lines.append("  [color=#9ed69a]✓[/color] %s — %s" % [
 					String(quest["title"]), _npc_name(String(quest["giver"]))])
@@ -1231,6 +1286,13 @@ const REFUGES: Array[Dictionary] = [
 
 
 func _fall_and_wake_in_a_village() -> void:
+	if es_aventura() and aventura_pacifica != null and aventura_pacifica.retorno.size()==3:
+		var punto: Array = aventura_pacifica.retorno
+		_player.set_deferred("global_position",Vector3(punto[0],punto[1]+0.2,punto[2]))
+		_player.set_deferred("velocity",Vector3.ZERO)
+		player_health = player_max_health
+		player_health_changed.emit(player_health,player_max_health)
+		return
 	## Al caer te llevan a la villa más cercana y despiertas con LA MITAD de la
 	## vida, no con toda: reponerse cuesta, y volver a bajar es una decisión.
 	var here := Vector2(_player.global_position.x, _player.global_position.z)
@@ -1264,6 +1326,9 @@ func get_save_state() -> Dictionary:
 	for node in get_tree().get_nodes_in_group("rpg_cave_gate"):
 		gates.append((node as RPGCaveGate).get_save_state())
 	return {
+		"modo_aventura": es_aventura(),
+		"modos_guardados": _estados_modo.duplicate(true),
+		"aventura": estado_aventura(),
 		"health": player_health,
 		"awarded_chapters": _awarded_chapters.keys(),
 		"gates": gates,
@@ -1284,6 +1349,10 @@ func get_save_state() -> Dictionary:
 
 
 func apply_save_state(state: Dictionary) -> void:
+	get_parent().modo_aventura = bool(state.get("modo_aventura",false))
+	reconfigurar_modo()
+	_estados_modo = state.get("modos_guardados",{}).duplicate(true)
+	recibir_aventura(state.get("aventura",{}))
 	if wonders != null:
 		wonders.load_state(state.get("wonders", {}))
 	player_health = clampi(int(state.get("health", player_max_health)), 1, player_max_health)

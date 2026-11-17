@@ -152,6 +152,13 @@ const QUESTS: Array[Dictionary] = [
 ]
 
 
+var modo_aventura := false
+var _catalogo: Array[Dictionary] = []
+func encargos() -> Array[Dictionary]:
+	if not modo_aventura: return QUESTS
+	if _catalogo.is_empty(): _catalogo = preload("res://scripts/catalogo_aventura.gd").encargos(QUESTS)
+	return _catalogo
+
 var _state: Dictionary = {}
 var _inventory: Node = null
 var _player: Node = null
@@ -160,7 +167,7 @@ var _player: Node = null
 func bind(inventory: Node, player: Node) -> void:
 	_inventory = inventory
 	_player = player
-	for quest in QUESTS:
+	for quest in encargos():
 		_state[String(quest["id"])] = {
 			"taken": false, "done": false, "count": 0,
 			"needed": int(quest["needed"]), "reward_scale": 1.0, "told": true,
@@ -169,7 +176,7 @@ func bind(inventory: Node, player: Node) -> void:
 
 func quests_of(giver_id: String) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for quest in QUESTS:
+	for quest in encargos():
 		if String(quest["giver"]) == giver_id:
 			out.append(quest)
 	return out
@@ -186,7 +193,7 @@ func pending_for(giver_id: String) -> Dictionary:
 
 
 func quest_by_id(quest_id: String) -> Dictionary:
-	for quest in QUESTS:
+	for quest in encargos():
 		if String(quest["id"]) == quest_id:
 			return quest
 	return {}
@@ -272,7 +279,7 @@ func on_enemy_defeated(species_id: String, where := Vector2.ZERO) -> void:
 	## El identificador del enemigo lleva su especie por delante y el número
 	## detrás (`orco_merodeador_037`), así que la cacería cuenta por especie sin
 	## necesidad de llevar un registro aparte de cada criatura del mundo.
-	for quest in QUESTS:
+	for quest in encargos():
 		if int(quest["kind"]) != Kind.HUNT:
 			continue
 		if not species_id.begins_with(String(quest["target"])):

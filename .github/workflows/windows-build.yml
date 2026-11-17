@@ -91,6 +91,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/peaceful_adventure_test.gd
           python3 tests/test_lobby_directory.py -v
           python3 -m venv .ci/web-tests
           .ci/web-tests/bin/pip install aiohttp==3.12.15
@@ -145,6 +147,8 @@ jobs:
           python3 tests/test_network_handshake.py \
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
           python3 tests/test_cooperative_combat.py \
+            --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          python3 tests/test_cooperative_adventure.py \
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
           python3 tests/test_cooperative_gate.py \
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"

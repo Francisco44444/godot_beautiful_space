@@ -38,7 +38,7 @@ const CHAPTERS: Array[Dictionary] = [
 	},
 	{
 		"id": "mareas_de_cristal", "title": "VI · Mareas de cristal", "region": "Dunas, playas y rías",
-		"summary": "Las mareas traen cristales con recuerdos ajenos. El capitán Orin necesita reparar el faro para impedir que esas memorias alimenten al enemigo.",
+		"summary": "Las mareas traen cristales con recuerdos ajenos. El capitán Orin necesita reparar el faro para impedir que esas memorias se pierdan en el Silencio.",
 		"finale": "Enciende el Faro de las Mareas y recupera la Perla de los Navegantes.",
 	},
 	{
@@ -49,7 +49,7 @@ const CHAPTERS: Array[Dictionary] = [
 	{
 		"id": "la_voz_del_horizonte", "title": "VIII · La voz del horizonte", "region": "Bosque Tenebroso",
 		"summary": "En el confín oriental, los árboles rojos crecen alrededor de una voz sin cuerpo. Allí aguarda Vaelor, criatura nacida de todo lo que Aeloria decidió olvidar.",
-		"finale": "Entra en la Cámara sin Eco, enfréntate a Vaelor y devuelve a la isla los cinco nombres que le quitaron.",
+		"finale": "Entra en la Cámara sin Eco, escucha el nombre olvidado de Vaelor y devuelve a la isla los cinco nombres que le quitaron.",
 	},
 ]
 
@@ -107,7 +107,7 @@ const OBJECTIVE_TITLES: Array = [
 		"Árboles de hojas carmesí", "El sendero sin pájaros", "La cabaña de la bruja Lume", "Rocas que respiran", "El ejército de madera seca",
 		"La llave que sangra luz", "El pantano de los nombres", "La criatura de ojos azules", "Un amigo convertido en sombra", "La cascada invertida",
 		"El jardín de estatuas", "El último cofre de la reina", "La torre inclinada", "El dragón del horizonte", "El corazón del bosque rojo",
-		"La escalera hacia ninguna parte", "El coro de los olvidados", "La máscara de Vaelor", "La Cámara sin Eco", "El combate por la memoria",
+		"La escalera hacia ninguna parte", "El coro de los olvidados", "La máscara de Vaelor", "La Cámara sin Eco", "El nombre que faltaba",
 		"La voz recuperada", "Las campanas de Aeloria", "El amanecer prometido", "La última luz del Silencio", "La colina conoce tu voz",
 	],
 ]

@@ -17,6 +17,7 @@ func _comprobar() -> void:
 		root.always_on_top = true
 		root.show()
 	mundo = load("res://scenes/world.tscn").instantiate()
+	mundo.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(mundo)
 	root.get_node("SaveGameManager").bind_world(null)
 	for i in 12: await process_frame

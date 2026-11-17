@@ -90,6 +90,7 @@ func _build_interface() -> void:
 	_main.add_theme_constant_override("separation", 9)
 	root_content.add_child(_main)
 	_add_main_button("Continuar", "ContinueButton", func() -> void: set_open(false))
+	_add_main_button("Partida", "GameModeButton", _show_partida)
 	_add_main_button("Guardar partida", "SaveButton", func() -> void: SaveGameManager.save_current_game("manual"))
 	_add_main_button("Cargar / gestionar partidas", "LoadButton", _show_saves)
 	_add_main_button("Controles", "ControlsButton", _show_controls)
@@ -373,3 +374,30 @@ func _load_selected_save() -> void:
 func _set_status(message: String) -> void:
 	if _status != null:
 		_status.text = message
+
+
+func _show_partida() -> void:
+	_clear_page("PARTIDA")
+	var mundo := get_tree().current_scene
+	var texto := Label.new()
+	texto.text = "Aventura: explora, resuelve santuarios y ayuda a los habitantes.\nCombate: conserva la campaña original con enemigos.\nCada modo conserva su progreso al cambiar."
+	texto.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_page_content.add_child(texto)
+	var selector := OptionButton.new(); selector.name = "AdventureModeSelector"
+	selector.add_item("Aventura · sin enemigos"); selector.add_item("Combate · campaña original")
+	selector.select(0 if mundo.modo_aventura else 1)
+	selector.disabled = not NetworkSession.is_world_authority()
+	selector.item_selected.connect(func(i: int):
+		mundo.cambiar_modo_aventura(i == 0)
+		_show_partida()
+	)
+	_page_content.add_child(selector)
+	var refugio := Button.new(); refugio.text = "Construir refugio · 6 troncos"
+	refugio.disabled = not mundo.modo_aventura
+	refugio.pressed.connect(func():
+		var director = mundo.get_node("RPGStoryRuntime").aventura_pacifica
+		if director != null:
+			director.construir_refugio()
+			set_open(false)
+	)
+	_page_content.add_child(refugio)

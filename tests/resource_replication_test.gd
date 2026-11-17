@@ -12,6 +12,7 @@ func comprobar() -> void:
 	root.get_node("SaveGameManager").set_process(false)
 	for singleton in ["InventoryManager","ExplorationManager"]: root.get_node(singleton).set("autosave_enabled",false)
 	mundo = load("res://scenes/world.tscn").instantiate()
+	mundo.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(mundo)
 	root.get_node("SaveGameManager").bind_world(null)
 	for fotograma in 8: await process_frame

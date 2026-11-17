@@ -16,6 +16,7 @@ func _capture_clouds() -> void:
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var packed := load("res://scenes/world.tscn") as PackedScene
 	var world := packed.instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	await process_frame
 	await process_frame

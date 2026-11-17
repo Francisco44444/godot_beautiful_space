@@ -38,6 +38,7 @@ func _probar() -> void:
 		var cantidad: int = inventario.get_count(llave)
 		if cantidad > 0: inventario.remove_item(llave, cantidad, false)
 	mundo = load("res://scenes/world.tscn").instantiate()
+	mundo.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(mundo)
 	current_scene = mundo
 	root.get_node("SaveGameManager").bind_world(null)

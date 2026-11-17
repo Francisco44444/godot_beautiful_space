@@ -44,6 +44,7 @@ func _run_test() -> void:
 	var saves := root.get_node("SaveGameManager")
 	saves.set_process(false)
 	var world := (load("res://scenes/world.tscn") as PackedScene).instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	saves.call("bind_world", null)
 	for _frame in 8:

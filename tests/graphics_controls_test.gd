@@ -13,7 +13,7 @@ func _comprobar()->void:
 	ajustes.set_quality_preset(1,false)
 	for n in ["InventoryManager","ExplorationManager"]:root.get_node(n).set("autosave_enabled",false)
 	root.get_node("SaveGameManager").set_process(false)
-	mundo=load("res://scenes/world.tscn").instantiate();root.add_child(mundo)
+	mundo=load("res://scenes/world.tscn").instantiate();mundo.modo_aventura=false;root.add_child(mundo)
 	root.get_node("SaveGameManager").bind_world(null)
 	for i in 8:await process_frame
 	paused=false

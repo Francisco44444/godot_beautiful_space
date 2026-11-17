@@ -10,6 +10,7 @@ func run() -> void:
 	for singleton in ["InventoryManager","ExplorationManager"]: root.get_node(singleton).set("autosave_enabled",false)
 	root.get_node("SaveGameManager").set_process(false)
 	world = load("res://scenes/world.tscn").instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	for i in 12: await process_frame
 	paused = false

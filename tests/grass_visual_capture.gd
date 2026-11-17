@@ -15,6 +15,7 @@ func _capture_meadow() -> void:
 	DisplayServer.window_set_size(Vector2i(1280, 720))
 	var packed := load("res://scenes/world.tscn") as PackedScene
 	var world := packed.instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	await process_frame
 	await process_frame

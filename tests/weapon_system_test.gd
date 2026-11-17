@@ -17,6 +17,7 @@ func _run_test() -> void:
 		_fail("No se pudo cargar la escena principal.")
 		return
 	var world := scene.instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	for _frame in 8:
 		await physics_frame

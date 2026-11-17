@@ -507,9 +507,17 @@ func _is_valid_save_snapshot(snapshot: Dictionary) -> bool:
 	var inventory = snapshot.get("inventory", {})
 	if not position is Array or (position as Array).size() != 3 or not inventory is Dictionary:
 		return false
+	for numero in position:
+		if typeof(numero) not in [TYPE_INT, TYPE_FLOAT]: return false
+	var regreso = snapshot.get("return_position",position)
+	if not regreso is Array or regreso.size()!=3: return false
+	for numero in regreso:
+		if typeof(numero) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(numero)): return false
+	if absf(float(regreso[0]))>WORLD_LIMIT or absf(float(regreso[2]))>WORLD_LIMIT or absf(float(regreso[1]))>1800: return false
 	var vector := Vector3(float(position[0]), float(position[1]), float(position[2]))
 	if not vector.is_finite() or absf(vector.x) > WORLD_LIMIT or absf(vector.z) > WORLD_LIMIT or absf(vector.y) > 1800.0:
 		return false
+	if typeof(snapshot.get("yaw",0.0)) not in [TYPE_INT,TYPE_FLOAT]: return false
 	var yaw := float(snapshot.get("yaw",0.0))
 	if not is_finite(yaw):
 		return false
@@ -603,10 +611,12 @@ func _local_identity() -> Dictionary:
 func _local_save_snapshot(player: CharacterBody3D) -> Dictionary:
 	var inventory := get_node_or_null("/root/InventoryManager")
 	var identity := _local_identity()
+	var regreso: Vector3 = player.get("spawn_position") if player.get("spawn_position") is Vector3 else player.global_position
 	return {
 		"name": String(identity.name),
 		"character_index": int(identity.character_index),
 		"position": [player.global_position.x, player.global_position.y, player.global_position.z],
+		"return_position": [regreso.x,regreso.y,regreso.z],
 		"yaw": float(player.call("get_network_facing_yaw")),
 		"equipped_slot": int(player.get("equipped_slot")),
 		"inventory": inventory.call("get_save_state") if inventory != null else {},

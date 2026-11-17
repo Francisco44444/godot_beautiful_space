@@ -34,6 +34,7 @@ func _run_test() -> void:
 	settings.call("set_player_identity", "Lúa", 6, false)
 	var scene := load("res://scenes/world.tscn") as PackedScene
 	var world := scene.instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	save_manager.call("bind_world",null)
 	for _frame in range(5):

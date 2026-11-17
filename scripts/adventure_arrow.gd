@@ -112,7 +112,7 @@ func _physics_process(delta: float) -> void:
 	if not result.is_empty():
 		var collider := result.collider as Node
 		if collider != null and collider.has_method("receive_projectile_hit") and not solo_visual_red:
-			if shooter!=null and bool(shooter.get("network_remote")) and not collider is RPGEnemy:
+			if shooter!=null and bool(shooter.get("network_remote")) and not collider is RPGEnemy and not collider.has_meta("diana_aventura"):
 				_stick_in_place(result.position,result.get("normal",Vector3.UP))
 				return
 			collider.call("receive_projectile_hit", result.position, shooter)

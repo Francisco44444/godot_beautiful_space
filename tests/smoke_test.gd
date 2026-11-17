@@ -19,6 +19,7 @@ func _run_test() -> void:
 		failures.append("No se pudo cargar scenes/world.tscn")
 	else:
 		var world := packed_scene.instantiate()
+		world.modo_aventura = false # Contrato de la campaña clásica.
 		root.add_child(world)
 		# Terrain3D carga su directorio de regiones al entrar en el árbol.
 		await process_frame

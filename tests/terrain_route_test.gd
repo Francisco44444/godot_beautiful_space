@@ -21,6 +21,7 @@ func _init() -> void:
 func _run_test() -> void:
 	var scene := load("res://scenes/world.tscn") as PackedScene
 	var world := scene.instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	for _frame in range(3):
 		await process_frame

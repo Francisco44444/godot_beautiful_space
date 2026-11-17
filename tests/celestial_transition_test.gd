@@ -7,6 +7,7 @@ func _run_test() -> void:
 	root.get_node("SaveGameManager").set_process(false)
 	for singleton in ["InventoryManager","ExplorationManager"]: root.get_node(singleton).set("autosave_enabled",false)
 	var world: Node3D = load("res://scenes/world.tscn").instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	root.get_node("SaveGameManager").bind_world(null)
 	for i in 4: await process_frame

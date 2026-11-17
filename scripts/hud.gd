@@ -603,7 +603,7 @@ func _hint_cards() -> Array[Dictionary]:
 			})
 	var quests = runtime.get("sidequests")
 	if quests != null:
-		for quest in RPGSideQuests.QUESTS:
+		for quest in get_parent().get_node("RPGStoryRuntime").sidequests.encargos():
 			if not bool(quests.call("is_taken", quest)) or bool(quests.call("is_done", quest)):
 				continue
 			var have: int = quests.call("progress_of", quest)
@@ -1009,7 +1009,7 @@ func _tracked_quests(quests: Node) -> Array:
 	## Sólo los aceptados y sin entregar, y como mucho tres: un seguidor con
 	## dieciocho líneas deja de ser un seguidor.
 	var out: Array = []
-	for quest in RPGSideQuests.QUESTS:
+	for quest in get_parent().get_node("RPGStoryRuntime").sidequests.encargos():
 		if bool(quests.call("is_taken", quest)) and not bool(quests.call("is_done", quest)):
 			out.append(quest)
 		if out.size() >= 3:

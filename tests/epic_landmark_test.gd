@@ -14,6 +14,7 @@ func _run_test() -> void:
 		return
 
 	var world := scene.instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	for _frame in 4:
 		await process_frame

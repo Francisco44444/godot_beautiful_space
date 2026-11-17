@@ -12,6 +12,7 @@ func _comprobar() -> void:
 	root.get_node("InventoryManager").reset_inventory_for_tests(false)
 	root.get_node("SaveGameManager").set_process(false)
 	var mundo: Node3D = load("res://scenes/world.tscn").instantiate()
+	mundo.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(mundo)
 	root.get_node("SaveGameManager").bind_world(null)
 	for i in 12: await process_frame

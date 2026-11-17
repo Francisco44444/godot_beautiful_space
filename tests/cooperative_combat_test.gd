@@ -67,6 +67,7 @@ func _run_test() -> void:
 	sesion = root.get_node("NetworkSession")
 	sesion.world_state_received.connect(func(_estado: Dictionary): estados_mundo+=1)
 	mundo = load("res://scenes/world.tscn").instantiate()
+	mundo.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(mundo)
 	current_scene = mundo
 	root.get_node("SaveGameManager").bind_world(null)

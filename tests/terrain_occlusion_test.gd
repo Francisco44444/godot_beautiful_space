@@ -96,6 +96,7 @@ func comprobar() -> void:
 		root.get_node(nombre).set("autosave_enabled",false)
 	root.get_node("SaveGameManager").set_process(false)
 	var mundo: Node3D = load("res://scenes/world.tscn").instantiate()
+	mundo.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(mundo)
 	root.get_node("SaveGameManager").call("bind_world",null)
 	await mundo.get_node("RPGStoryRuntime").terreno_preparado

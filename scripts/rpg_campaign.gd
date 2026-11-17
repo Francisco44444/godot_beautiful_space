@@ -209,13 +209,21 @@ const ACTS: Array[Dictionary] = [
 
 ## Qué actos están cerrados, por identificador. Sustituye al índice único: con
 ## un índice sólo se puede avanzar en línea, y aquí hay tres caminos abiertos.
+var modo_aventura := false
+var _catalogo: Array[Dictionary] = []
+func actos() -> Array[Dictionary]:
+	if not modo_aventura: return ACTS
+	if _catalogo.is_empty():
+		_catalogo = preload("res://scripts/catalogo_aventura.gd").actos(ACTS)
+	return _catalogo
+
 var _done: Dictionary = {}
 var relics: PackedStringArray = PackedStringArray()
 var _finished := false
 
 
 func act_by_id(act_id: String) -> Dictionary:
-	for act in ACTS:
+	for act in actos():
 		if String(act["id"]) == act_id:
 			return act
 	return {}
@@ -237,7 +245,7 @@ func is_open(act: Dictionary) -> bool:
 
 func open_acts() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for act in ACTS:
+	for act in actos():
 		if is_open(act):
 			out.append(act)
 	return out
@@ -251,8 +259,8 @@ func active_act() -> Dictionary:
 
 
 func act_of_boss(boss_id: String) -> int:
-	for index in ACTS.size():
-		if String(ACTS[index]["boss"]) == boss_id:
+	for index in actos().size():
+		if String(actos()[index]["boss"]) == boss_id:
 			return index
 	return -1
 
@@ -261,7 +269,7 @@ func is_boss_unlocked(boss_id: String) -> bool:
 	## Un jefe despierta cuando SU acto está abierto. Con tres abiertos a la vez,
 	## hay tres jefes despiertos y eliges tú por dónde empezar.
 	var index := act_of_boss(boss_id)
-	return index >= 0 and is_open(ACTS[index])
+	return index >= 0 and is_open(actos()[index])
 
 
 func begin() -> void:
@@ -275,7 +283,7 @@ func on_boss_defeated(boss_id: String, inventory: Node) -> bool:
 	var index := act_of_boss(boss_id)
 	if index < 0:
 		return false
-	var act := ACTS[index]
+	var act := actos()[index]
 	if not is_open(act):
 		return false
 	_done[String(act["id"])] = true
@@ -285,7 +293,7 @@ func on_boss_defeated(boss_id: String, inventory: Node) -> bool:
 		for item in (act["reward"] as Dictionary):
 			inventory.call("add_item", String(item), int(act["reward"][item]), false)
 	act_completed.emit(act, relic)
-	if _done.size() >= ACTS.size():
+	if _done.size() >= actos().size():
 		_finished = true
 		campaign_finished.emit()
 	else:
@@ -298,7 +306,7 @@ func on_boss_defeated(boss_id: String, inventory: Node) -> bool:
 func progress() -> Dictionary:
 	return {
 		"index": _done.size(),
-		"total": ACTS.size(),
+		"total": actos().size(),
 		"relics": relics.size(),
 		"finished": _finished,
 		"act": active_act(),

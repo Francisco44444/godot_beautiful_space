@@ -19,6 +19,7 @@ func _run_test() -> void:
 	exploration.call("clear_progress", false)
 	_cleanup_slots()
 	var world := (load("res://scenes/world.tscn") as PackedScene).instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	for _frame in 6:
 		await process_frame

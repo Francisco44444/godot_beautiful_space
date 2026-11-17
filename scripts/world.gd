@@ -48,6 +48,14 @@ const CLIFF_SAFE_DESCENTS: Array = [
 @onready var camera_rig: ThirdPersonCamera = $CameraRig
 @onready var island_environment: IslandEnvironment = $IslandEnvironment
 
+var modo_aventura := true
+
+func cambiar_modo_aventura(valor: bool) -> void:
+	if not NetworkSession.is_world_authority(): return
+	modo_aventura = valor
+	get_node("RPGStoryRuntime").reconfigurar_modo()
+	NetworkSession.broadcast_world_state_now()
+
 var sun_cycle_radians := 0.86
 var daylight_factor := 1.0
 # Contador de subidas reales: permite comprobar que una paleta quieta no se invalida.
@@ -392,6 +400,7 @@ func get_local_player_save_state() -> Dictionary:
 		"name": GameSettings.player_name,
 		"character_index": GameSettings.character_index,
 		"position": [player.global_position.x, player.global_position.y, player.global_position.z],
+		"return_position": [player.spawn_position.x,player.spawn_position.y,player.spawn_position.z],
 		"yaw": player.get_network_facing_yaw(),
 		"equipped_slot": player.equipped_slot,
 		"inventory": inventory.call("get_save_state") if inventory != null else {},
@@ -405,11 +414,18 @@ func apply_local_player_save_state(state: Dictionary) -> bool:
 	if player.is_mounted():
 		player.dismount()
 	var target := Vector3(float(position[0]), float(position[1]), float(position[2]))
-	if absf(target.x) > 6200.0 or absf(target.z) > 6200.0 or absf(target.y) > 1800.0:
+	if not target.is_finite() or absf(target.x) > 6200.0 or absf(target.z) > 6200.0 or absf(target.y) > 1800.0:
 		return false
 	player.global_position = target
 	player.velocity = Vector3.ZERO
+	var regreso = state.get("return_position",position)
 	player.spawn_position = target
+	if regreso is Array and regreso.size()==3:
+		var punto := Vector3(float(regreso[0]),float(regreso[1]),float(regreso[2]))
+		if punto.is_finite() and absf(punto.x)<6200 and absf(punto.z)<6200 and absf(punto.y)<1800:
+			player.spawn_position = punto
+			var director = get_node("RPGStoryRuntime").aventura_pacifica
+			if director != null: director.retorno = regreso.duplicate()
 	_last_dry_player_position = target
 	var slot := clampi(int(state.get("equipped_slot", 1)), 1, 4)
 	player.call_deferred("equip_item", slot)
@@ -423,6 +439,8 @@ func get_shared_world_save_state() -> Dictionary:
 	var vegetation := get_node_or_null("VegetationScatter")
 	var adventure := get_node_or_null("AdventureSystem")
 	return {
+		"modo_aventura": modo_aventura,
+		"aventura": get_node("RPGStoryRuntime").estado_aventura(),
 		"sun_cycle_radians": sun_cycle_radians,
 		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
 		"horse_position": [horse.global_position.x, horse.global_position.y, horse.global_position.z],
@@ -433,6 +451,11 @@ func get_shared_world_save_state() -> Dictionary:
 
 
 func apply_shared_world_save_state(state: Dictionary) -> void:
+	var nuevo_modo := bool(state.get("modo_aventura", false))
+	if modo_aventura != nuevo_modo:
+		modo_aventura = nuevo_modo
+		get_node("RPGStoryRuntime").reconfigurar_modo()
+	get_node("RPGStoryRuntime").recibir_aventura(state.get("aventura", {}))
 	sun_cycle_radians = fposmod(float(state.get("sun_cycle_radians", sun_cycle_radians)), TAU)
 	_update_sun_cycle(0.0)
 	if island_environment != null:
@@ -443,7 +466,7 @@ func apply_shared_world_save_state(state: Dictionary) -> void:
 		horse.velocity = Vector3.ZERO
 	var story := get_node_or_null("RPGStoryRuntime")
 	if story != null:
-		story.call_deferred("apply_save_state", state.get("story", {}))
+		story.call("apply_save_state", state.get("story", {}))
 	var vegetation := get_node_or_null("VegetationScatter")
 	if vegetation != null:
 		vegetation.call("apply_save_state", state.get("vegetation_resources", {}))
@@ -458,6 +481,8 @@ func get_network_world_state() -> Dictionary:
 	var vegetation := get_node_or_null("VegetationScatter")
 	var adventure := get_node_or_null("AdventureSystem")
 	return {
+		"modo_aventura": modo_aventura,
+		"aventura": get_node("RPGStoryRuntime").estado_aventura_red(),
 		"sun_cycle_radians": sun_cycle_radians,
 		"tide_phase": island_environment.tide_phase if island_environment != null else 0.18,
 		"wildlife": wildlife.call("get_network_state") if wildlife != null else [],
@@ -471,6 +496,11 @@ func get_network_world_state() -> Dictionary:
 func _on_network_world_state_received(state: Dictionary) -> void:
 	if NetworkSession.session_mode != NetworkSession.SessionMode.CLIENT:
 		return
+	var nuevo_modo := bool(state.get("modo_aventura", false))
+	if modo_aventura != nuevo_modo:
+		modo_aventura = nuevo_modo
+		get_node("RPGStoryRuntime").reconfigurar_modo()
+	get_node("RPGStoryRuntime").recibir_aventura(state.get("aventura", {}))
 	sun_cycle_radians = fposmod(float(state.get("sun_cycle_radians", sun_cycle_radians)), TAU)
 	_update_sun_cycle(0.0)
 	if island_environment != null:

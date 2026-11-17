@@ -32,6 +32,7 @@ func _run_test() -> void:
 	Engine.physics_ticks_per_second = 360
 	Engine.time_scale = 6.0
 	var world := (load("res://scenes/world.tscn") as PackedScene).instantiate()
+	world.modo_aventura = false # Contrato de la campaña clásica.
 	root.add_child(world)
 	root.get_node("SaveGameManager").call("bind_world", null)
 	world.set_process(false)
