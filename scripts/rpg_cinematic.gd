@@ -47,6 +47,14 @@ func _ready() -> void:
 	set_process(false)
 
 
+func _notification(aviso: int) -> void:
+	# Un compañero puede cerrar un acto mientras el anfitrión usa el menú.
+	# La película espera la reanudación sin tapar la interfaz ni gastar su tiempo.
+	if _layer == null: return
+	if aviso == NOTIFICATION_PAUSED: _layer.visible = false
+	elif aviso == NOTIFICATION_UNPAUSED and running: _layer.visible = true
+
+
 ## `cards` son diccionarios {text, hold}. `focus` es lo que mira la cámara.
 func play(cards: Array, focus: Vector3, player: Node = null,
 		frame_radius := ORBIT_RADIUS) -> void:
@@ -64,7 +72,7 @@ func play(cards: Array, focus: Vector3, player: Node = null,
 	running = true
 	plays += 1
 	_angle = 0.0
-	_layer.visible = true
+	_layer.visible = not get_tree().paused
 	_veil.color = Color(0.0, 0.0, 0.0, 1.0)
 	_take_camera()
 	# Colocarla YA, no en el primer `_process`: si no, el primer fotograma de la

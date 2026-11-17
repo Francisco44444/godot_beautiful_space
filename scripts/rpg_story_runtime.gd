@@ -1090,7 +1090,7 @@ func _roll_epilogue() -> void:
 	if cinematic != null and cinematic.running:
 		closing = EPILOGUE_GAP
 	if closing > 0.0:
-		get_tree().create_timer(closing).timeout.connect(_show_epilogue)
+		get_tree().create_timer(closing,false).timeout.connect(_show_epilogue)
 	else:
 		_show_epilogue()
 

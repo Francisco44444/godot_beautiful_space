@@ -92,6 +92,8 @@ jobs:
         run: |
           set -euo pipefail
           timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/cinematic_modal_test.gd
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
             --headless --path . --script res://tests/peaceful_adventure_test.gd
           python3 tests/test_lobby_directory.py -v
           python3 -m venv .ci/web-tests
