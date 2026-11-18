@@ -127,6 +127,22 @@ func _run_test() -> void:
 	if absf(float(world.get("sun_cycle_radians")) - 2.14) > 0.02:
 		_fail("La partida no restauró el estado de sol/luna.")
 		return
+	# Una ranura previa a la ampliación guardaba la cumbre a 500 m.
+	var anterior: Dictionary = saves._read_payload(test_slot)
+	anterior.erase("cumbres_ampliadas")
+	var cumbre := Vector3(-100, 500.5, -3350)
+	var posicion_cumbre := [cumbre.x, cumbre.y, cumbre.z]
+	anterior.players[0].position = posicion_cumbre
+	anterior.players[0].return_position = posicion_cumbre
+	anterior.world.horse_position = posicion_cumbre
+	if not saves._write_json(test_slot, anterior) or not saves.load_slot(test_slot):
+		_fail("No carga la ranura guardada antes de ampliar la cumbre.")
+		return
+	var cota: float = world.terrain.data.get_height(cumbre)
+	for punto in [player.global_position, player.spawn_position, horse.global_position]:
+		if Vector2(punto.x, punto.z).distance_to(Vector2(cumbre.x, cumbre.z)) > 0.01 or absf(punto.y - cota - 0.18) > 0.05:
+			_fail("La ranura antigua deja a un viajero o al caballo bajo la nieve.")
+			return
 	var audio := world.get_node("AmbientAudio") as AmbientAudio
 	for stream in [audio.music, audio.snow_music, audio.desert_music, audio.wind, audio.birds]:
 		(stream as AudioStreamPlayer).stop()

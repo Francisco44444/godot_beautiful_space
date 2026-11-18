@@ -10,6 +10,7 @@ signal slots_changed(slots: Array)
 signal status_changed(message: String)
 
 const SAVE_VERSION := 2
+const RELIEVE_CUMBRES = preload("res://scripts/relieve_cumbres.gd")
 const SAVE_DIRECTORY := "user://savegames"
 const AUTOSAVE_SECONDS := 120.0
 const SOLO_AUTOSAVE_SECONDS := 30.0
@@ -62,6 +63,7 @@ func save_current_game(reason: String = "manual") -> bool:
 	var exploration := get_node_or_null("/root/ExplorationManager")
 	var payload := {
 		"schema_version": SAVE_VERSION,
+		"cumbres_ampliadas": true,
 		"display_name": _display_name(identities),
 		"reason": reason,
 		"saved_at_unix": int(Time.get_unix_time_from_system()),
@@ -88,6 +90,8 @@ func load_slot(slot_path: String) -> bool:
 	if payload.is_empty() or not is_instance_valid(_world):
 		status_changed.emit("La ranura no se pudo leer")
 		return false
+	if not payload.get("cumbres_ampliadas", false):
+		_adaptar_guardado_cumbres(payload)
 	_world.call("apply_shared_world_save_state", payload.get("world", {}))
 	var exploration := get_node_or_null("/root/ExplorationManager")
 	if exploration != null:
@@ -107,6 +111,22 @@ func load_slot(slot_path: String) -> bool:
 	status_changed.emit("✓ Partida cargada · %s" % display)
 	load_completed.emit(slot_path, display)
 	return true
+
+
+func _adaptar_guardado_cumbres(payload: Dictionary) -> void:
+	# Ajustar antes de repartir el guardado permite usar el mismo suelo con
+	# los invitados reconectados; las partidas nuevas conservan su cota.
+	var terreno := _world.get_node_or_null("Terrain3D") as Terrain3D
+	if terreno == null or terreno.data == null:
+		return
+	for estado in payload.get("players", []):
+		if estado is Dictionary:
+			estado.position = RELIEVE_CUMBRES.adaptar_guardado(estado.get("position", []), terreno)
+			if estado.has("return_position"):
+				estado.return_position = RELIEVE_CUMBRES.adaptar_guardado(estado.return_position, terreno)
+	var mundo: Dictionary = payload.get("world", {})
+	if mundo.has("horse_position"):
+		mundo.horse_position = RELIEVE_CUMBRES.adaptar_guardado(mundo.horse_position, terreno)
 
 
 func load_latest_for_current_party() -> bool:

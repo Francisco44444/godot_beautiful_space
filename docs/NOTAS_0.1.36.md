@@ -1,4 +1,4 @@
-# Senderos del Horizonte 0.1.35
+# Senderos del Horizonte 0.1.36
 
 **Las Campanas Blancas**: un gran descenso sobre la puerta de un viejo granero.
 Se accede desde **Esc → Partida → Snowboard**, en el modo Aventura. Acércate a
@@ -29,7 +29,9 @@ las puertas de madera de la salida y pulsa **E** para empezar.
 - Se regenera el recurso de oclusión de las nuevas cumbres: las laderas
   conservan el descarte de lo que ocultan, respetando las cuatro grutas.
   La gruta de Escarcha se adentra en la ladera para mantener sus cámaras
-  transitables después de elevar la cordillera.
+  transitables después de elevar la cordillera. Al cargar una partida anterior,
+  se ajustan las posiciones que hayan quedado enterradas por el nuevo relieve,
+  incluidos el punto de regreso y el caballo.
 - El servicio de la carrera duerme si no hay corredores. Las estelas tienen
   memoria limitada y no añaden tráfico de red. El equipo y los límites de
   movimiento a pie se recuperan al terminar.
