@@ -1,4 +1,4 @@
-# Senderos del Horizonte 0.1.33
+# Senderos del Horizonte 0.1.34
 
 **Las Campanas Blancas**: un gran descenso sobre la puerta de un viejo granero.
 Se accede desde **Esc → Partida → Snowboard**, en el modo Aventura. Acércate a
@@ -26,6 +26,8 @@ las puertas de madera de la salida y pulsa **E** para empezar.
 - Cooperativo con los mismos rivales para todo el grupo, posiciones y postura
   sincronizadas, y premio individual por ganar a los tres.
   El anfitrión valida las puertas en orden y la proximidad a la salida.
+- Se regenera el recurso de oclusión de las nuevas cumbres: las laderas
+  conservan el descarte de lo que ocultan, respetando las cuatro grutas.
 - El servicio de la carrera duerme si no hay corredores. Las estelas tienen
   memoria limitada y no añaden tráfico de red. El equipo y los límites de
   movimiento a pie se recuperan al terminar.
@@ -35,12 +37,14 @@ las puertas de madera de la salida y pulsa **E** para empezar.
   paquetes antes de actualizar los enlaces.
 
 El ZIP completo de Windows con `.exe` sigue siendo la descarga principal;
-el instalador es alternativo. La versión Web se sirve desde el NAS. Las salas
-cooperativas necesitan la misma versión del juego.
+el instalador es alternativo. El ZIP Web queda preparado para subirlo al NAS
+cuando se recupere el acceso desde la red de casa. Hasta entonces, el NAS
+conserva la versión anterior. Las salas cooperativas necesitan la misma versión
+del juego.
 
 ## Comprobaciones de esta entrega
 
-- Bajada completa con movimiento y colisión reales: **124,6 segundos** en el
+- Bajada completa con movimiento y colisión reales: **125,3 segundos** en el
   recorrido rápido. Los rivales completan el circuito en 135,8 / 144,3 / 151,8 s.
 - Cuenta atrás, puertas en orden, penalización, victoria y derrota, premios
   únicos, secreto, guardado, carga y recuperación del movimiento a pie.
@@ -49,6 +53,6 @@ cooperativas necesitan la misma versión del juego.
 - Postura medida en los huesos visibles: la cabeza baja aproximadamente 40 cm y
   las botas conservan su apoyo. Cámara comprobada en las pendientes.
 - Apple M2 Pro, **2560×1440 nativo, calidad Alta**, sin otros juegos ni pruebas
-  simultáneas: **55,8 FPS de media**, percentil 95 de 23,5 ms durante la carrera.
+  simultáneas: **57,8 FPS de media**, percentil 95 de 23,0 ms durante la carrera.
   Es una medida del descenso en este Mac, no una garantía para Windows ni Web.
   El objetivo general de 100–120 FPS sigue pendiente.

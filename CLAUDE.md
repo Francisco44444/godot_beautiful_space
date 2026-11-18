@@ -53,6 +53,10 @@ Cada una de estas costó horas de depuración. No hay que volver a pagarlas.
   árboles viejos brotan dentro de las casas nuevas sin avisar. Al tocar un claro
   hay que subir `LAYOUT_CACHE_SCHEMA`, rehornear con `-- --bake-vegetation` y
   actualizar el número que asierta `tests/vegetation_test.gd`.
+- **Cambiar alturas exige rehornear también la oclusión**, además de la
+  vegetación: `tools/hornear_oclusion_terreno.gd`. Si su firma queda antigua,
+  el juego la retira por seguridad y pierde ese descarte. Verificar con
+  `terrain_occlusion_test.gd` y `terrain_normals_test.gd` antes de publicar.
 - **Los dos packs de armas están a escalas distintas.** La espada del pack RPG
   mide 2,30 m y la claymore del pack medieval 6,59 m. Por eso el juego sólo
   importaba los 5 escudos del medieval. La corrección por pieza vive en

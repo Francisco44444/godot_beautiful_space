@@ -10,7 +10,7 @@ el acceso estable cambia sólo después de verificar todos sus archivos por SHA-
 ## Juego y conexión
 
 Chrome, Edge, Firefox o Safari actuales en un ordenador con teclado y ratón.
-Pulsa «Entrar en Aeloria». La descarga inicial del mundo es de unos 570 MiB;
+Pulsa «Entrar en Aeloria». La descarga inicial del mundo oficial es de unos 368 MiB;
 posteriormente se construyen la vegetación y los habitantes. WASD mueve al héroe,
 el ratón mira, Espacio salta, E interactúa y Esc abre el menú.
 
@@ -110,5 +110,6 @@ bash tools/publicar_juego_web_nas.sh IDENTIFICADOR dist/web-game
 
 Limitaciones: la primera carga es grande; la exportación web tiene menor margen
 de rendimiento que las versiones nativas. Las mediciones del navegador local
-no acreditan 60 FPS ni el rendimiento de la GTX 1060. El modo pacífico de aventura,
-los nuevos rompecabezas y la construcción de refugios continúan pendientes.
+no acreditan 60 FPS ni el rendimiento de la GTX 1060. La aventura sin enemigos es el modo inicial desde la versión 0.1.32, con
+rompecabezas, secretos y refugios. El descenso de Las Campanas Blancas añade
+una carrera contra tres mensajeros, disponible en Esc → Partida → Snowboard.
