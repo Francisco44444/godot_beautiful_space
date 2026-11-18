@@ -59,7 +59,8 @@ const NPC_SPECS: Array[Dictionary] = [
 ]
 const GATE_SPECS: Array[Dictionary] = [
 	{"id":"roots", "name":"Gruta de las Raíces", "key":"Key1", "point":Vector2(-2530, 1090), "yaw":0.0, "hint":"Cripta del Corazón de Roble"},
-	{"id":"frost", "name":"Observatorio Sepultado", "key":"Key2", "point":Vector2(690, -3370), "yaw":3.14159265359, "hint":"Cámara de las Constelaciones"},
+	# Desde este rellano, la gruta se adentra en la ladera elevada hacia el oeste.
+	{"id":"frost", "name":"Observatorio Sepultado", "key":"Key2", "point":Vector2(690, -3370), "yaw":PI/2, "hint":"Cámara de las Constelaciones"},
 	{"id":"sun", "name":"Santuario bajo la Arena", "key":"Key3", "point":Vector2(2750, 1700), "yaw":0.0, "hint":"Cámara del Mediodía"},
 	{"id":"echo", "name":"Cámara sin Eco", "key":"Key4", "point":Vector2(4700, -1450), "yaw":0.0, "hint":"Guarida de Vaelor"},
 ]
