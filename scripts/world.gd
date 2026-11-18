@@ -408,6 +408,7 @@ func get_local_player_save_state() -> Dictionary:
 
 
 func apply_local_player_save_state(state: Dictionary) -> bool:
+	if player.tabla_nieve!=null:player.tabla_nieve.abandonar()
 	var position = state.get("position", [])
 	if not position is Array or (position as Array).size() != 3:
 		return false

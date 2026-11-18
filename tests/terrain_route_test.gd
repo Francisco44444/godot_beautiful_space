@@ -86,8 +86,8 @@ func _run_test() -> void:
 	if snow_profile[0] >= snow_profile[1] or snow_profile[1] >= snow_profile[2] or snow_profile[2] > snow_profile[3] + 2.0:
 		_fail("La subida a Cumbres Blancas no es progresiva: %s" % [snow_profile])
 		return
-	if snow_profile[3] < 485.0 or snow_profile[3] > 500.1:
-		_fail("La gran cumbre no alcanza el entorno de 500 m: %.2f" % snow_profile[3])
+	if snow_profile[3] < 950.0 or snow_profile[3] > 1000.1:
+		_fail("La gran cumbre no alcanza el entorno de 1.000 m: %.2f" % snow_profile[3])
 		return
 
 	# Hay sistemas montañosos anchos en varios cuadrantes, no una sola aguja.

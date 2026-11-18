@@ -3,6 +3,11 @@
 Aventura medieval en tercera persona. Godot 4.7.1, GDScript, Terrain3D. Isla de
 12×12 km. Arte low-poly de los packs CC0 de Quaternius.
 
+**Prioridad del usuario: calidad visual y jugable extraordinaria en todo momento.**
+Las actividades nuevas deben transmitir peso, velocidad y control, con postura,
+cámara, efectos y escenarios coherentes. Se revisan jugando y mediante capturas
+antes de publicar. Las mejoras de rendimiento conservan la belleza del juego.
+
 **El código y los comentarios van en español.** Los comentarios explican POR QUÉ,
 con la cifra medida cuando la hay — no qué hace la línea de al lado.
 

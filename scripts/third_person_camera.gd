@@ -38,6 +38,8 @@ var _current_side_offset := 0.0
 var _trauma := 0.0
 var _shake_time := 0.0
 var shake_count := 0
+var _ultima_orbita := 0
+var _balanceo_nieve := 0.0
 
 
 func _ready() -> void:
@@ -72,6 +74,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	var player := target as Player
 	if player != null and player.entrada_interfaz_bloqueada: return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		_ultima_orbita = Time.get_ticks_msec()
 		yaw -= event.relative.x * mouse_sensitivity
 		pitch -= event.relative.y * mouse_sensitivity
 		pitch = clamp(pitch, deg_to_rad(min_pitch_degrees), deg_to_rad(max_pitch_degrees))
@@ -132,6 +135,15 @@ func _physics_process(delta: float) -> void:
 	var desired_distance := mounted_distance if riding else (aiming_distance if aiming_active else _foot_distance)
 	var desired_fov := mounted_fov if riding else (aiming_fov if aiming_active else _foot_fov)
 	var desired_side_offset := aiming_side_offset if aiming_active else 0.0
+	if player!=null and player.en_tabla_nieve:
+		var velocidad := clampf(player.velocity.length()/38.0,0,1)
+		desired_distance = lerpf(5.0,5.8,velocidad);desired_height = lerpf(1.35,1.05,velocidad)
+		desired_fov = lerpf(_foot_fov,99.0,smoothstep(0,1,velocidad))
+		_balanceo_nieve = lerpf(_balanceo_nieve,player.postura_nieve.y*0.10,1.0-exp(-5.0*delta))
+		if Time.get_ticks_msec()-_ultima_orbita>1800:
+			yaw = lerp_angle(yaw,player.get_network_facing_yaw(),1.0-exp(-3.8*delta))
+			pitch = lerpf(pitch,clampf(-0.16+player.postura_nieve.z*0.85,-0.9,0.08),1.0-exp(-2.0*delta))
+	else:_balanceo_nieve = lerpf(_balanceo_nieve,0.0,1.0-exp(-6.0*delta))
 	var riding_weight := 1.0 - exp(-riding_transition_speed * delta)
 
 	_current_height = lerpf(_current_height, desired_height, riding_weight)
@@ -143,5 +155,5 @@ func _physics_process(delta: float) -> void:
 	var desired_position := active_target.global_position + Vector3.UP * _current_height
 	# Esta forma exponencial mantiene la misma sensación a cualquier tasa de fotogramas.
 	var follow_weight := 1.0 - exp(-follow_speed * delta)
-	global_position = global_position.lerp(desired_position, follow_weight)
-	rotation = Vector3(pitch, yaw, 0.0) + _shake_offset(delta)
+	global_position = desired_position if player!=null and player.en_tabla_nieve else global_position.lerp(desired_position, follow_weight)
+	rotation = Vector3(pitch, yaw, _balanceo_nieve) + _shake_offset(delta)

@@ -54,7 +54,7 @@ func _poll() -> void:
 				"entra":
 					if anfitrion: peer_connected.emit(int(mensaje.id))
 				"sale":
-					if anfitrion: peer_disconnected.emit(int(mensaje.id))
+					if anfitrion: _retirar_peer(int(mensaje.id))
 				"error":
 					fallo.emit(String(mensaje.get("mensaje", "No se pudo abrir la sala")))
 					_close()
@@ -64,6 +64,12 @@ func _poll() -> void:
 				_close()
 				return
 			_recibidos.append({"origen":paquete.decode_s32(0), "canal":int(paquete[4]), "modo":int(paquete[5]), "datos":paquete.slice(CABECERA)})
+
+func _retirar_peer(peer: int) -> void:
+	# El motor consume esta cola después de _poll. Si el aviso de salida
+	# llega en el mismo lote, no debe recibir paquetes de un peer ya retirado.
+	_recibidos = _recibidos.filter(func(paquete):return int(paquete.origen)!=peer)
+	peer_disconnected.emit(peer)
 
 func _put_packet_script(buffer: PackedByteArray) -> Error:
 	if _estado != MultiplayerPeer.CONNECTION_CONNECTED: return ERR_UNCONFIGURED

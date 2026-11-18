@@ -17,17 +17,50 @@ nas_ssh="${SENDEROS_NAS_SSH:-francisco4@192.168.0.25}"
 nas_dir="${SENDEROS_NAS_DIR:-/volume1/homes/francisco4/saber-updates/publico/senderos}"
 paquete="SenderosDelHorizonte-Windows-x86_64-$version.zip"
 instalador="SenderosDelHorizonte-Instalador.zip"
+web_zip="SenderosDelHorizonte-Web-$version.zip"
 if [[ ! "$nas_dir" =~ ^/[a-zA-Z0-9/_-]+/senderos$ ]] || [[ ! "$base_url" =~ ^https://[a-zA-Z0-9.:-]+/senderos$ ]]; then
   echo "La carpeta y URL deben identificar la web de Senderos." >&2
   exit 2
 fi
 mkdir -p "$origen" "$preparado/assets"
-for archivo in "$paquete" "$instalador" version.json; do
-  if [[ ! -f "$origen/$archivo" ]]; then
-    echo "Descargando $archivo de la release v${version}…"
-    gh release download "v$version" --repo Francisco44444/godot_beautiful_space --pattern "$archivo" --dir "$origen"
-  fi
-done
+descargar() {
+  local archivo="$1"
+  # Una descarga interrumpida nunca se confunde con un paquete terminado.
+  if python3 - "$origen/$archivo" <<'PYVALIDO'
+import json,sys,zipfile
+from pathlib import Path
+p=Path(sys.argv[1])
+try:
+    if p.suffix=='.zip':
+        with zipfile.ZipFile(p) as z:
+            if z.testzip():raise ValueError('CRC')
+    else:json.loads(p.read_text())
+except (OSError,ValueError,zipfile.BadZipFile):raise SystemExit(1)
+PYVALIDO
+  then return; fi
+  local temporal
+  temporal="$(mktemp -d "$origen/.descarga.XXXXXX")"
+  local intento
+  for intento in 1 2 3; do
+    echo "Descargando $archivo de v$version (intento $intento)…"
+    if GODEBUG=http2client=0 gh release download "v$version" --repo Francisco44444/godot_beautiful_space --pattern "$archivo" --dir "$temporal" --clobber; then
+      mv "$temporal/$archivo" "$origen/$archivo"
+      rmdir "$temporal"
+      return
+    fi
+  done
+  rm -rf "$temporal"
+  return 1
+}
+for archivo in "$paquete" "$instalador" version.json "$web_zip"; do descargar "$archivo"; done
+# Validar también el juego web antes de actualizar cualquier enlace del NAS.
+python3 - "$origen/$web_zip" <<'PYWEBPREVIO'
+import sys,zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+    if z.testzip():raise SystemExit('ZIP web corrupto')
+    for nombre in z.namelist():
+        if '/' in nombre or nombre.startswith('.') or not all(c.isalnum() or c in '._-' for c in nombre):raise SystemExit('Nombre web no válido')
+PYWEBPREVIO
 python3 - "$version" "$origen" "$preparado" <<'PY'
 import hashlib,json,re,shutil,sys,zipfile
 from pathlib import Path
@@ -91,12 +124,7 @@ subir "$instalador"
 while IFS= read -r archivo; do subir "${archivo#website/}"; done < <(rg --files website/assets)
 subir style.css
 subir app.js
-subir version.json
 # Una release completa también publica el juego de navegador en su carpeta.
-web_zip="SenderosDelHorizonte-Web-$version.zip"
-if [[ ! -f "$origen/$web_zip" ]]; then
-  gh release download "v$version" --repo Francisco44444/godot_beautiful_space --pattern "$web_zip" --dir "$origen"
-fi
 mkdir -p "$origen/juego-web"
 python3 - "$origen/$web_zip" "$origen/juego-web" <<'PYWEB'
 from pathlib import Path
@@ -108,5 +136,6 @@ with zipfile.ZipFile(sys.argv[1]) as archivo:
     archivo.extractall(sys.argv[2])
 PYWEB
 bash tools/publicar_juego_web_nas.sh "$version" "$origen/juego-web"
+subir version.json
 subir index.html
 echo "Web publicada: $base_url/"

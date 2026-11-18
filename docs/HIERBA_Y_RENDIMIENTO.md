@@ -50,8 +50,13 @@ La reserva de una parcela no equivale a la planta ocupada por su casa.
 Ahora se conservan los 220.000 registros de hierba del cache y se complementan
 sus huecos urbanos con **1.555 parches** deterministas. Antes se descartaban
 2.181 registros al cargar, de modo que se pasa de **217.819 a 221.555 parches**
-en el mundo. El bosque y su cache de esquema 12 no se rehornean ni se mueven:
-el complemento urbano es independiente de la distribución horneada.
+en el mundo. En aquella revisión el bosque y su caché de esquema 12 se
+conservaron: el complemento urbano es independiente de la distribución horneada.
+
+El 18 de noviembre, el gran descenso de Las Campanas Blancas eleva el macizo
+y despeja su corredor de 14 m. Se rehornea la distribución con el esquema 14
+para ajustar alturas y colisiones. Conserva 59.312 árboles antes de las
+exclusiones urbanas y 221.537 parches de hierba en la escena comprobada.
 
 Cada casa publica sus rectángulos de planta baja y el contorno de su rampa.
 El dispersor rasteriza esas superficies, los caminos de acceso y las calles

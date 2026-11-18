@@ -401,3 +401,13 @@ func _show_partida() -> void:
 			set_open(false)
 	)
 	_page_content.add_child(refugio)
+	var nieve := Button.new();nieve.text = "Snowboard · ir a Las Campanas Blancas";nieve.name = "SnowboardButton"
+	nieve.disabled = not mundo.modo_aventura;nieve.pressed.connect(_ir_al_descenso);_page_content.add_child(nieve)
+
+func _ir_al_descenso() -> void:
+	var mundo := get_tree().current_scene
+	var director = mundo.get_node("RPGStoryRuntime").aventura_pacifica
+	if director==null:return
+	if mundo.player.tabla_nieve!=null:mundo.player.tabla_nieve.abandonar()
+	mundo._travel_player_to_point(director.descenso.RUTA[0])
+	set_open(false)

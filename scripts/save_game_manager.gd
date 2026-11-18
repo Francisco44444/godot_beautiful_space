@@ -56,6 +56,8 @@ func save_current_game(reason: String = "manual") -> bool:
 		var state: Dictionary = (party_states.get(player_name, {}) as Dictionary).duplicate(true)
 		state["name"] = player_name
 		state["character_index"] = int(identity.get("character_index", 0))
+		var historia = _world.get_node_or_null("RPGStoryRuntime")
+		if historia!=null and historia.aventura_pacifica!=null:historia.aventura_pacifica.descenso.preparar_jugador_guardado(state)
 		players.append(state)
 	var exploration := get_node_or_null("/root/ExplorationManager")
 	var payload := {

@@ -9,6 +9,7 @@ var pasos := {}
 var refugios: Array = []
 var retorno: Array = []
 var objetos := {}
+var descenso: Node3D
 var _refugio_pendiente := false
 var _ultima_construccion := {}
 
@@ -45,6 +46,7 @@ func iniciar(runtime: Node) -> void:
 
 	var retos = preload("res://scripts/retos_senderos.gd").new()
 	add_child(retos); retos.iniciar(self)
+	descenso = preload("res://scripts/descenso_nieve.gd").new();add_child(descenso);descenso.iniciar(self)
 
 func _crear(id: String, titulo: String, punto: Vector2, color: Color, piedra: bool) -> void:
 	var nodo = preload("res://scripts/objeto_aventura.gd").new()
@@ -218,8 +220,9 @@ func _dibujar_refugio(punto: Vector3, indice: int = -1) -> void:
 		m.mesh = techo; m.position = Vector3(lado*0.85,2.8,0); m.rotation.z = lado*-0.42; casa.add_child(m)
 
 func guardar() -> Dictionary:
-	return {"hechos":hechos.duplicate(),"pasos":pasos.duplicate(),"refugios":refugios.duplicate(true),"retorno":retorno.duplicate()}
+	return {"nieve":descenso.guardar(),"hechos":hechos.duplicate(),"pasos":pasos.duplicate(),"refugios":refugios.duplicate(true),"retorno":retorno.duplicate()}
 func cargar(datos: Dictionary) -> void:
+	descenso.cargar(datos.get("nieve",{}))
 	if datos.has("retorno"): retorno = datos.retorno.duplicate()
 	hechos = datos.get("hechos",{}).duplicate()
 	var nuevos_pasos: Dictionary = datos.get("pasos",{})

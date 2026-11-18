@@ -268,7 +268,7 @@ const GRASS_MID_CLUSTER_COPIES := 1200
 const GRASS_LOD_CLUSTER_COPIES := 192
 const MYSTERY_DEAD_TREE_COUNT := 3360
 const LAYOUT_CACHE_PATH := "res://generated/vegetation_layout_cache.res"
-const LAYOUT_CACHE_SCHEMA := 12
+const LAYOUT_CACHE_SCHEMA := 14
 const FOREST_CACHE_STRIDE := 9
 const GRASS_CACHE_STRIDE := 9
 
@@ -2633,6 +2633,7 @@ func _tree_coverage_point_allowed(point: Vector2) -> bool:
 
 
 func _tree_point_allowed(point: Vector2) -> bool:
+	if preload("res://scripts/ruta_nieve.gd").dentro_corredor(point):return false
 	if (
 		distance_to_route(point) < 11.5
 		or _inside_clearing(point, 13.5, 23.0)

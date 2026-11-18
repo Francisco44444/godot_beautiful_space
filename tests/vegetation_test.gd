@@ -6,11 +6,10 @@ extends SceneTree
 const EXPECTED_TREE_COUNT := 59312
 # Distribución actual aprobada: conservar el paisaje, no aplicar el límite
 # de una distribución anterior que obligaba a eliminar árboles adicionales.
-## Número de oro del reparto junto a caminos. Subió de 18.791 a 18.812 al dar
-## claro propio a las cinco arenas de jefe (esquema 12): los árboles que se
-## quitan de una arena no desaparecen, se reparten, y 21 cayeron en el corredor
-## de los caminos. Si cambia sin que se haya tocado un claro, es una regresión.
-const EXPECTED_NEAR_ROUTE_TREE_COUNT := 18812
+## Esquema 14: el gran descenso despeja su corredor y eleva el macizo.
+## El horneado conserva el total y reparte 18.915 árboles junto a las rutas.
+## Se cuenta también la retirada urbana para separar paisaje y edificios.
+const EXPECTED_NEAR_ROUTE_TREE_COUNT := 18915
 const EXPECTED_ROCK_COUNT := 101
 const EXPECTED_MOSS_ROCK_COUNT := 0
 const EXPECTED_CACTUS_COUNT := 0
@@ -77,7 +76,7 @@ func _run_test() -> void:
 	# nuevas sin que nada avisara.
 	if (
 		vegetation_cache == null
-		or vegetation_cache.schema_version != 12
+		or vegetation_cache.schema_version != 14
 		or "tr=0.297" not in vegetation_cache.signature
 		or "rr=1742" not in vegetation_cache.signature
 		or "rd=1.120" not in vegetation_cache.signature
@@ -263,7 +262,9 @@ func _run_test() -> void:
 	if scatter.generated_snow_tree_count < 1200 or scatter.generated_snow_grass_count != 0 or scatter.generated_snow_fern_count != 0 or scatter.generated_snow_shrub_count != 0:
 		_fail("La cordillera debe conservar sus árboles nevados, sin hierba ni sotobosque retirado.")
 		return
-	var high_snow_point := Vector2(520.0, -3000.0)
+	# El antiguo punto (520,-3000) es ahora una ladera pronunciada; la
+	# cobertura se comprueba en el hombro suave del macizo elevado.
+	var high_snow_point := Vector2(150.0, -3350.0)
 	var high_snow_height := terrain.data.get_height(Vector3(high_snow_point.x, 0.0, high_snow_point.y))
 	var high_snow_probability := float(scatter.call("_snow_probability", high_snow_point, high_snow_height))
 	var low_snow_point := Vector2(-420.0, -2150.0)

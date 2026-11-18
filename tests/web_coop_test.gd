@@ -17,6 +17,13 @@ class ControlRed:
 
 func _init() -> void: call_deferred("_comprobar")
 func _comprobar() -> void:
+	var transporte = preload("res://scripts/transporte_web.gd").new()
+	transporte._recibidos.append({"origen":2,"datos":PackedByteArray([1])})
+	transporte._recibidos.append({"origen":3,"datos":PackedByteArray([2])})
+	transporte._recibidos.append({"origen":2,"datos":PackedByteArray([3])})
+	transporte._retirar_peer(2)
+	if transporte._recibidos.size()!=1 or int(transporte._recibidos[0].origen)!=3:
+		push_error("La desconexión deja paquetes de un jugador retirado o borra los de otro");quit(1);return
 	var args := OS.get_cmdline_user_args()
 	var host := "--host" in args
 	var codigo := ""

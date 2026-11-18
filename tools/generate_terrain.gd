@@ -187,7 +187,8 @@ func _terrain_height(point: Vector2) -> float:
 	coastal_height = _carve_desert_fossa(point, coastal_height)
 	# La garganta se talla después de formar la costa: sus cotas son las alturas
 	# finales del sendero y el fundido litoral no puede volver a deformarlas.
-	return clampf(_carve_grotto_descent(point, coastal_height), -500.0, 500.0)
+	var altura_base := clampf(_carve_grotto_descent(point, coastal_height), -500.0, 500.0)
+	return altura_base+preload("res://scripts/relieve_cumbres.gd").altura_adicional(point,altura_base)
 
 
 func _control_pixel(point: Vector2, height: float, slope_degrees: float) -> Color:

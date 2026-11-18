@@ -150,6 +150,14 @@ jobs:
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
           python3 tests/test_cooperative_combat.py \
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          timeout 5m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/snowboard_test.gd
+          timeout 3m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/snowboard_pose_camera_test.gd
+          timeout 3m ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" \
+            --headless --path . --script res://tests/snowboard_rivals_test.gd
+          python3 tests/test_cooperative_snowboard.py \
+            --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
           python3 tests/test_cooperative_adventure.py \
             --godot ".ci/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
           python3 tests/test_cooperative_gate.py \

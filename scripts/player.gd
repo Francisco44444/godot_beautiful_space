@@ -434,6 +434,9 @@ var realistic_pose: Node3D
 var realistic_model: Node3D
 var realistic_skeleton: Skeleton3D
 var realistic_animation: AnimationPlayer
+var en_tabla_nieve := false
+var postura_nieve := Vector3.ZERO
+var tabla_nieve: Node
 var spawn_position: Vector3
 var control_state := ControlState.ON_FOOT
 var current_mount: Horse
@@ -598,7 +601,7 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if network_remote or entrada_interfaz_bloqueada or _descartar_input_interfaz:
+	if network_remote or en_tabla_nieve or entrada_interfaz_bloqueada or _descartar_input_interfaz:
 		return
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
@@ -630,6 +633,10 @@ func _physics_process(delta: float) -> void:
 			_charge_time += delta
 			_charge_strength = clampf(_charge_time/maxf(charge_full_time,0.05),0.0,1.0)
 		_update_attack(delta,_sesion_red().is_world_authority())
+		return
+	if tabla_nieve!=null:
+		_recover_stamina(delta)
+		tabla_nieve.mover_jugador(delta)
 		return
 	_attack_cooldown = maxf(_attack_cooldown - delta, 0.0)
 	_slash_chain_window = maxf(_slash_chain_window - delta, 0.0)
@@ -1819,6 +1826,9 @@ func _apply_movement(delta: float) -> void:
 
 
 func _update_locomotion_animation() -> void:
+	if en_tabla_nieve:
+		_play_animation(ANIM_IDLE,0.12)
+		return
 	# La carga y el remolino ya no congelan el cuerpo: sobreescriben solo el
 	# brazo armado, así que las piernas siguen dando pasos debajo.
 	if attack_phase == AttackPhase.SLASH or is_rolling:
@@ -1873,7 +1883,10 @@ func _update_realistic_visual(delta: float) -> void:
 	var desired_position := Vector3.ZERO
 	var desired_rotation := Vector3.ZERO
 
-	if is_mounted():
+	if en_tabla_nieve:
+		desired_position.y = -0.04
+		desired_rotation = Vector3(-postura_nieve.y*0.65,PI/2,0)
+	elif is_mounted():
 		# La postura se acompasa a la zancada real del caballo, no a un seno
 		# propio: al galope el jinete se levanta de la silla y se echa adelante,
 		# como un jockey; al paso apenas se mueve.
@@ -2582,6 +2595,7 @@ func _update_weapon_carry(delta: float) -> void:
 
 
 func equip_item(slot: int, objeto_remoto: String = "") -> bool:
+	if en_tabla_nieve:return false
 	if not EQUIPMENT_SPECS.has(slot) or _weapon_grip == null:
 		return false
 	var inventory := _inventory_manager()
@@ -2873,6 +2887,7 @@ func _clear_equipped_item() -> void:
 
 
 func _reload_quaternius_hero() -> void:
+	if tabla_nieve!=null:tabla_nieve.abandonar()
 	var previous_slot := equipped_slot
 	_clear_equipped_item()
 	for child in model_root.get_children():
