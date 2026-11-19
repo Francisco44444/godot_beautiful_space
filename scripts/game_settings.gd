@@ -149,13 +149,13 @@ func set_quality_preset(indice: int, persist: bool = true) -> void:
 	graphics_changed.emit()
 	if persist:_save_settings()
 
-func aplicar_nivel_calidad(nivel: int) -> void:
+func aplicar_nivel_calidad(nivel: int, perfil_automatico: int = -1) -> void:
 	var datos: Dictionary=Calidad.preset(nivel)
 	_aplicando_calidad=true
 	for clave in Calidad.OPCIONES:visual_options[clave]=float(datos[clave])
 	manual_render_scale=float(datos.manual_scale)
 	set_lod_distance(float(datos.lod),false)
-	set_render_profile(int(datos.render_profile),false)
+	set_render_profile(int(datos.render_profile) if perfil_automatico < 0 else perfil_automatico, false)
 	_aplicando_calidad=false
 	graphics_changed.emit()
 

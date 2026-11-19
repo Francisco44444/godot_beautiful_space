@@ -4,8 +4,12 @@ extends Node
 ## La calibración usa tiempos GPU; después un temporizador comprueba los FPS
 ## una vez por segundo, sin recorrer la escena ni medir GPU continuamente.
 const Calidad = preload("res://scripts/calidad_grafica.gd")
+const PerfilesRender = preload("res://scripts/perfiles_render.gd")
+const NIVEL_EQUILIBRADO := 2
+const PERFIL_MAS_FLUIDO := 2
 var mundo: Node3D
-var _nivel := 2
+var _nivel := NIVEL_EQUILIBRADO
+var _perfil_automatico := -1
 var _espera_hasta := 0
 var _inicio_muestras := 0
 var _ultimo_tick := 0
@@ -35,7 +39,9 @@ func _ready() -> void:
 		if GameSettings.auto_fingerprint!=GameSettings.huella_equipo():_empezar()
 		else:
 			_nivel=GameSettings.auto_level
-			GameSettings._set_auto_status("Automática: "+Calidad.nombre_nivel(_nivel)+" · vigilancia activa")
+			if _nivel == NIVEL_EQUILIBRADO and GameSettings.render_profile == PERFIL_MAS_FLUIDO:
+				_perfil_automatico = PERFIL_MAS_FLUIDO
+			GameSettings._set_auto_status("Automática: " + _nombre_nivel_automatico() + " · vigilancia activa")
 			_activar_vigilancia()
 
 func _automatico_permitido() -> bool:
@@ -83,7 +89,10 @@ func _al_cambiar_ventana() -> void:
 func _empezar() -> void:
 	if DisplayServer.get_name()=="headless":return
 	_parar_vigilancia()
-	_midiendo=true;_nivel=2;_medidos.clear()
+	_midiendo = true
+	_nivel = NIVEL_EQUILIBRADO
+	_perfil_automatico = -1
+	_medidos.clear()
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	GameSettings.aplicar_nivel_calidad(_nivel)
 	_espera_hasta=Time.get_ticks_msec()+2500
@@ -128,20 +137,61 @@ func _resolver_medicion() -> void:
 	var pared:=Calidad.percentil(_pared)
 	var tope:=_limite_efectivo()
 	var limite:=1000.0/tope if tope>0 else 0.0
-	_medidos[_nivel]={"gpu_ms":gpu,"cpu_ms":cpu,"frame_ms":pared}
-	var recomendado:=Calidad.recomendar(_nivel,gpu,cpu,pared,GameSettings.auto_target_fps,limite)
-	if recomendado!=_nivel and not _medidos.has(recomendado):
-		_nivel=recomendado
-		GameSettings.aplicar_nivel_calidad(_nivel)
-		_espera_hasta=Time.get_ticks_msec()+1800
+	var datos_actuales := {"gpu_ms":gpu,"cpu_ms":cpu,"frame_ms":pared}
+	_medidos[_clave_medicion()] = datos_actuales
+	# Si la escala intermedia ya cumple el objetivo, la vigilancia se encarga
+	# de comprobar posibles caídas sin quitar efectos para ganar otro 5 %.
+	var fraccion_presupuesto := 1.0 if _perfil_automatico >= 0 else 0.95
+	var recomendado := Calidad.recomendar(
+		_nivel, gpu, cpu, pared, GameSettings.auto_target_fps, limite, fraccion_presupuesto
+	)
+	# Este paso sólo se alcanza después de medir Equilibrada por debajo del
+	# objetivo. Un pico de rendimiento aquí no vuelve a intentar Alta.
+	if _perfil_automatico >= 0:
+		recomendado = maxi(recomendado, _nivel)
+	var cambia_escala := recomendado > _nivel and _intentar_equilibrada_mas_fluida()
+	var cambia_nivel := not cambia_escala and recomendado != _nivel
+	if cambia_nivel:
+		_nivel = recomendado
+		_perfil_automatico = -1
+	GameSettings.aplicar_nivel_calidad(_nivel, _perfil_automatico)
+	if cambia_escala or (cambia_nivel and not _medidos.has(_clave_medicion())):
+		_espera_hasta = Time.get_ticks_msec() + 1800
 		_limpiar_muestras()
 		return
-	_nivel=recomendado
-	GameSettings.aplicar_nivel_calidad(_nivel)
-	var datos:Dictionary=_medidos.get(_nivel,{"gpu_ms":gpu,"cpu_ms":cpu,"frame_ms":pared})
-	GameSettings.guardar_autoconfiguracion(_nivel,"Automática: %s · objetivo %d FPS"%[Calidad.nombre_nivel(_nivel),GameSettings.auto_target_fps])
-	mundo.set_meta("ultima_autodeteccion",{"nivel":_nivel,"mediciones":_medidos.duplicate(true),"equipo":GameSettings.huella_equipo(),"muestra_elegida":datos})
+	var datos: Dictionary = _medidos.get(_clave_medicion(), datos_actuales)
+	GameSettings.guardar_autoconfiguracion(_nivel,"Automática: %s · objetivo %d FPS"%[_nombre_nivel_automatico(),GameSettings.auto_target_fps])
+	mundo.set_meta("ultima_autodeteccion",{"nivel":_nivel,"perfil":GameSettings.render_profile,"mediciones":_medidos.duplicate(true),"equipo":GameSettings.huella_equipo(),"muestra_elegida":datos})
 	_detener()
+
+
+func _clave_medicion() -> Variant:
+	return "equilibrada_mas_fluida" if _perfil_automatico == PERFIL_MAS_FLUIDO else _nivel
+
+
+func _nombre_nivel_automatico() -> String:
+	var nombre := Calidad.nombre_nivel(_nivel)
+	if _perfil_automatico == PERFIL_MAS_FLUIDO:
+		return nombre + " (escala más fluida)"
+	return nombre
+
+
+func _intentar_equilibrada_mas_fluida() -> bool:
+	if _nivel != NIVEL_EQUILIBRADO or _perfil_automatico >= 0:
+		return false
+	var vista := get_viewport()
+	var renderer := RenderingServer.get_current_rendering_method()
+	if not puede_reducir_escala(renderer, get_window().size, vista.scaling_3d_scale):
+		return false
+	_perfil_automatico = PERFIL_MAS_FLUIDO
+	return true
+
+
+static func puede_reducir_escala(renderer: String, salida: Vector2i, escala_actual: float) -> bool:
+	# A 1600×900 ambas escalas pueden quedar en el mismo mínimo interno.
+	var perfil := PerfilesRender.resolver(PERFIL_MAS_FLUIDO, salida, renderer, false)
+	return float(perfil.scale) < escala_actual - 0.0001
+
 
 func _detener() -> void:
 	_midiendo=false
@@ -186,17 +236,19 @@ func _vigilar_rendimiento() -> void:
 	if not resultado.degradar:
 		if _minimo_avisado:
 			_minimo_avisado=false
-			GameSettings._set_auto_status("Automática: "+Calidad.nombre_nivel(_nivel)+" · vigilancia activa")
+			GameSettings._set_auto_status("Automática: " + _nombre_nivel_automatico() + " · vigilancia activa")
 		return
 	if _nivel>=Calidad.NIVEL_MINIMO:
 		if not _minimo_avisado:
 			GameSettings._set_auto_status("Automática: Mínima · el equipo sigue por debajo del objetivo")
 			_minimo_avisado=true
 		return
-	_nivel+=1
-	GameSettings.aplicar_nivel_calidad(_nivel)
-	GameSettings.guardar_autoconfiguracion(_nivel,"Automática: %s · ajuste por FPS bajos sostenidos"%Calidad.nombre_nivel(_nivel))
-	mundo.set_meta("ultimo_descenso_automatico",{"fps":resultado.fps,"nivel":_nivel,"instante_ms":Time.get_ticks_msec()})
+	if not _intentar_equilibrada_mas_fluida():
+		_nivel += 1
+		_perfil_automatico = -1
+	GameSettings.aplicar_nivel_calidad(_nivel, _perfil_automatico)
+	GameSettings.guardar_autoconfiguracion(_nivel,"Automática: %s · ajuste por FPS bajos sostenidos"%_nombre_nivel_automatico())
+	mundo.set_meta("ultimo_descenso_automatico",{"fps":resultado.fps,"nivel":_nivel,"perfil":GameSettings.render_profile,"instante_ms":Time.get_ticks_msec()})
 	# Dejar estabilizar los nuevos búferes y evitar varios cambios seguidos.
 	_proxima_revision=Time.get_ticks_msec()+8000
 	_vigilante.reiniciar(Time.get_ticks_usec(),Engine.get_frames_drawn())

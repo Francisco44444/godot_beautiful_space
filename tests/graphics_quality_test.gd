@@ -18,6 +18,12 @@ func _comprobar()->void:
 	]
 	for c in casos:
 		if Calidad.recomendar(c[0],c[1],c[2],c[3],c[4],c[5])!=c[6]:_fallar("La detección confunde espera de VSync, GPU o cuello de CPU: "+str(c));return
+	if Calidad.recomendar(2, 0.0, 1.7, 16.39, 60, 0.0, 1.0) != 2:
+		_fallar("La escala intermedia pierde efectos aun cumpliendo el objetivo medido.")
+		return
+	if Calidad.recomendar(2, 0.0, 1.7, 17.0, 60, 0.0, 1.0) != 3:
+		_fallar("La escala intermedia retiene una configuración que sigue siendo lenta.")
+		return
 	if Calidad.percentil([4.0,40.0,7.0,8.0,6.0])!=8.0:_fallar("La detección no usa un percentil estable.");return
 	for clave in Calidad.OPCIONES:
 		for valor in [INF,-INF,NAN,"inválido",-900.0,90000.0]:

@@ -38,7 +38,41 @@ func _comprobar()->void:
 	var persiste:bool=cargados.quality_preset==0 and cargados.auto_level==4 and cargados.manual_render_scale==0.35
 	ajustes.free();cargados.free();DirAccess.remove_absolute(ProjectSettings.globalize_path(ruta))
 	if not _exigir(persiste,"La vigilancia pierde el nivel mínimo al reiniciar."):return
+	if not _comprobar_escalon_intermedio():
+		return
 	var inicio:=Time.get_ticks_usec()
 	for i in 100000:v.observar((i+8)*1000000,(i+8)*60,true,60)
 	print("ADAPTIVE GRAPHICS TEST OK: lentitud sostenida, 60 FPS, tirón, pausa, carga, límite, predeterminado y persistencia; %.3f us por muestra CPU."%(float(Time.get_ticks_usec()-inicio)/100000.0))
 	quit(0)
+
+
+func _comprobar_escalon_intermedio() -> bool:
+	var visual := load("res://scripts/configuracion_visual.gd") as Script
+	if not _exigir(visual.puede_reducir_escala("forward_plus", Vector2i(2560, 1440), 0.77),
+			"Automática salta a Rendimiento aunque pueda conservar Equilibrada con otra escala."):
+		return false
+	if not _exigir(not visual.puede_reducir_escala("forward_plus", Vector2i(1600, 900), 0.80)
+			and not visual.puede_reducir_escala("gl_compatibility", Vector2i(2560, 1440), 1.0),
+			"Automática repite una medición con una escala 3D idéntica."):
+		return false
+	var ajustes := Ajustes.new()
+	ajustes.aplicar_nivel_calidad(2, 2)
+	var mantiene_detalle := ajustes.quality_preset == 0 and ajustes.render_profile == 2
+	var equilibrada := Calidad.preset(2)
+	for clave in Calidad.OPCIONES:
+		mantiene_detalle = mantiene_detalle and ajustes.visual_options[clave] == float(equilibrada[clave])
+	var ruta := "user://prueba-escala-automatica-%d.cfg" % OS.get_process_id()
+	ajustes.settings_path = ruta
+	ajustes.auto_level = 2
+	ajustes._save_settings()
+	var restaurados := Ajustes.new()
+	restaurados.settings_path = ruta
+	restaurados._load_settings()
+	var persiste := restaurados.quality_preset == 0 and restaurados.auto_level == 2 and restaurados.render_profile == 2
+	restaurados.free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(ruta))
+	ajustes.aplicar_nivel_calidad(2)
+	var conserva_preset := ajustes.render_profile == int(equilibrada.render_profile)
+	ajustes.free()
+	return _exigir(mantiene_detalle and conserva_preset and persiste,
+			"El escalón intermedio modifica los efectos o cambia Equilibrada manual o se pierde al guardar.")

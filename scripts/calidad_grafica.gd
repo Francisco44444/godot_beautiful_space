@@ -45,12 +45,15 @@ static func percentil(muestras: Array[float], fraccion: float=0.75) -> float:
 	var ordenadas:=muestras.duplicate();ordenadas.sort()
 	return ordenadas[clampi(int(ceil((ordenadas.size()-1)*fraccion)),0,ordenadas.size()-1)]
 
-static func recomendar(nivel: int, gpu_ms: float, cpu_ms: float, pared_ms: float, objetivo: int, limite_ms: float) -> int:
+static func recomendar(
+	nivel: int, gpu_ms: float, cpu_ms: float, pared_ms: float,
+	objetivo: int, limite_ms: float, fraccion_presupuesto: float = 0.95
+) -> int:
 	var presupuesto:=1000.0/clampi(objetivo,30,144)
 	# GPU/CPU excluyen la espera de VSync. Sin temporizadores de GPU, una
 	# muestra pegada al límite de pantalla no demuestra falta de potencia.
 	var coste:=maxf(gpu_ms,cpu_ms)
 	if limite_ms<=0.0 or pared_ms>limite_ms*1.15:coste=maxf(coste,pared_ms)
-	if coste>presupuesto*0.95:return mini(nivel+1,NIVEL_MINIMO)
+	if coste>presupuesto * fraccion_presupuesto:return mini(nivel+1,NIVEL_MINIMO)
 	if nivel==2 and gpu_ms>0.0 and coste<presupuesto*0.70:return 1
 	return nivel
