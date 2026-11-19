@@ -5,6 +5,16 @@ const RenderBosque = preload("res://scripts/render_bosque.gd")
 func _init() -> void: call_deferred("comprobar")
 
 func comprobar() -> void:
+	var vegetacion := VegetationScatter.new()
+	var mallas := vegetacion._make_tree_lod_mesh_library()
+	vegetacion.free()
+	for malla: ArrayMesh in mallas:
+		var vertices := malla.surface_get_array_len(0)
+		var indices := malla.surface_get_array_index_len(0)
+		if indices <= 0 or vertices * 2 >= indices:
+			fallar("Una silueta lejana vuelve a enviar los vértices repetidos a la GPU.")
+			return
+
 	var azar := RandomNumberGenerator.new()
 	azar.seed = 190811
 	var limitados := 0

@@ -183,10 +183,16 @@ func abandonar() -> void:
 func _pedir_abandono() -> void:
 	if NetworkSession.is_host():_quitar(multiplayer.get_remote_sender_id(),true)
 func _quitar(peer: int, abandono: bool = false) -> void:
-	carreras.erase(str(peer));_ultima_postura.erase(peer);_actualizar_visuales();NetworkSession.broadcast_world_state_now()
-	if carreras.is_empty() and abandono:rivales.cancelar()
-	if carreras.is_empty() and movimiento==null and not rivales.activa:
-		rivales.descansar();set_physics_process(false)
+	carreras.erase(str(peer))
+	_ultima_postura.erase(peer)
+	_actualizar_visuales()
+	if carreras.is_empty() and abandono:
+		rivales.cancelar()
+	if carreras.is_empty() and movimiento == null and not rivales.activa:
+		rivales.descansar()
+		set_physics_process(false)
+	# Los invitados reciben el estado definitivo de la carrera en el primer envío.
+	NetworkSession.broadcast_world_state_now()
 func _desmontar(reponer_equipo: bool = true) -> void:
 	if mundo.player.tabla_nieve!=self:return
 	var p = mundo.player;p.tabla_nieve = null;p.en_tabla_nieve = false;p.postura_nieve = Vector3.ZERO;p.visual.rotation.x = 0;p.visual.rotation.z = 0;p.floor_snap_length = _snap_anterior;p.floor_max_angle = _angulo_suelo_anterior;p.velocity *= 0.35

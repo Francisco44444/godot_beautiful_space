@@ -70,6 +70,22 @@ func _probar() -> void:
 		var inventario := root.get_node("InventoryManager");var antes: int = inventario.get_count("Crystal3")
 		if not exigir(m.player._interact_with_adventure_object(),"La interacción normal no encuentra las tablas"):return
 		if not await esperar(func():return m.player.en_tabla_nieve and not c.carreras.is_empty()):exigir(false,"El servidor no autoriza la salida del invitado");return
+		await consultar("detener_pulso")
+		c.abandonar()
+		# Sin el pulso periódico, sólo el envío de abandono puede retirar
+		# a los mensajeros del invitado. Un estado intermedio deja la carrera viva.
+		if not await esperar(func(): return c.carreras.is_empty() and c.rivales.bots.is_empty() and not c.is_physics_processing()):
+			exigir(false, "El envío de abandono deja mensajeros activos en el invitado")
+			return
+		await consultar("restaurar_pulso")
+		m.player.global_position = c.puertas[0]
+		m.player.velocity = Vector3.ZERO
+		await create_timer(0.5).timeout
+		if not exigir(m.player._interact_with_adventure_object(), "No se puede volver a la salida tras abandonar"):
+			return
+		if not await esperar(func(): return m.player.en_tabla_nieve and not c.carreras.is_empty()):
+			exigir(false, "El invitado no puede empezar otra carrera tras abandonar")
+			return
 		Input.action_press("sprint");Input.action_press("move_forward")
 		if not await esperar(func():return c.rivales.tiempo>=0,6000):exigir(false,"No termina la cuenta atrás compartida");return
 		await create_timer(1.5).timeout
@@ -105,6 +121,10 @@ func _estado(nombre: String) -> Dictionary:
 	if nombre=="pausar":paused = true
 	elif nombre=="reanudar":paused = false
 	elif nombre=="fin":fin = true
+	elif nombre == "detener_pulso":
+		sesion.set("_world_state_accumulator", -1000000.0)
+	elif nombre == "restaurar_pulso":
+		sesion.set("_world_state_accumulator", 0.0)
 	var tabla := false;var agachado := false
 	for p in m.network_players.get_children():
 		tabla = tabla or p.en_tabla_nieve;agachado = agachado or p.postura_nieve.x>0.8

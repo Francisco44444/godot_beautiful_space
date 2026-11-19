@@ -1582,6 +1582,9 @@ func _make_tree_lod_mesh(leaf_color: Color, bark_color: Color, pine: bool) -> Me
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
 	surface.set_material(material)
 	surface.generate_normals()
+	# Compartir vértices tras calcular las normales reduce el trabajo de cada ejemplar
+	# lejano y conserva la posición, normal, color y orden de sus triángulos.
+	surface.index()
 	return surface.commit()
 
 
