@@ -332,7 +332,8 @@ func _grant_missing_starting_equipment() -> void:
 		var default_id := String(STARTING_EQUIPMENT[category])
 		if default_id.is_empty() or not _catalog.has(default_id):
 			continue
-		if not String(_equipped.get(category, "")).is_empty():
+		var equipped_id := String(_equipped.get(category, ""))
+		if not equipped_id.is_empty() and has_item(equipped_id):
 			continue
 		if int(_inventory.get(default_id, 0)) <= 0:
 			_inventory[default_id] = int(STARTING_ITEMS.get(default_id, 1))
@@ -341,32 +342,28 @@ func _grant_missing_starting_equipment() -> void:
 
 func _build_catalog() -> void:
 	_catalog.clear()
-	var directory := DirAccess.open(RPG_OBJ_ROOT)
-	if directory != null:
-		directory.list_dir_begin()
-		var file_name := directory.get_next()
-		while not file_name.is_empty():
-			if not directory.current_is_dir() and file_name.get_extension().to_lower() == "obj":
-				var item_id := file_name.get_basename()
-				_add_catalog_item(item_id, RPG_OBJ_ROOT + file_name, RPG_ICON_ROOT + _icon_file_for(item_id), "rpg")
-			file_name = directory.get_next()
-		directory.list_dir_end()
+	# El PCK guarda texturas importadas con sufijos internos. Enumerar recursos
+	# devuelve el nombre original y evita recorrer los iconos por cada objeto.
+	var iconos: Dictionary[String, String] = {}
+	for archivo in ResourceLoader.list_directory(RPG_ICON_ROOT):
+		if archivo.get_extension().to_lower() == "png":
+			iconos[archivo.get_basename().to_lower()] = RPG_ICON_ROOT + archivo
+	for archivo in ResourceLoader.list_directory(RPG_OBJ_ROOT):
+		if archivo.get_extension().to_lower() != "obj":
+			continue
+		var item_id := archivo.get_basename()
+		_add_catalog_item(item_id, RPG_OBJ_ROOT + archivo, iconos.get(item_id.to_lower(), ""), "rpg")
 	# El pack medieval entero, no sólo sus cinco escudos. Antes se incorporaban
 	# a mano y el resto —claymore, espadas intermedias, dagas, lanza, guadaña y
 	# dos arcos más— se quedaba en disco sin que el juego lo viera, así que la
 	# escalera de armas se quedaba en cuatro grados pudiendo tener seis.
 	# Los que ya vengan del pack RPG NO se pisan: aquéllos traen icono.
-	var medieval := DirAccess.open(MEDIEVAL_OBJ_ROOT)
-	if medieval != null:
-		medieval.list_dir_begin()
-		var medieval_file := medieval.get_next()
-		while not medieval_file.is_empty():
-			if not medieval.current_is_dir() and medieval_file.get_extension().to_lower() == "obj":
-				var medieval_id := medieval_file.get_basename()
-				if not _catalog.has(medieval_id):
-					_add_catalog_item(medieval_id, MEDIEVAL_OBJ_ROOT + medieval_file, "", "medieval")
-			medieval_file = medieval.get_next()
-		medieval.list_dir_end()
+	for archivo in ResourceLoader.list_directory(MEDIEVAL_OBJ_ROOT):
+		if archivo.get_extension().to_lower() != "obj":
+			continue
+		var medieval_id := archivo.get_basename()
+		if not _catalog.has(medieval_id):
+			_add_catalog_item(medieval_id, MEDIEVAL_OBJ_ROOT + archivo, "", "medieval")
 	for shield_name in SHIELD_FILES:
 		if not _catalog.has(shield_name):
 			_add_catalog_item(shield_name, MEDIEVAL_OBJ_ROOT + shield_name + ".obj", "", "medieval")
@@ -424,24 +421,6 @@ func _category_for(item_id: String) -> String:
 	if lower.begins_with("key"):
 		return "key"
 	return "treasure"
-
-
-func _icon_file_for(item_id: String) -> String:
-	# macOS resuelve nombres sin distinguir mayúsculas, pero Windows/Linux no.
-	# Devuelve siempre la grafía exacta que existe en el pack.
-	var wanted := (item_id + ".png").to_lower()
-	var directory := DirAccess.open(RPG_ICON_ROOT)
-	if directory == null:
-		return ""
-	directory.list_dir_begin()
-	var file_name := directory.get_next()
-	while not file_name.is_empty():
-		if not directory.current_is_dir() and file_name.to_lower() == wanted:
-			directory.list_dir_end()
-			return file_name
-		file_name = directory.get_next()
-	directory.list_dir_end()
-	return ""
 
 
 func _display_name(item_id: String) -> String:

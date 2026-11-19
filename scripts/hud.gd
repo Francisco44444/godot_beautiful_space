@@ -2049,16 +2049,28 @@ func _build_quickbar() -> void:
 		button.pressed.connect(_on_quickslot_button_pressed.bind(slot))
 		row.add_child(button)
 		quickbar_buttons.append(button)
+	var municion := VBoxContainer.new()
+	municion.custom_minimum_size = Vector2(40.0, 40.0)
+	municion.alignment = BoxContainer.ALIGNMENT_CENTER
+	municion.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	municion.add_theme_constant_override("separation", 0)
+	row.add_child(municion)
+	var icono_flechas := TextureRect.new()
+	icono_flechas.texture = preload("res://assets/quaternius/Ultimate RPG Items Pack - Aug 2019/Icons/Arrow.png")
+	icono_flechas.custom_minimum_size = Vector2(21.0, 21.0)
+	icono_flechas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icono_flechas.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icono_flechas.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	municion.add_child(icono_flechas)
 	arrow_counter = Label.new()
-	arrow_counter.custom_minimum_size = Vector2(40.0, 40.0)
 	arrow_counter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	arrow_counter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	arrow_counter.add_theme_font_size_override("font_size", 10)
 	arrow_counter.add_theme_color_override("font_color", Color(0.55, 0.88, 1.0))
-	row.add_child(arrow_counter)
+	municion.add_child(arrow_counter)
 	horse_call_button = Button.new()
 	horse_call_button.name = "CallHorseButton"
-	horse_call_button.text = "H\n🐎"
+	horse_call_button.text = "H\nBrisa"
 	horse_call_button.tooltip_text = "Llamar a Brisa"
 	horse_call_button.custom_minimum_size = Vector2(42.0, 42.0)
 	horse_call_button.add_theme_font_size_override("font_size", 11)
@@ -2277,7 +2289,7 @@ func _on_player_quickslot_changed(_slot: int, _item_name: String) -> void:
 func _refresh_quickbar() -> void:
 	if quickbar_buttons.is_empty():
 		return
-	var fallback_icons := PackedStringArray(["⚔", "🪓", "🏹", "🔥"])
+	var nombres_breves := PackedStringArray(["Espada", "Hacha", "Arco", "Luz"])
 	for index in 4:
 		var item_id := String(inventory_manager.call("get_quick_slot_item", index + 1)) if inventory_manager != null else ""
 		var display_name: String = ["Espada", "Hacha", "Arco", "Antorcha"][index]
@@ -2289,7 +2301,7 @@ func _refresh_quickbar() -> void:
 			if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
 				icon = load(icon_path) as Texture2D
 		quickbar_buttons[index].icon = icon
-		quickbar_buttons[index].text = str(index + 1) if icon != null else "%d\n%s" % [index + 1, fallback_icons[index]]
+		quickbar_buttons[index].text = str(index + 1) if icon != null else "%d\n%s" % [index + 1, nombres_breves[index]]
 		quickbar_buttons[index].tooltip_text = "%d · %s" % [index + 1, display_name]
 		# El hueco activo se marca con el acento del propio tema en vez de
 		# tintar el botón entero, que apagaba el icono del objeto.
@@ -2305,7 +2317,7 @@ func _refresh_quickbar() -> void:
 		else:
 			UiTheme.style_button(quickbar_buttons[index])
 	if arrow_counter != null:
-		arrow_counter.text = "🏹\n×%d" % _inventory_arrow_count()
+		arrow_counter.text = "×%d" % _inventory_arrow_count()
 
 
 func _inventory_arrow_count() -> int:
@@ -2382,7 +2394,7 @@ func _on_bow_draw_changed(strength: float, arrows: int) -> void:
 		crosshair.text = "◎" if player.is_drawing_bow else "·"
 		crosshair.add_theme_font_size_override("font_size", 34 if player.is_drawing_bow else 18)
 	if arrow_counter != null:
-		arrow_counter.text = "🏹\n×%d" % arrows
+		arrow_counter.text = "×%d" % arrows
 
 
 func _on_charge_changed(strength: float, spin_ready: bool) -> void:
@@ -2401,7 +2413,7 @@ func _on_charge_changed(strength: float, spin_ready: bool) -> void:
 
 func _on_arrow_fired(remaining_arrows: int, _strength: float) -> void:
 	if arrow_counter != null:
-		arrow_counter.text = "🏹\n×%d" % remaining_arrows
+		arrow_counter.text = "×%d" % remaining_arrows
 	_refresh_quickbar()
 
 

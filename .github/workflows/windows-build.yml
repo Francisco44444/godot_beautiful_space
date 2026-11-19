@@ -248,7 +248,17 @@ jobs:
         shell: bash
         env:
           GODOT_BIN: ${{ github.workspace }}/.ci/godot/Godot_v4.7.1-stable_linux.x86_64
-        run: bash tools/build_web_release_ci.sh "${{ steps.build.outputs.version }}"
+        run: |
+          set -euo pipefail
+          bash tools/build_web_release_ci.sh "${{ steps.build.outputs.version }}"
+          sonda="$(mktemp -d)"
+          trap 'rm -rf "$sonda"' EXIT
+          printf 'config_version=5\n' > "$sonda/project.godot"
+          for paquete in dist/windows_payload/SenderosDelHorizonte.pck dist/web-game/index.pck; do
+            "$GODOT_BIN" --headless --path "$sonda" \
+              --script "$GITHUB_WORKSPACE/tests/packaged_inventory_test.gd" \
+              -- "$GITHUB_WORKSPACE/$paquete"
+          done
 
       - name: Conservar la compilación de prueba
         uses: actions/upload-artifact@v7
