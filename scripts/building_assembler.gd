@@ -40,6 +40,7 @@ var collision_count := 0
 var origin_shift := Vector3.ZERO
 var _floor_tiles: Array[Vector3] = []
 static var _trimmed_roofs: Dictionary = {}
+static var _mallas_solado: Dictionary = {}
 
 
 func assemble(
@@ -113,7 +114,11 @@ func _emit_floor_tiles(catalog: Dictionary) -> void:
 
 static func _floor_mesh(catalog: Dictionary) -> Mesh:
 	var path := String(catalog.get("root", BuildingCatalog.ROOT))
-	var scene := load(path + String(catalog.get("floor", "Floor_UnevenBrick")) + ".gltf") as PackedScene
+	var ruta_modelo := path + String(catalog.get("floor", "Floor_UnevenBrick")) + ".gltf"
+	# Cada familia comparte el solado entre casas sin reconstruir la escena importada.
+	if _mallas_solado.has(ruta_modelo):
+		return _mallas_solado[ruta_modelo]
+	var scene := load(ruta_modelo) as PackedScene
 	if scene == null:
 		return null
 	var probe := scene.instantiate()
@@ -122,7 +127,9 @@ static func _floor_mesh(catalog: Dictionary) -> Mesh:
 		if child is MeshInstance3D:
 			found = (child as MeshInstance3D).mesh
 			break
-	probe.queue_free()
+	probe.free()
+	if found != null:
+		_mallas_solado[ruta_modelo] = found
 	return found
 
 
@@ -429,15 +436,19 @@ func _add_roof_mesh(mesh_name: String, placement: Transform3D, roof: Dictionary,
 		_add_mesh(dressing, mesh_name, placement, catalog)
 		return
 	var path := String(catalog.get("root", BuildingCatalog.ROOT))
-	var scene := load(path + mesh_name + ".gltf") as PackedScene
-	var source := scene.instantiate() as Node3D
+	var ruta_modelo := path + mesh_name + ".gltf"
 	# Clip in the source's coordinates, so the resulting mesh is shared by all
 	# identical houses regardless of their world location or number of floors.
 	var local_min := Vector2(minimum.x - placement.origin.x, minimum.y - placement.origin.z)
 	var local_max := Vector2(maximum.x - placement.origin.x, maximum.y - placement.origin.z)
-	var key := "%s:%s:%s:%s" % [mesh_name, local_min, local_max, placement.basis]
+	var key := "%s:%s:%s:%s" % [ruta_modelo, local_min, local_max, placement.basis]
 	var mesh: ArrayMesh = _trimmed_roofs.get(key)
+	# Sólo los recortes nuevos necesitan instanciar la cubierta para leer sus caras.
 	if mesh == null:
+		var scene := load(ruta_modelo) as PackedScene
+		if scene == null:
+			return
+		var source := scene.instantiate() as Node3D
 		mesh = ArrayMesh.new()
 		for child in source.find_children("*", "MeshInstance3D", true, false):
 			var visual := child as MeshInstance3D
@@ -446,7 +457,7 @@ func _add_roof_mesh(mesh_name: String, placement: Transform3D, roof: Dictionary,
 					local_min, local_max)
 		mesh = preload("res://scripts/lod_tejados.gd").aplicar(mesh)
 		_trimmed_roofs[key] = mesh
-	source.free()
+		source.free()
 	if mesh.get_surface_count() == 0:
 		return
 	var visual := MeshInstance3D.new()
